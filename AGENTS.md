@@ -58,6 +58,12 @@ Deliver a usable vertical slice: configure hosts, discover sessions/windows/pane
 - Ordinary terminal input is user-directed. Future agent quick responses must bind to the current pane/prompt and reject stale targets; attention detection alone never authorizes automatic responses.
 - File locations must be keyed by stable machine ID plus absolute path. The user explicitly wants arbitrary browsing within account permissions; project roots are navigation shortcuts, not access fences. Preserve file version checks, connection guards, and unsaved-change handling. Preserve Markdown source fidelity when introducing rendered editing.
 
+## Work ledger
+
+Read [PLAN.md](PLAN.md) and [docs/work-ledger.md](docs/work-ledger.md) before meaningful repository work. Claim a numbered task in `docs/tasks/current/`, record discoveries/bugs/decisions and actual validation evidence, and maintain the index and handoff when moving or finishing work. Use immutable four-digit numeric prefixes for every task, bug, plan, milestone and decision file; numbers are unique per type across all states. Session notes use `YYYY-MM-DD-topic.md`. Follow [ADR-0001](docs/decisions/0001-filesystem-work-ledger.md).
+
+Keep README as a concise product/setup entry point. Put enduring reference information under docs, work progress/evidence in task records, and operational constraints here. Do not append test code or development transcripts to README. Ledger records do not automatically change live Board tickets, launch agents or authorize messages.
+
 ## Working practices and validation
 
 Keep each change small and runnable. Record consequential architecture choices and actual setup/run/test commands as they become established; do not document hypothetical commands as working features.

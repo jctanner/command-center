@@ -1,6 +1,8 @@
 # API v1
 
-All paths begin `/api/v1`. The service is loopback-only. Host must match its loopback address/port. Terminal WebSocket clients must send an Origin matching `http://HOST:PORT`; this is an origin check, not authentication.
+All paths begin `/api/v1`. The primary listener is loopback; optional explicit private LAN/tailnet listeners and an exact HTTPS reverse-proxy origin are supported. Host must match a configured authority. Browser Origin, when present, must match its configured scheme and authority; mutations require Origin. This is an origin check, not authentication: private network membership/access rules remain the deployment boundary. See [HTTPS setup](reference/features.md#private-https).
+
+This document covers the original terminal, machine and file interfaces. Additional workspace/agent APIs are described in the [feature reference](reference/features.md) and implemented in `src/lib.rs` and each workspace module; it is not a complete endpoint inventory.
 
 ## HTTP
 
