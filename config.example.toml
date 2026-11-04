@@ -1,0 +1,19 @@
+# Each entry represents one machine + tmux socket.
+[[hosts]]
+id = "local"
+name = "This machine"
+# socket = "/absolute/path/to/tmux.sock" # optional, passed as tmux -S
+
+# Uses your system OpenSSH config, agent, and known_hosts.
+# Establish trust with ssh first; unknown or changed keys are rejected.
+# [[hosts]]
+# id = "devbox"
+# name = "Dev box"
+# ssh = "my-ssh-config-alias"
+# socket = "/tmp/tmux-1000/default"
+# ssh_config = "/absolute/path/to/ssh_config" # optional alternative to ~/.ssh/config
+
+# Optional persistent project shortcut under a host entry:
+# [[hosts.projects]]
+# path = "/home/user/projects/example"
+# name = "Example project"

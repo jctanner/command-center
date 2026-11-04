@@ -1,0 +1,158 @@
+import {test,expect} from '@playwright/test';
+import {mkdtempSync,mkdirSync,copyFileSync,writeFileSync,readFileSync,appendFileSync,rmSync,chmodSync,symlinkSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {spawn,spawnSync,type ChildProcess} from 'node:child_process';
+import {createServer} from 'node:net';
+test.setTimeout(60000);
+let dir:string,socket:string,base:string,home:string,log:string,pane:string,window:string,session:string,config:string,backend:ChildProcess,currentTurn:string,header:string;
+const nativeSession='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+function run(program:string,args:string[]){const r=spawnSync(program,args,{encoding:'utf8',env:{...process.env,TMUX:''}});if(r.status!==0)throw Error(r.stderr);return r.stdout.trim();}
+function tmux(...args:string[]){return run('/usr/bin/tmux',['-S',socket,...args]);}
+function append(record:object){appendFileSync(log,JSON.stringify(record)+'\n');}
+function phase(state:'working'|'ready'|'unknown'){
+ if(state==='unknown'){writeFileSync(log,header);return;}
+ if(state==='working')currentTurn=crypto.randomUUID();
+ append({type:'event_msg',timestamp:new Date().toISOString(),payload:{type:state==='working'?'task_started':'task_complete',turn_id:currentTurn,root_turn_id:currentTurn}});
+}
+function user(text:string){append({type:'response_item',timestamp:new Date().toISOString(),payload:{type:'message',role:'user',content:[{type:'input_text',text}]}});}
+function register(){
+ const pid=Number(tmux('display-message','-p','-t',pane,'#{pane_pid}'));
+ const stat=readFileSync(`/proc/${pid}/stat`,'utf8').split(') ').at(-1)!.split(' ');
+ const folder=join(home,'command-center-sessions');mkdirSync(folder,{recursive:true,mode:0o700});
+ writeFileSync(join(folder,`${pid}.json`),JSON.stringify({schema:1,pid,proc_start:stat[19],boot_id:readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim(),tmux_pane:pane,cwd:dir,session_id:nativeSession}),{mode:0o600});
+}
+async function start(){
+ backend=spawn(resolve(process.env.CC_BINARY||'../target/release/command-center'),['--listen',base.replace('http://',''),'--config',config,'--web-dir',resolve(process.env.CC_WEB_DIR||'dist-next')],{env:{...process.env,PATH:join(dir,'bin')+':'+process.env.PATH,CC_TEST_FAIL_ENTER:join(dir,'fail-enter')},stdio:'pipe'});
+ await expect.poll(async()=>{try{return(await fetch(base+'/api/v1/health')).status;}catch{return 0;}}).toBe(200);
+}
+async function stop(){if(backend&&backend.exitCode===null){backend.kill('SIGTERM');await new Promise<void>(resolve=>backend.once('exit',()=>resolve()));}}
+async function post(path:string,body:unknown){return fetch(base+path,{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify(body)});}
+async function detail(){const hosts=await(await fetch(base+'/api/v1/hosts')).json();const query=new URLSearchParams({session,window,pane,connection_revision:hosts[0].connection_revision});const response=await fetch(base+'/api/v1/hosts/local/agents/conversation?'+query);expect(response.status).toBe(200);return response.json();}
+async function entries(){return(await(await fetch(base+'/api/v1/agents/outbox')).json()).entries as any[];}
+async function entry(id:string){return(await entries()).find(r=>r.id===id);}
+async function enqueue(text:string,id=crypto.randomUUID()){const d=await detail();const response=await post('/api/v1/hosts/local/agents/message',{id,token:d.message_token,text});expect(response.status).toBe(200);return{...(await response.json()).outbox,originalToken:d.message_token};}
+async function action(id:string,kind:string){const d=kind==='submit'?await detail():undefined;const r=await entry(id);return post('/api/v1/agents/outbox/'+id,{action:kind,revision:r.revision,token:d?.message_token});}
+
+test.beforeEach(async()=>{
+ dir=mkdtempSync(join(tmpdir(),'cc-outbox-'));socket=join(dir,'tmux.sock');home=join(dir,'codex-home');config=join(dir,'config');
+ const server=createServer();const port=await new Promise<number>(resolve=>server.listen(0,'127.0.0.1',()=>resolve((server.address() as {port:number}).port)));await new Promise<void>(resolve=>server.close(()=>resolve()));base=`http://127.0.0.1:${port}`;
+ mkdirSync(join(home,'sessions/2026/11/03'),{recursive:true});log=join(home,'sessions/2026/11/03/rollout.jsonl');
+ header=JSON.stringify({type:'session_meta',payload:{id:nativeSession,cwd:dir}})+'\n';writeFileSync(log,header);phase('working');
+ copyFileSync('/bin/cat',join(dir,'codex'));mkdirSync(join(dir,'bin'));
+ writeFileSync(join(dir,'bin/tmux'),`#!/usr/bin/python3\nimport os,sys\nfrom pathlib import Path\nif Path(os.environ['CC_TEST_FAIL_ENTER']).exists() and 'send-keys' in sys.argv and sys.argv[-1]=='Enter': sys.exit(1)\nos.execv('/usr/bin/tmux',['tmux',*sys.argv[1:]])\n`);chmodSync(join(dir,'bin/tmux'),0o700);
+ tmux('-f','/dev/null','new-session','-d','-s','fixture','-n','codex','-c',dir,`exec env CODEX_HOME='${home}' '${join(dir,'codex')}'`);
+ pane=tmux('display-message','-p','-t','fixture','#{pane_id}');window=tmux('display-message','-p','-t',pane,'#{window_id}');session=tmux('display-message','-p','-t',pane,'#{session_id}');
+ await expect.poll(()=>tmux('display-message','-p','-t',pane,'#{pane_current_command}')).toBe('codex');register();
+ writeFileSync(config,`[[hosts]]\nid="local"\nname="Outbox fixture"\nsocket=${JSON.stringify(socket)}\n`);
+ await start();
+});
+test.afterEach(async()=>{await stop();if(socket)spawnSync('/usr/bin/tmux',['-S',socket,'kill-server']);if(dir)rmSync(dir,{recursive:true,force:true});});
+
+test('busy messages survive restart, deduplicate IDs, cancel safely and dispatch FIFO only when ready',async()=>{
+ const first=await enqueue('CC_OUTBOX_CANCELLED');
+ const repeated=await post('/api/v1/hosts/local/agents/message',{id:first.id,token:first.originalToken,text:first.text});expect(repeated.status).toBe(200);
+ expect((await post('/api/v1/hosts/local/agents/message',{id:first.id,token:first.originalToken,text:'different'})).status).toBe(409);
+ expect(tmux('capture-pane','-p','-t',pane)).not.toContain(first.text);
+ const originalPid=tmux('display-message','-p','-t',pane,'#{pane_pid}');await stop();await start();expect((await entry(first.id)).status).toBe('queued');expect(tmux('display-message','-p','-t',pane,'#{pane_pid}')).toBe(originalPid);
+ expect((await action(first.id,'cancel')).status).toBe(200);
+ const a=await enqueue('CC_OUTBOX_FIRST');const b=await enqueue('CC_OUTBOX_SECOND');phase('ready');
+ await expect.poll(async()=>(await entry(a.id)).status,{timeout:15000}).toBe('submitted');
+ expect((await entry(b.id)).status).toBe('queued');expect(tmux('capture-pane','-p','-t',pane)).toContain(a.text);expect(tmux('capture-pane','-p','-t',pane)).not.toContain(b.text);expect(tmux('capture-pane','-p','-t',pane)).not.toContain(first.text);
+ user(a.text);await expect.poll(async()=>(await entry(a.id)).status,{timeout:15000}).toBe('seen');
+ await expect.poll(async()=>(await entry(b.id)).status,{timeout:15000}).toBe('submitted');user(b.text);
+ await expect.poll(async()=>(await entry(b.id)).status,{timeout:15000}).toBe('seen');
+ expect((await entries()).filter(r=>r.id===a.id)).toHaveLength(1);
+});
+
+test('unknown status requires explicit fresh submission and never claims terminal input was accepted',async()=>{
+ phase('unknown');const r=await enqueue('CC_OUTBOX_EXPLICIT');
+ await expect.poll(async()=>(await entry(r.id)).note,{timeout:10000}).toContain('Submit now');
+ expect(tmux('capture-pane','-p','-t',pane)).not.toContain(r.text);
+ const explicit=await action(r.id,'submit');expect(explicit.status,await explicit.text()).toBe(200);expect((await entry(r.id)).status).toBe('submitted');
+ expect(tmux('capture-pane','-p','-t',pane)).toContain(r.text);
+ user(r.text);await expect.poll(async()=>(await entry(r.id)).status,{timeout:15000}).toBe('seen');
+});
+
+test('uncertain delivery survives backend restart and is never automatically or manually replayed',async()=>{
+ writeFileSync(join(dir,'fail-enter'),'fail');const r=await enqueue('CC_OUTBOX_UNCERTAIN');phase('ready');
+ await expect.poll(async()=>(await entry(r.id)).status,{timeout:15000}).toBe('uncertain');
+ const before=tmux('capture-pane','-p','-t',pane);
+ await stop();rmSync(join(dir,'fail-enter'));await start();
+ expect((await entry(r.id)).status).toBe('uncertain');expect((await action(r.id,'submit')).status).toBe(409);
+ expect(tmux('capture-pane','-p','-t',pane)).toBe(before);
+ const check=await action(r.id,'check');expect(check.status).toBe(200);expect((await entry(r.id)).status).toBe('uncertain');
+ expect(tmux('capture-pane','-p','-t',pane)).toBe(before);
+});
+
+test('replacement processes and endpoint edits cannot inherit queued input',async()=>{
+ const r=await enqueue('CC_OUTBOX_WRONG_PROCESS');
+ tmux('respawn-pane','-k','-t',pane,'-c',dir,`exec env CODEX_HOME='${home}' '${join(dir,'codex')}'`);await expect.poll(()=>tmux('display-message','-p','-t',pane,'#{pane_current_command}')).toBe('codex');register();phase('ready');
+ await expect.poll(async()=>(await entry(r.id)).status,{timeout:15000}).toBe('blocked');expect(tmux('capture-pane','-p','-t',pane)).not.toContain(r.text);
+ phase('working');const other=await enqueue('CC_OUTBOX_WRONG_ENDPOINT');const settings=await(await fetch(base+'/api/v1/settings/hosts')).json();const alias=join(dir,'alias.sock');symlinkSync(socket,alias);
+ const changed=await fetch(base+'/api/v1/hosts/local',{method:'PUT',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({revision:settings.revision,host:{name:'Same physical server, new endpoint',socket:alias,ssh:null,ssh_config:null}})});expect(changed.status).toBe(200);phase('ready');
+ await expect.poll(async()=>(await entry(other.id)).status,{timeout:15000}).toBe('blocked');expect(tmux('capture-pane','-p','-t',pane)).not.toContain(other.text);
+});
+
+test('phone outbox preserves pending text across reload, second clients and native confirmation',async({page,browser})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setViewportSize({width:393,height:844});await page.goto(base+'/#/queue');await page.locator('.queue-card').click();const composer=page.getByRole('textbox',{name:'Message to agent',exact:true});
+ await composer.fill('CC_OUTBOX_PHONE_MESSAGE');await composer.press('Enter');await expect(composer).toHaveValue('');
+ const pending=page.locator('.agent-history .agent-outbox-message').filter({hasText:'CC_OUTBOX_PHONE_MESSAGE'});await expect(pending).toContainText('Queued in CC');await expect(pending.locator('.outbox-spinner')).toBeVisible();await expect(pending.locator('.outbox-actions')).toHaveCount(0);expect((await pending.boundingBox())!.height).toBeLessThan(130);await expect(page.locator('.agent-history-empty')).toBeHidden();
+ await page.reload();await page.locator('.queue-card').click();await expect(page.locator('.agent-history .agent-outbox-message').filter({hasText:'CC_OUTBOX_PHONE_MESSAGE'})).toContainText('Queued in CC');
+ const other=await browser.newPage();await other.goto(base+'/#/queue');await expect(other.locator('.agent-history .agent-outbox-message').filter({hasText:'CC_OUTBOX_PHONE_MESSAGE'})).toContainText('Queued in CC');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:'../test-results/agent-outbox-phone.png'});
+ phase('ready');await expect(pending).toContainText('Submitted to terminal',{timeout:15000});
+ const stale={entries:await entries()};await page.route('**/api/v1/agents/outbox',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(stale)}));
+ await page.evaluate(()=>{const count=()=>[...document.querySelectorAll('.agent-history article.agent-message.user')].filter(n=>n.textContent?.includes('CC_OUTBOX_PHONE_MESSAGE')).length;(window as any).outboxMaxCopies=count();new MutationObserver(()=>{(window as any).outboxMaxCopies=Math.max((window as any).outboxMaxCopies,count());}).observe(document.querySelector('.agent-history')!,{childList:true,subtree:true});});
+ user('CC_OUTBOX_PHONE_MESSAGE');
+ await expect(page.locator('.agent-history .agent-outbox-message').filter({hasText:'CC_OUTBOX_PHONE_MESSAGE'})).toHaveCount(0,{timeout:20000});
+ const native=page.locator('.agent-message.user[data-message-id]').filter({hasText:'CC_OUTBOX_PHONE_MESSAGE'});await expect(native).toHaveCount(1);await expect(native).toContainText('Seen in conversation');expect(await page.evaluate(()=>(window as any).outboxMaxCopies)).toBe(1);await expect(native.locator('.outbox-spinner')).toHaveCount(0);await page.unroute('**/api/v1/agents/outbox');expect(errors).toEqual([]);await other.close();
+});
+
+test('lost enqueue responses reconcile by ID without resending or losing the message',async({page})=>{
+ await page.goto(base+'/#/queue');let posts=0;
+ await page.route('**/agents/message',async route=>{posts++;await route.fetch();await route.abort('connectionfailed');});
+ const composer=page.getByRole('textbox',{name:'Message to agent',exact:true});await composer.fill('CC_OUTBOX_LOST_RESPONSE');await composer.press('Enter');
+ await expect(page.locator('.agent-history .agent-outbox-message').filter({hasText:'CC_OUTBOX_LOST_RESPONSE'})).toContainText('Queued in CC',{timeout:15000});
+ await expect(composer).toHaveValue('');expect(posts).toBe(1);expect((await entries()).filter(r=>r.text==='CC_OUTBOX_LOST_RESPONSE')).toHaveLength(1);
+ await page.reload();await expect(page.locator('.agent-history .agent-outbox-message').filter({hasText:'CC_OUTBOX_LOST_RESPONSE'})).toContainText('Queued in CC');expect(posts).toBe(1);
+ expect(tmux('capture-pane','-p','-t',pane)).not.toContain('CC_OUTBOX_LOST_RESPONSE');
+});
+
+test('plain HTTP browsers without crypto.randomUUID can enqueue exactly once',async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(globalThis.crypto,'randomUUID',{value:undefined,configurable:true}));
+ await page.goto(base+'/#/queue');const composer=page.getByRole('textbox',{name:'Message to agent',exact:true});
+ await composer.fill('CC_OUTBOX_HTTP_FALLBACK');await composer.press('Enter');await expect(composer).toHaveValue('');
+ await expect(page.locator('.agent-history .agent-outbox-message').filter({hasText:'CC_OUTBOX_HTTP_FALLBACK'})).toContainText('Queued in CC');
+ const stored=(await entries()).filter(r=>r.text==='CC_OUTBOX_HTTP_FALLBACK');expect(stored).toHaveLength(1);
+ expect(stored[0].id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+ expect(tmux('capture-pane','-p','-t',pane)).not.toContain('CC_OUTBOX_HTTP_FALLBACK');
+});
+
+test('message ID generation failures keep drafts and never claim delivery uncertainty',async({page})=>{
+ await page.addInitScript(()=>{
+  Object.defineProperty(globalThis.crypto,'randomUUID',{value:undefined,configurable:true});
+  Object.defineProperty(globalThis.crypto,'getRandomValues',{value:()=>{throw Error('Fixture RNG unavailable');},configurable:true});
+ });
+ let requests=0;page.on('request',request=>{if(request.url().endsWith('/agents/message'))requests++;});
+ await page.goto(base+'/#/queue');const composer=page.getByRole('textbox',{name:'Message to agent',exact:true});
+ await composer.fill('CC_OUTBOX_NOT_SENT');await composer.press('Enter');
+ await expect(page.locator('.agent-composer')).toContainText('Your draft was kept');await expect(composer).toHaveValue('CC_OUTBOX_NOT_SENT');
+ await expect(page.getByRole('button',{name:'I’ve checked delivery',exact:true})).toBeHidden();
+ expect(requests).toBe(0);expect(await entries()).toHaveLength(0);
+});
+
+
+test('confirmed old receipts never reappear when native messages leave the loaded history page',async({page})=>{
+ phase('ready');const receipt=await enqueue('CC_CONFIRMED_OLD_MESSAGE');
+ await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('submitted');user('CC_CONFIRMED_OLD_MESSAGE');
+ await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('seen');
+ for(let i=0;i<140;i++)append({type:'response_item',timestamp:new Date().toISOString(),payload:{type:'message',role:'assistant',content:[{type:'output_text',text:`Later fixture reply ${i}`}]}});
+ await page.setViewportSize({width:393,height:844});await page.goto(base+'/#/queue');await page.locator('.queue-card').click();
+ await expect(page.locator('.agent-history')).toContainText('Later fixture reply 139');
+ await expect(page.locator('.agent-history .agent-outbox-message')).toHaveCount(0);await expect(page.locator('.agent-history')).not.toContainText('CC_CONFIRMED_OLD_MESSAGE');
+ await page.reload();await page.locator('.queue-card').click();await expect(page.locator('.agent-history')).toContainText('Later fixture reply 139');await expect(page.locator('.agent-history .agent-outbox-message')).toHaveCount(0);
+ await page.getByRole('button',{name:'Details',exact:true}).click();await page.locator('.queue-agent-metadata').getByRole('button',{name:'Outbox',exact:true}).click();
+ const row=page.getByRole('dialog',{name:'Agent outbox'}).locator('.agent-outbox-message').filter({hasText:'CC_CONFIRMED_OLD_MESSAGE'});await expect(row).toContainText('Seen in conversation');await expect(row.locator('.outbox-spinner')).toHaveCount(0);
+});

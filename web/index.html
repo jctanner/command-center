@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#10151b"><meta name="application-name" content="Command Center"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="CC"><meta name="apple-mobile-web-app-status-bar-style" content="default"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png"><link rel="icon" type="image/svg+xml" href="/icons/command-center.svg"><title>Command Center</title></head>
+<body><div id="app">
+<header><div class="brand"><span class="brand-mark">⌘</span> COMMAND CENTER <nav id="workspace-nav" aria-label="Workspaces"><button id="show-queue" aria-pressed="false">Agents <span id="queue-count">0</span></button><button id="show-terminal" aria-pressed="true">Tmux</button><button id="toggle-files" aria-pressed="false">Files</button><button id="show-slack" aria-pressed="false">Slack</button><button id="show-board" aria-pressed="false">Board</button><button id="show-email" aria-pressed="false">Email</button><button id="show-jira" aria-pressed="false">Jira</button></nav></div><div class="header-actions"><button id="reload-app" type="button" aria-label="Reload app" title="Reload app">↻</button><button id="manage-machines" aria-label="Machines" aria-haspopup="dialog">Machines</button><span id="connection" role="status">Starting</span></div></header>
+<nav id="machines" aria-label="Machines"></nav>
+<div class="workspace-bar"><label>SESSION <select id="sessions" aria-label="Session"></select></label><button id="new-session" title="Create a tmux session">+ New session</button><nav id="windows" aria-label="Windows"></nav><button id="ticket-from-terminal" disabled title="Create a ticket with this tmux window context">+ Ticket</button><button id="terminal-files" aria-label="Window files" aria-pressed="false" disabled title="Browse files for the active tmux pane">Files</button><button id="new-window" disabled title="Create a window in this session">+ Window</button><button id="reconnect" title="Reconnect terminal">Reconnect</button></div>
+<main id="workspace"><section id="board-pane" hidden aria-label="Ticket board"></section><section id="email-pane" hidden aria-label="Email workspace"></section><section id="jira-pane" hidden aria-label="Jira workspace"></section><section id="slack-pane" hidden aria-label="Slack workspace"></section><section id="queue-pane" hidden aria-label="AI Queue"></section><section id="files-pane" hidden aria-label="Project files"></section><section id="terminal-pane"><div id="empty" role="status"></div><div id="terminal" aria-label="Interactive tmux terminal"></div></section></main>
+<div id="notice" role="alert" hidden></div>
+<footer><div id="panes" aria-label="Pane controls"></div><span class="hint">Shift-drag selects · Ctrl+Shift+C/V copy/paste · Right-click for pane actions</span></footer>
+<div id="context-menu" role="menu" hidden></div>
+</div>
+<dialog id="reload-app-dialog" aria-labelledby="reload-app-title" aria-describedby="reload-app-description">
+  <h2 id="reload-app-title">Reload app?</h2>
+  <p id="reload-app-description">Reload to get the latest version of Command Center. Unsaved edits and unsent drafts in any workspace may be lost. Your tmux sessions and messages already queued on the server will keep running.</p>
+  <div class="reload-app-actions"><button id="cancel-app-reload" type="button" autofocus>Cancel</button><button id="confirm-app-reload" type="button" class="primary">Reload now</button></div>
+</dialog>
+<dialog id="machine-dialog" aria-labelledby="machine-title">
+  <div class="dialog-heading"><div><h1 id="machine-title">Machines</h1><p>Local terminals and SSH hosts, in one place.</p></div><button id="close-machines" aria-label="Close machine settings">✕</button></div>
+  <div class="machine-settings">
+    <aside><button id="add-machine" class="primary">+ Add machine</button><nav id="machine-list" aria-label="Configured machines"></nav></aside>
+    <form id="machine-form">
+      <fieldset id="machine-fields">
+        <label>Display name<input id="machine-name" name="name" required maxlength="120" autocomplete="off" placeholder="e.g. devbox"></label>
+        <label>Connection<select id="machine-kind"><option value="local">Local</option><option value="ssh">SSH</option></select></label>
+        <label id="ssh-destination-label">SSH destination<input id="machine-ssh" name="ssh" maxlength="255" autocomplete="off" placeholder="user@hostname or SSH alias"></label>
+        <label id="ssh-jump-label">Jump host (optional)<input id="machine-ssh-jump" maxlength="255" autocomplete="off" list="ssh-jump-options" placeholder="e.g. user@100.64.0.20"><datalist id="ssh-jump-options"></datalist></label>
+        <details><summary>Advanced settings</summary>
+          <label>tmux socket path<input id="machine-socket" name="socket" maxlength="4096" autocomplete="off" placeholder="Default socket"></label>
+          <label id="ssh-config-label">SSH config file<input id="machine-ssh-config" name="ssh_config" maxlength="4096" autocomplete="off" placeholder="Default OpenSSH configuration"></label>
+        </details>
+      </fieldset>
+      <p id="machine-feedback" role="status" aria-live="polite"></p>
+      <button id="reload-machines" type="button" hidden>Reload machine list</button>
+      <div class="machine-actions"><button id="test-machine" type="button">Test connection</button><button id="save-machine" type="submit" class="primary">Save machine</button></div>
+      <div class="remove-section"><button id="remove-machine" type="button" class="danger">Remove machine</button>
+        <div id="remove-confirm" hidden><p>Remove this machine from Command Center? Its tmux sessions will keep running.</p><button id="confirm-remove" type="button" class="danger">Remove machine</button><button id="cancel-remove" type="button">Keep machine</button></div>
+      </div>
+    </form>
+  </div>
+</dialog>
+<script type="module" src="/src/main.ts"></script></body></html>

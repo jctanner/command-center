@@ -1,0 +1,25 @@
+import ts from '../web/node_modules/typescript/lib/typescript.js';
+import {readFileSync, existsSync} from 'node:fs';
+import {join} from 'node:path';
+import assert from 'node:assert/strict';
+const code=ts.transpileModule(readFileSync(new URL('../integrations/pi/command-center.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const bridge=(await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'))).default;
+const events=new Map();bridge({on:(name,fn)=>events.set(name,fn)});
+const file=join(process.env.PI_CODING_AGENT_DIR,'command-center-status',`${process.pid}.json`);
+let session='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',leaf='one';
+const ctx={cwd:process.cwd(),isIdle:()=>true,hasPendingMessages:()=>false,sessionManager:{getSessionId:()=>session,getSessionFile:()=>join(process.cwd(),'fixture.jsonl'),getLeafId:()=>leaf}};
+const fire=name=>events.get(name)?.({},ctx);
+const record=()=>JSON.parse(readFileSync(file,'utf8'));
+assert(!existsSync(file)); // Factory has no session-scoped side effects.
+fire('session_start');assert.equal(record().state,'ready');assert.equal(record().pid,process.pid);
+fire('before_agent_start');const working=record();assert.equal(working.state,'working');
+fire('agent_end');assert.equal(record().state,'working');
+leaf='other-branch';await new Promise(r=>setTimeout(r,5100));assert.equal(record().leaf_id,leaf);assert.equal(record().transition,working.transition);assert(record().updated_at>working.updated_at);
+fire('ui_prompt_start');fire('ui_prompt_start');assert.equal(record().state,'waiting');
+fire('ui_prompt_end');assert.equal(record().state,'waiting');
+fire('ui_prompt_end');assert.equal(record().state,'working');
+fire('agent_settled');assert.equal(record().state,'ready');assert.notEqual(record().transition,working.transition);
+assert.deepEqual(Object.keys(record()).sort(),['schema','pid','proc_start','boot_id','cwd','tmux_pane','session_id','session_file','leaf_id','state','transition','updated_at'].sort());
+fire('session_shutdown');assert(!existsSync(file));
+session='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';fire('session_start');assert.equal(record().session_id,session);fire('session_shutdown');
+console.log('Pi lifecycle, heartbeat, nested dialogs, branch and session replacement checks passed');

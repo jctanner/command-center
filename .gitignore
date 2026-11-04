@@ -1,0 +1,28 @@
+/target/
+/web/node_modules/
+/web/dist/
+/config.toml
+/test-results/
+/checkouts/
+/web/dist-next/
+
+__pycache__/
+
+/*.attention.json
+
+/*.approvals.json
+
+/web/dist-working/
+
+/*.board.sqlite3
+/*.board.sqlite3-wal
+/*.board.sqlite3-shm
+
+# Private integration settings, message receipts and runtime state.
+/config.*.json
+
+# Local environment files and logs.
+.env
+.env.*
+!.env.example
+*.log
