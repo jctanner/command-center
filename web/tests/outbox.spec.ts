@@ -156,3 +156,45 @@ test('confirmed old receipts never reappear when native messages leave the loade
  await page.getByRole('button',{name:'Details',exact:true}).click();await page.locator('.queue-agent-metadata').getByRole('button',{name:'Outbox',exact:true}).click();
  const row=page.getByRole('dialog',{name:'Agent outbox'}).locator('.agent-outbox-message').filter({hasText:'CC_CONFIRMED_OLD_MESSAGE'});await expect(row).toContainText('Seen in conversation');await expect(row.locator('.outbox-spinner')).toHaveCount(0);
 });
+
+async function bulkPreview(action:string){const response=await fetch(base+'/api/v1/agents/outbox/bulk?action='+action);expect(response.status).toBe(200);return response.json();}
+async function bulkApply(preview:any){return post('/api/v1/agents/outbox/bulk',{action:preview.action,expected:preview.expected});}
+function fixtureSql(script:string){return run('python3',['-c',script,config+'.board.sqlite3']);}
+
+test('bulk cancellation rejects a changed set atomically, persists and retains UUID idempotency after archive',async()=>{
+ const first=await enqueue('CC_BULK_FIRST'),second=await enqueue('CC_BULK_SECOND');await expect.poll(async()=>(await entry(first.id)).note).toContain('current turn');
+ const stale=await bulkPreview('cancel');expect(stale.count).toBe(2);const third=await enqueue('CC_BULK_THIRD');expect((await bulkApply(stale)).status).toBe(409);
+ for(const receipt of [first,second,third])expect((await entry(receipt.id)).status).toBe('queued');
+ const before=tmux('capture-pane','-p','-t',pane);const fresh=await bulkPreview('cancel');const response=await bulkApply(fresh);expect(response.status).toBe(200);expect((await response.json()).count).toBe(3);
+ for(const receipt of [first,second,third])expect((await entry(receipt.id)).status).toBe('cancelled');await stop();await start();expect((await entry(first.id)).status).toBe('cancelled');
+ const archive=await bulkPreview('archive');expect(archive.count).toBe(3);expect((await bulkApply(archive)).status).toBe(200);expect((await entries()).length).toBe(0);expect((await bulkApply(archive)).status).toBe(409);
+ const duplicate=await post('/api/v1/hosts/local/agents/message',{id:first.id,token:first.originalToken,text:first.text});expect(duplicate.status).toBe(200);expect((await duplicate.json()).outbox.status).toBe('archived');expect(tmux('capture-pane','-p','-t',pane)).toBe(before);
+});
+
+test('bulk archive includes old receipts across machines beyond the recent page and rolls back storage failures',async()=>{
+ const receipt=await enqueue('CC_BULK_OLD');expect((await action(receipt.id,'cancel')).status).toBe(200);
+ fixtureSql(`import sqlite3,json,sys,uuid\nc=sqlite3.connect(sys.argv[1]);record=json.loads(c.execute('SELECT data FROM agent_outbox LIMIT 1').fetchone()[0])\nfor i in range(140):\n r=dict(record,id=str(uuid.uuid4()),host='fixture-other-machine',scope='fixture-history',status='seen',text='Old fixture receipt '+str(i),revision=1)\n c.execute('INSERT INTO agent_outbox(id,scope,phase,revision,data) VALUES(?,?,?,?,?)',(r['id'],r['scope'],r['status'],r['revision'],json.dumps(r)))\nc.commit()`);
+ expect((await entries()).length).toBe(100);const preview=await bulkPreview('archive');expect(preview.count).toBe(141);
+ fixtureSql(`import sqlite3,sys\nc=sqlite3.connect(sys.argv[1]);c.execute("CREATE TRIGGER fail_bulk BEFORE UPDATE ON agent_outbox WHEN OLD.seq=2 BEGIN SELECT RAISE(ABORT,'fixture storage failure'); END");c.commit()`);
+ expect((await bulkApply(preview)).status).toBe(500);expect((await bulkPreview('archive')).count).toBe(141);
+ fixtureSql(`import sqlite3,sys\nc=sqlite3.connect(sys.argv[1]);c.execute('DROP TRIGGER fail_bulk');c.commit()`);
+ const before=tmux('capture-pane','-p','-t',pane);const applied=await bulkApply(preview);expect(applied.status).toBe(200);expect((await applied.json()).count).toBe(141);expect((await entries()).length).toBe(0);expect(tmux('capture-pane','-p','-t',pane)).toBe(before);
+ expect(fixtureSql(`import sqlite3,json,sys\nc=sqlite3.connect(sys.argv[1]);rows=[json.loads(r[0]) for r in c.execute('SELECT data FROM agent_outbox')];assert len(rows)==141;assert all(r['status']=='archived' and r['text']=='' and r['digest'] for r in rows);print('verified')`)).toBe('verified');
+});
+
+test('mobile bulk controls require confirmation and preserve browser-only receipts',async({page})=>{
+ const first=await enqueue('CC_BULK_PHONE_ONE');await enqueue('CC_BULK_PHONE_TWO');await expect.poll(async()=>(await entry(first.id)).note).toContain('current turn');
+ await page.addInitScript(()=>localStorage.setItem('cc-agent-outbox-pending-v1',JSON.stringify([{id:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',host:'local',session:'$0',window:'@0',pane:'%12345',instance:'0'.repeat(64),text:'BROWSER_ONLY_RECEIPT',status:'uncertain',note:'Fixture browser-only uncertainty',revision:0,created_at:Date.now(),updated_at:Date.now()}])));
+ await page.setViewportSize({width:393,height:852});await page.goto(base+'/#/queue');await page.locator('.queue-card').click();await page.getByRole('button',{name:'Details',exact:true}).click();await page.locator('.queue-agent-metadata').getByRole('button',{name:'Outbox',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Agent outbox',exact:true});
+ let posts=0;page.on('request',r=>{if(r.url().endsWith('/outbox/bulk')&&r.method()==='POST')posts++;});
+ page.once('dialog',async d=>{expect(d.message()).toContain('all 2');expect(d.message()).toContain('browser-only');await d.dismiss();});await dialog.getByRole('button',{name:'Cancel all queued',exact:true}).click();await expect(dialog).toContainText('Nothing was changed');expect(posts).toBe(0);
+ const before=tmux('capture-pane','-p','-t',pane);page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Cancel all queued',exact:true}).click();await expect(dialog).toContainText('Cancelled 2 messages');
+ page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Archive all receipts',exact:true}).click();await expect(dialog).toContainText('Archived 2 receipts');await expect(dialog).toContainText('BROWSER_ONLY_RECEIPT');expect(posts).toBe(2);expect(tmux('capture-pane','-p','-t',pane)).toBe(before);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:'../test-results/outbox-bulk-phone.png'});
+});
+
+test('bulk archive discloses uncertainty and a lost apply response is never retried',async({page})=>{
+ writeFileSync(join(dir,'fail-enter'),'fail');const receipt=await enqueue('CC_BULK_UNCERTAIN');phase('ready');await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('uncertain');const preview=await bulkPreview('cancel');expect(preview.count).toBe(0);expect(preview.skipped).toBe(1);
+ await page.setViewportSize({width:393,height:852});await page.goto(base+'/#/queue');await page.locator('.queue-card').click();await page.getByRole('button',{name:'Details',exact:true}).click();await page.locator('.queue-agent-metadata').getByRole('button',{name:'Outbox',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Agent outbox'});
+ let posts=0;await page.route('**/outbox/bulk',async route=>{posts++;await route.fetch();await route.abort('connectionfailed');});page.once('dialog',async d=>{expect(d.message()).toContain('1 uncertain');expect(d.message()).toContain('may proceed');await d.accept();});
+ const before=tmux('capture-pane','-p','-t',pane);await dialog.getByRole('button',{name:'Archive all receipts',exact:true}).click();await expect(dialog).toContainText('will not be retried automatically');expect(posts).toBe(1);await dialog.getByRole('button',{name:'Refresh outbox',exact:true}).click();await expect(dialog.locator('.agent-outbox-message')).toHaveCount(0);expect(posts).toBe(1);expect(tmux('capture-pane','-p','-t',pane)).toBe(before);
+});

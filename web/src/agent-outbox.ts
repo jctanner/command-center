@@ -24,6 +24,7 @@ export class AgentOutbox {
  private notice=element('p');
  private dialog=element('dialog');
  private content=element('div');
+ private bulkBusy=false;private bulkFeedback='';private cancelAll=element('button','Cancel all queued');private archiveAll=element('button','Archive all receipts');
  constructor(private changed:()=>void,private receipt:(entry:OutboxEntry)=>void=()=>{}){
   try{
    const raw=localStorage.getItem(key);if(raw&&raw.length>300000)throw Error('Pending message storage is too large');
@@ -34,8 +35,10 @@ export class AgentOutbox {
   this.dialog.className='agent-outbox-dialog';this.dialog.setAttribute('aria-label','Agent outbox');
   const close=element('button','Close outbox');close.onclick=()=>this.dialog.close();
   const refresh=element('button','Refresh outbox');refresh.onclick=()=>{void this.refresh();};
+  this.cancelAll.type=this.archiveAll.type='button';this.cancelAll.onclick=()=>{void this.bulk('cancel');};this.archiveAll.onclick=()=>{void this.bulk('archive');};
+  const bulk=element('div');bulk.className='outbox-bulk-actions';bulk.append(this.cancelAll,this.archiveAll);
   this.notice.setAttribute('role','status');this.content.className='agent-outbox-list';
-  this.dialog.append(element('h2','Agent outbox'),element('p','Messages stay here until their delivery is resolved. Submitted input is never retried automatically.'),close,refresh,this.notice,this.content);
+  this.dialog.append(element('h2','Agent outbox'),element('p','Messages stay here until their delivery is resolved. Submitted input is never retried automatically.'),close,refresh,bulk,this.notice,this.content);
   document.body.append(this.dialog);
  }
  entries(){const ids=new Set(this.server.map(r=>r.id));return [...this.server,...this.local.filter(r=>!ids.has(r.id))].sort((a,b)=>a.created_at-b.created_at);}
@@ -88,7 +91,13 @@ export class AgentOutbox {
  }
  open(){this.renderDialog();this.dialog.showModal();void this.refresh();}
  button(){const button=element('button','Outbox');button.type='button';button.className='queue-outbox-button';button.onclick=()=>this.open();return button;}
- ingest(entries:OutboxEntry[]){for(const entry of entries)this.accept(entry);}
+ ingest(entries:OutboxEntry[]){
+  const known=new Map(this.server.map(e=>[e.id,e]));
+  for(const entry of entries){const old=known.get(entry.id);if(!old||old.revision<=entry.revision){known.set(entry.id,entry);this.receipt(entry);}}
+  this.server=[...known.values()];const ids=new Set(entries.map(e=>e.id));this.local=this.local.filter(e=>!ids.has(e.id));
+  try{this.persist();}catch{this.notice.textContent='CC saved the receipts, but local cleanup failed. Refresh to reconcile; no input will be resent.';}
+  this.update();
+ }
  private matches(r:OutboxEntry,target:OutboxTarget){return r.host===target.host&&r.session===target.session&&r.window===target.window&&r.pane===target.pane&&r.instance===target.instance&&r.conversation===target.conversation;}
  inline(target:OutboxTarget){
   return this.entries().filter(r=>r.host===target.host&&r.session===target.session&&r.window===target.window&&r.pane===target.pane&&r.status!=='archived'&&r.status!=='seen').map(r=>this.row(r,false,r.instance!==target.instance));
@@ -96,6 +105,8 @@ export class AgentOutbox {
  seen(target:OutboxTarget,messageId:string){return this.entries().some(r=>this.matches(r,target)&&r.status==='seen'&&String(r.seen_message)===messageId);}
  private renderDialog(){
   const entries=this.entries().filter(e=>e.status!=='archived').reverse();
+  this.cancelAll.disabled=this.archiveAll.disabled=this.bulkBusy||this.activeActions.size>0;
+  if(this.bulkFeedback)this.notice.textContent=this.bulkFeedback;
   this.content.replaceChildren(...entries.map(r=>this.row(r,true,false)));
   if(!entries.length)this.content.append(element('p','No outbox messages.'));
   if(this.storageError)this.notice.textContent=this.storageError;
@@ -118,7 +129,7 @@ export class AgentOutbox {
   if(global)row.append(element('small',`${r.host} · ${r.session}:${r.window}.${r.pane} · ${new Date(r.created_at).toLocaleString()}`));
   const text=element('div',r.text);text.className='outbox-text';row.append(text,element('p',r.note));
   const actions=element('div');actions.className='outbox-actions';
-  const act=(label:string,action:string)=>{const button=element('button',label);button.type='button';button.disabled=this.activeActions.has(r.id);button.onclick=()=>{void this.act(r,action,button);};actions.append(button);};
+  const act=(label:string,action:string)=>{const button=element('button',label);button.type='button';button.disabled=this.bulkBusy||this.activeActions.has(r.id);button.onclick=()=>{void this.act(r,action,button);};actions.append(button);};
   if(!r.local){
    if(r.status==='queued'||r.status==='blocked'){act('Cancel message','cancel');if(!replaced)act('Submit now','submit');}
    if(r.status==='submitted'||r.status==='uncertain')act('Check delivery','check');
@@ -129,10 +140,28 @@ export class AgentOutbox {
   if(r.text){const copy=element('button','Copy message');copy.type='button';copy.onclick=()=>{void navigator.clipboard.writeText(r.text).catch(()=>{const selection=getSelection();const range=document.createRange();range.selectNodeContents(text);selection?.removeAllRanges();selection?.addRange(range);});};actions.append(copy);}
   row.append(actions);const error=this.actionErrors.get(r.id);if(error){const note=element('p',error);note.setAttribute('role','status');row.append(note);}return row;
  }
+ private async bulk(action:'cancel'|'archive'){
+  if(this.bulkBusy||this.activeActions.size)return;
+  this.bulkBusy=true;this.bulkFeedback='Checking all stored receipts…';this.update();
+  try{
+   const response=await fetch(`/api/v1/agents/outbox/bulk?action=${action}`,{cache:'no-store',signal:AbortSignal.timeout(10000)});const preview=await response.json();
+   if(!response.ok)throw Error(preview.error||'Could not inspect all receipts');
+   if(!preview.count){this.bulkFeedback='No eligible messages or receipts.';return;}
+   const local=this.local.length?` ${this.local.length} browser-only receipt(s) will be kept for individual review.`:'';
+   const warning=action==='cancel'?`Cancel all ${preview.count} queued/blocked messages across ALL machines? Already submitting, submitted or uncertain input cannot be cancelled.`:`Archive all ${preview.count} eligible receipts across ALL machines and remove their stored message text? This includes ${preview.submitted} submitted and ${preview.uncertain} uncertain receipt(s). Archiving does not undo terminal input. Queued messages behind these receipts may proceed.`;
+   if(!confirm(`${warning} ${preview.skipped} ineligible record(s) will be left unchanged.${local}`)){this.bulkFeedback='Bulk action cancelled. Nothing was changed.';return;}
+   this.bulkFeedback='Applying the reviewed batch…';this.update();
+   const applied=await fetch('/api/v1/agents/outbox/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,expected:preview.expected}),signal:AbortSignal.timeout(15000)});const data=await applied.json();
+   if(!applied.ok)throw Error(data.error||'Bulk action failed');
+   this.bulkFeedback=`${action==='cancel'?'Cancelled':'Archived'} ${data.count} ${action==='cancel'?'messages':'receipts'}.`;
+   if(Array.isArray(data.entries))this.ingest(data.entries);
+  }catch(error){this.bulkFeedback=`${String(error)} Refresh the outbox before taking another action; this batch will not be retried automatically.`;}
+  finally{this.bulkBusy=false;this.update();}
+ }
  private async act(r:OutboxEntry,action:string,button:HTMLButtonElement){
   if(action==='submit'&&!confirm('Submit this message to the terminal now? The CLI may queue or ignore input while busy. CC will keep the receipt; it will not retry uncertain input.'))return;
   if(action==='archive'&&!confirm('Archive this receipt and remove its text from CC? This does not undo terminal input. Any queued messages behind it may proceed.'))return;
-  if(this.activeActions.has(r.id))return;
+  if(this.bulkBusy||this.activeActions.has(r.id))return;
   this.activeActions.add(r.id);this.actionErrors.delete(r.id);button.disabled=true;
   try{
    let token:string|undefined;

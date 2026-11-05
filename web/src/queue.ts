@@ -265,8 +265,17 @@ export class AttentionQueue {
       const b = node('button'); b.className = item.id === this.selected ? 'queue-card selected' : 'queue-card'; b.setAttribute('aria-pressed', String(item.id === this.selected)); b.classList.toggle('needs-attention', needsAttention(item));
       b.oncontextmenu=event=>{event.preventDefault();this.openCardActions(h,item,event.clientX,event.clientY);};b.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();const rect=b.getBoundingClientRect();this.openCardActions(h,item,rect.left,rect.bottom);}};b.title='Right-click or Shift+F10 for agent actions';
       const folder = node('span', compactClient() ? projectName(item.project) : item.project); folder.title = item.project; folder.hidden = compactClient() && agentTitle(item) === projectName(item.project);
-      b.append(node('small', `${h.name} / ${item.agent}`), stateBadge(item.activity, stateOf(item)), node('strong', item.card?.name || (waiting(item) ? item.prompt : agentTitle(item))), folder, node('small', `${item.session_name} / ${item.window_name} / ${item.pane}`));
-      if(item.card?.notes){const note=node('span',item.card.notes);note.className='agent-card-note-preview';b.append(note);}if(item.card?.name&&waiting(item)){const prompt=node('span',item.prompt);prompt.className='agent-card-note-preview';b.append(prompt);}
+      folder.className='queue-card-path';
+      const machine=node('small',`${h.name} / ${item.agent}`);machine.className='queue-card-machine';
+      const name=node('strong',item.card?.name||(waiting(item)?item.prompt:agentTitle(item)));name.className='queue-card-name';name.title=name.textContent||'';
+      const context=node('small');context.className='queue-card-context';context.title=`${h.name} · ${item.agent} · ${item.project} · ${item.session_name} / ${item.window_name} / ${item.pane}`;
+      const attention=[item.attention?.finished?'Finished':'',item.attention?.new_approval?(item.activity?.source==='pi_bridge'?'New input request':'New approval'):'',item.attention?.unread_reply?'Unread reply':''].filter(Boolean);
+      if(attention.length){const dot=node('span');dot.className='queue-card-unread';dot.setAttribute('role','img');dot.setAttribute('aria-label',attention.join(' · '));dot.title=attention.join(' · ');context.append(dot);}
+      context.append(document.createTextNode(`${h.name} · ${item.agent} · ${projectName(item.project)}`));
+      b.title=`${name.textContent}\n${context.title}\nRight-click or Shift+F10 for agent actions`;
+      b.append(machine,stateBadge(item.activity,stateOf(item)),name,folder,context,node('small',`${item.session_name} / ${item.window_name} / ${item.pane}`));
+      b.dataset.hasPrompt=String(!!item.card?.name&&waiting(item));
+      if(item.card?.notes){const note=node('span',item.card.notes);note.className='agent-card-note-preview queue-card-note';note.title=item.card.notes;b.append(note);}if(item.card?.name&&waiting(item)){const prompt=node('span',item.prompt);prompt.className='agent-card-note-preview queue-card-prompt';prompt.title=item.prompt;b.append(prompt);}
       const flags = node('span'); flags.className = 'attention-flags';
       if (item.attention?.finished) flags.append(node('span', 'Finished'));
       if (item.attention?.new_approval) flags.append(node('span', item.activity?.source === 'pi_bridge' ? 'New input request' : 'New approval'));

@@ -140,6 +140,10 @@ fn public(r: &Record) -> Value {
 pub(crate) fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/agents/outbox", get(list))
+        .route(
+            "/api/v1/agents/outbox/bulk",
+            get(bulk_preview).post(bulk_apply),
+        )
         .route("/api/v1/agents/outbox/{id}", post(action))
 }
 async fn list(
@@ -162,6 +166,82 @@ async fn list(
         [("Cache-Control", "private, no-store")],
         Json(json!({"entries":view})),
     ))
+}
+fn bulk_eligible(r: &Record, action: &str) -> bool {
+    match action {
+        "cancel" => matches!(r.status.as_str(), "queued" | "blocked"),
+        "archive" => !matches!(r.status.as_str(), "queued" | "submitting" | "archived"),
+        _ => false,
+    }
+}
+fn bulk_snapshot(entries: &[Record], action: &str) -> Result<Value, ApiError> {
+    if !matches!(action, "cancel" | "archive") {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "Choose cancel or archive".into(),
+        ));
+    }
+    let selected: Vec<_> = entries
+        .iter()
+        .filter(|r| bulk_eligible(r, action))
+        .collect();
+    let identities: Vec<_> = selected.iter().map(|r| (&r.id, r.revision)).collect();
+    let expected = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&(action, identities)).unwrap())
+    );
+    Ok(
+        json!({"action":action,"expected":expected,"count":selected.len(),
+        "uncertain":selected.iter().filter(|r|r.status=="uncertain").count(),
+        "submitted":selected.iter().filter(|r|r.status=="submitted").count(),
+        "skipped":entries.iter().filter(|r|r.status!="archived"&&!bulk_eligible(r,action)).count()}),
+    )
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BulkPreview {
+    action: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BulkApply {
+    action: String,
+    expected: String,
+}
+async fn bulk_preview(
+    State(s): State<Arc<AppState>>,
+    axum::extract::Query(body): axum::extract::Query<BulkPreview>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(
+        s.board
+            .with(move |c| bulk_snapshot(&records(c, None)?, &body.action))
+            .await?,
+    ))
+}
+async fn bulk_apply(
+    State(s): State<Arc<AppState>>,
+    Json(body): Json<BulkApply>,
+) -> Result<Json<Value>, ApiError> {
+    let value = s.board.with(move |c| {
+        let tx=c.transaction().map_err(storage)?;
+        let entries=records(&tx,None)?;
+        let snapshot=bulk_snapshot(&entries,&body.action)?;
+        if snapshot["expected"].as_str()!=Some(body.expected.as_str()) {
+            return Err(conflict("Outbox changed. Nothing was changed by this batch; refresh and review the counts again."));
+        }
+        let mut changed=Vec::new();
+        for mut r in entries.into_iter().filter(|r|bulk_eligible(r,&body.action)) {
+            let revision=r.revision;r.revision+=1;r.updated_at=now();
+            if body.action=="cancel" {r.status="cancelled".into();r.note="Cancelled in CC before terminal submission by bulk action.".into();}
+            else {r.status="archived".into();r.text.clear();r.note="Archived by user in bulk; this does not undo or retry terminal input.".into();}
+            if !write(&tx,&r,revision)? {return Err(conflict("Outbox changed; the entire batch was rolled back."));}
+            changed.push(public(&r));
+        }
+        tx.commit().map_err(storage)?;
+        Ok(json!({"action":body.action,"count":changed.len(),"entries":changed}))
+    }).await?;
+    s.outbox.wake.notify_one();
+    Ok(Json(value))
 }
 async fn lookup(s: &AppState, id: String) -> Result<Option<Record>, ApiError> {
     s.board.with(move |c| stored(c, &id)).await
@@ -757,6 +837,45 @@ mod tests {
             }),
             seen_message: None,
         }
+    }
+    #[test]
+    fn bulk_review_never_cancels_claimed_input_and_binds_action_and_revisions() {
+        let states = [
+            "queued",
+            "blocked",
+            "submitting",
+            "submitted",
+            "seen",
+            "uncertain",
+            "cancelled",
+            "archived",
+        ];
+        let mut entries = states
+            .iter()
+            .map(|status| {
+                let mut r = fixture();
+                r.status = (*status).into();
+                r
+            })
+            .collect::<Vec<_>>();
+        let cancel = bulk_snapshot(&entries, "cancel").unwrap();
+        let archive = bulk_snapshot(&entries, "archive").unwrap();
+        assert_eq!(cancel["count"], 2);
+        assert_eq!(archive["count"], 5);
+        assert_eq!(archive["uncertain"], 1);
+        assert_eq!(archive["submitted"], 1);
+        assert_eq!(archive["skipped"], 2);
+        assert_ne!(cancel["expected"], archive["expected"]);
+        entries[0].status = "submitting".into();
+        let claimed = bulk_snapshot(&entries, "cancel").unwrap();
+        assert_eq!(claimed["count"], 1);
+        assert_ne!(cancel["expected"], claimed["expected"]);
+        entries[1].revision += 1;
+        assert_ne!(
+            claimed["expected"],
+            bulk_snapshot(&entries, "cancel").unwrap()["expected"]
+        );
+        assert!(bulk_snapshot(&entries, "submit").is_err());
     }
     #[test]
     fn confirmation_requires_exact_input_after_submission_in_same_log_and_no_reuse() {

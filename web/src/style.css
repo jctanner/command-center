@@ -772,7 +772,7 @@ button:disabled { opacity: .5; cursor: default; }
 .agent-outbox-message p { color:#adbbc8; font-size:12px; line-height:1.5; margin:8px 0; }
 .agent-outbox-message .outbox-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
 .outbox-actions button { font-size:12px; padding:8px 10px; }
-.agent-outbox-dialog { width:min(650px,calc(100vw - 32px)); max-height:85dvh; box-sizing:border-box; overflow:auto; }
+.agent-outbox-dialog { width:min(650px,calc(100vw - 32px)); max-height:85dvh; box-sizing:border-box; overflow:auto;padding:16px; }
 .agent-outbox-dialog>button { margin:0 8px 12px 0; }
 .agent-outbox-dialog .agent-message { margin-left:0; }
 .agent-outbox-dialog .outbox-text { white-space:pre-wrap; overflow-wrap:anywhere; }
@@ -860,3 +860,18 @@ button:disabled { opacity: .5; cursor: default; }
 .agent-close-dialog h2 { margin:0 0 12px;font-size:20px; }
 .agent-close-dialog p { line-height:1.6;overflow-wrap:anywhere; }
 .agent-close-dialog button { min-height:44px; }
+
+.outbox-bulk-actions { display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px; }
+.outbox-bulk-actions button { min-height:44px;flex:1 1 150px; }
+
+.queue-card>.queue-card-context { display:none; }
+@media (min-width:901px) and (pointer:fine), (min-width:1101px) {
+ .queue-card { display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:center;align-items:center;gap:4px 8px;min-height:64px;padding:8px 10px;margin-bottom:6px; }
+ .queue-card>.queue-card-machine,.queue-card>.queue-card-path,.queue-card>.attention-flags { display:none; }
+ .queue-card>.queue-card-name { grid-column:1;grid-row:1;display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:unset;font-size:14px;line-height:20px; }
+ .queue-card>.agent-state { grid-column:2;grid-row:1;justify-self:end;align-self:center;padding:3px 6px;line-height:14px;max-width:145px;overflow:hidden;text-overflow:ellipsis; }
+ .queue-card>.queue-card-context { display:block;grid-column:1 / -1;grid-row:2;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;line-height:16px; }
+ .queue-card-context>.queue-card-unread { display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:#8cbaff;vertical-align:middle; }
+ .queue-card>.agent-card-note-preview { display:block;grid-column:1 / -1;grid-row:3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-line-clamp:unset;font-size:11px;line-height:16px;max-height:16px; }
+ .queue-card[data-has-prompt=true]>.queue-card-note { display:none; }
+}

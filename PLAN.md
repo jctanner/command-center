@@ -13,6 +13,10 @@ No repository task is currently claimed. Select the next user-requested scope be
 
 ## Completed work
 
+- [Task 0003: compact desktop agent cards](docs/tasks/done/0003-compact-desktop-agent-cards.md)
+
+- [Task 0002: bulk Outbox actions](docs/tasks/done/0002-bulk-outbox-actions.md)
+
 - [Task 0001: adopt the ledger and repair documentation](docs/tasks/done/0001-adopt-work-ledger.md)
 
 ## Open bugs
@@ -28,6 +32,10 @@ No open repository bug records.
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-04: compact desktop cards](docs/notes/2026-11-04-compact-desktop-agent-cards.md)
+
+- [2026-11-04: bulk Outbox actions](docs/notes/2026-11-04-bulk-outbox-actions.md)
 
 - [2026-11-04: ledger adoption](docs/notes/2026-11-04-work-ledger-adoption.md)
 
