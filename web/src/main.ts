@@ -1,3 +1,4 @@
+import {startHeaderClock} from './header-clock';
 import {JiraWorkspace} from './jira';
 import {readWorkspace,writeWorkspace,type Workspace} from './workspace-router';
 import {TicketBoard, type TicketContext} from './board';
@@ -17,6 +18,7 @@ type Session = { attached: boolean; id: string; name: string; windows: Window[] 
 type Selection = { session?: string; windows: Record<string, string> };
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const machineNav = el('machines'), windowNav = el('windows'), sessionSelect = el<HTMLSelectElement>('sessions');
+startHeaderClock(el<HTMLTimeElement>('header-clock'));
 const reloadDialog = el<HTMLDialogElement>('reload-app-dialog');
 el('reload-app').onclick = () => { reloadDialog.showModal(); el('cancel-app-reload').focus(); };
 el('cancel-app-reload').onclick = () => reloadDialog.close();

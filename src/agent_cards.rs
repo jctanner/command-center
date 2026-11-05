@@ -15,6 +15,8 @@ pub(crate) struct Card {
     pub revision: u64,
     pub name: String,
     pub notes: String,
+    pub color: String,
+    pub pinned: bool,
 }
 fn key(scope: &str, instance: &str) -> String {
     format!("{:x}", Sha256::digest(format!("{scope}/{instance}")))
@@ -27,13 +29,15 @@ fn storage(_: impl std::fmt::Display) -> ApiError {
 }
 fn read(c: &rusqlite::Connection, key: &str) -> Result<Card, ApiError> {
     Ok(c.query_row(
-        "SELECT revision,name,notes FROM agent_cards WHERE scope=?1",
+        "SELECT revision,name,notes,color,pinned FROM agent_cards WHERE scope=?1",
         [key],
         |r| {
             Ok(Card {
                 revision: r.get(0)?,
                 name: r.get(1)?,
                 notes: r.get(2)?,
+                color: r.get(3)?,
+                pinned: r.get(4)?,
             })
         },
     )
@@ -180,6 +184,8 @@ pub(crate) struct Change {
     revision: u64,
     name: String,
     notes: String,
+    color: Option<String>,
+    pinned: Option<bool>,
 }
 pub(crate) async fn save(
     State(s): State<Arc<AppState>>,
@@ -187,6 +193,20 @@ pub(crate) async fn save(
     Json(mut b): Json<Change>,
 ) -> Result<Json<Card>, ApiError> {
     b.name = b.name.trim().into();
+    if let Some(color) = &mut b.color {
+        *color = color.to_ascii_lowercase();
+        if !color.is_empty()
+            && !(color.len() == 7
+                && color.starts_with('#')
+                && color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit))
+        {
+            return Err(ApiError(
+                StatusCode::BAD_REQUEST,
+                "Choose a six-digit hex color, or empty for the default".into(),
+            ));
+        }
+    }
+
     if b.name.len() > 240
         || b.name.chars().any(char::is_control)
         || b.notes.len() > 8000
@@ -216,8 +236,8 @@ pub(crate) async fn save(
             let count:i64=tx.query_row("SELECT count(*) FROM agent_cards",[],|r|r.get(0)).map_err(storage)?;
             if count>=4096 {return Err(ApiError(StatusCode::CONFLICT,"Agent card metadata limit reached".into()));}
         }
-        let card=Card{revision:old.revision+1,name:b.name,notes:b.notes};
-        tx.execute("INSERT INTO agent_cards(scope,revision,name,notes) VALUES(?1,?2,?3,?4) ON CONFLICT(scope) DO UPDATE SET revision=excluded.revision,name=excluded.name,notes=excluded.notes",params![scope,card.revision,card.name,card.notes]).map_err(storage)?;
+        let card=Card{revision:old.revision+1,name:b.name,notes:b.notes,color:b.color.unwrap_or(old.color),pinned:b.pinned.unwrap_or(old.pinned)};
+        tx.execute("INSERT INTO agent_cards(scope,revision,name,notes,color,pinned) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(scope) DO UPDATE SET revision=excluded.revision,name=excluded.name,notes=excluded.notes,color=excluded.color,pinned=excluded.pinned",params![scope,card.revision,card.name,card.notes,card.color,card.pinned]).map_err(storage)?;
         tx.commit().map_err(storage)?;
         Ok(card)
     }).await?;

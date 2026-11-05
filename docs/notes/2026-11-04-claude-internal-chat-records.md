@@ -1,0 +1,3 @@
+# 2026-11-04: Claude internal chat records
+
+Completed [Task 0008](../tasks/done/0008-claude-internal-chat-records.md) and fixed [bug 0004](../bugs/fixed/0004-claude-internal-xml-in-chat.md). Filter explicit provider-marked task notifications and compaction summaries from Claude human chat, receipt evidence and launch-title discovery. Genuine human XML and assistant responses remain. Separate visible-history cache revision refreshes existing chat without changing read/reply cursors. Provider, continuation and outbox regressions plus release build passed. Deployed and live verified notification/summary absent, real input and Seen receipt retained, HTTPS healthy. Reload if older cached pages remain. Next task 0009; next bug 0005.

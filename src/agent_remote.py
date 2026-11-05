@@ -385,6 +385,19 @@ def pi_bridge(observation):
         return record
     except (OSError,ValueError,TypeError,AttributeError,IndexError): return None
 
+def pi_pending_session(observation):
+    if observation.get('kind') != 'pi': return None
+    bridge = pi_bridge(observation)
+    if not bridge or bridge.get('leaf_id') is not None: return None
+    path = bridge.get('session_file')
+    if path:
+        try: os.lstat(path)
+        except FileNotFoundError: pass
+        except OSError: return None
+        else: return None  # Existing/unreadable/invalid logs are not empty sessions.
+    return bridge['session_id']
+
+
 def pi_conversations(observation):
     import itertools
     home = pi_home(observation)
@@ -439,6 +452,30 @@ def pi_dialog(observation):
 
 def input_hash(text):
     return hashlib.sha256(text.replace('\r\n','\n').strip().encode()).hexdigest()
+
+
+def native_input_hash(text, kind):
+    # Claude's long-paste transport wraps the entire input. Normalize only a
+    # complete single wrapper with matching IDs, never arbitrary embedded tags.
+    # Keep displayed text/cursors literal; receipt matching still requires the
+    # original verified process, same log inode, post-submit offset and one use.
+    if kind == 'claude':
+        normalized = text.replace('\r\n', '\n').strip()
+        wrapped = re.fullmatch(r'<pasted_content id="([0-9a-f]{4,64})">\n([\s\S]*)\n</pasted_content id="\1">', normalized)
+        if wrapped and '<pasted_content' not in wrapped[2] and '</pasted_content' not in wrapped[2]:
+            return input_hash(wrapped[2])
+    return input_hash(text)
+
+
+def claude_internal_user(record):
+    # Newer Claude logs store provider notifications/summaries as user records,
+    # without isMeta. Trust explicit origin metadata, never XML-looking text.
+    if record.get('type') != 'user': return False
+    origin = record.get('origin')
+    return (record.get('isCompactSummary') is True
+            or record.get('promptSource') == 'system'
+            or record.get('turnOrigin') == 'task_notification'
+            or (isinstance(origin, dict) and origin.get('kind') == 'task-notification'))
 
 
 def message_order(content):
@@ -839,12 +876,12 @@ def history(path, kind, before=None, known_branch=None, active_leaf=False, inclu
                 continue
             else: continue
         else:
-            if record.get('type') not in ('user', 'assistant') or record.get('isMeta') or record.get('isSidechain'): continue
+            if record.get('type') not in ('user', 'assistant') or record.get('isMeta') or record.get('isSidechain') or claude_internal_user(record): continue
             payload = record.get('message', {})
             if not isinstance(payload, dict): continue
             role, text = payload.get('role'), message_text(payload.get('content'))
         if role not in ('user', 'assistant') or not text.strip(): continue
-        messages.append((offset, dict(id=str(offset), cursor=hashlib.sha256(f'{offset}:{text}'.encode()).hexdigest(), role=role, input_hash=input_hash(text) if role=='user' else None, text=text[:16000], truncated=len(text)>16000, order=message_order(payload.get('content')), timestamp=record.get('timestamp', ''))))
+        messages.append((offset, dict(id=str(offset), cursor=hashlib.sha256(f'{offset}:{text}'.encode()).hexdigest(), role=role, input_hash=native_input_hash(text,kind) if role=='user' else None, text=text[:16000], truncated=len(text)>16000, order=message_order(payload.get('content')), timestamp=record.get('timestamp', ''))))
     if not messages: messages = events
     page = messages[-100:]
     budget = 512000
@@ -933,7 +970,7 @@ def active_launch_sessions(request, kind):
 
 def launch_title(candidate, kind):
     for record in head_records(candidate['path']):
-        if record.get('isMeta') or record.get('isSidechain'): continue
+        if record.get('isMeta') or record.get('isSidechain') or (kind=='claude' and claude_internal_user(record)): continue
         if kind=='codex':
             if record.get('type')!='response_item': continue
             message=record.get('payload',{})
@@ -1141,7 +1178,7 @@ def execute(request):
         linked=[candidate for candidate in candidates if candidate.get('linked')]
         chosen=linked[0] if len(linked)==1 else None
         result=dict(instance=observation['identity'], screen=observation['screen'], context=observation['context'],
-                    activity=provider_activity(observation,candidates), log=None, users=[],
+                    activity=provider_activity(observation,candidates), log=None, users=[], pending_pi_session=None,
                     send_available=bool(observation['identity']) and not observation['in_mode'] and not approval_menu(observation)
                         and not (observation['kind']=='pi' and pi_dialog(observation)))
         if chosen:
@@ -1149,6 +1186,9 @@ def execute(request):
             result['log']=dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size)
             page=history(chosen['path'],observation['kind'],active_leaf=chosen.get('leaf_id',False),include_activity=False)
             result['users']=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in page['messages'] if message['role']=='user' and message.get('input_hash')]
+            if observation['kind']=='pi': result['pi_session']=chosen['session']
+        else:
+            result['pending_pi_session']=pi_pending_session(observation)
         return result
     if request.get('action') == 'send':
         if observation['kind']=='pi' and pi_dialog(observation): fail(409,'Pi is waiting for input in a dialog. Answer it in the terminal before sending a message.')
@@ -1203,13 +1243,15 @@ def execute(request):
         result['send_reason']='Pi is waiting for input in a dialog. Answer it in the terminal before sending a message.'
     if chosen:
         info, version = transcript_version(chosen)
-        result['history_version'] = version
-        if request.get('before') is None and request.get('known_version') == version:
+        history_version = 'claude-visible-v2:' + version if observation['kind']=='claude' else version
+        result['history_version'] = history_version
+        if request.get('before') is None and request.get('known_version') == history_version:
             result['history_unchanged'] = True
         else:
             result.update(history(chosen['path'], observation['kind'], request.get('before'), request.get('known_branch'), chosen.get('leaf_id',False)))
         if request.get('before') is None and chosen.get('linked') and not result.get('history_unchanged'):
             result['_outbox_observation']=dict(log=dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size),users=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in result.get('messages',[]) if message['role']=='user' and message.get('input_hash')])
+            if observation['kind']=='pi': result['_outbox_observation']['pi_session']=chosen['session']
         if request.get('before') is None:
             result['reply'] = reply_observation(chosen, observation['kind'], request.get('known_reply_version'), None if result.get('history_unchanged') else result)
     return result

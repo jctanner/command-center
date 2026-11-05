@@ -45,6 +45,43 @@ class AgentOutbox(unittest.TestCase):
             self.assertEqual(observed['users'][0]['digest'],agent.input_hash('INPUT'))
             self.assertNotIn('TOOL_OUTPUT',json.dumps(observed))
 
+    def test_claude_pasted_input_confirms_exact_contents_without_changing_history(self):
+        text='Plan the fixture.\n\nKeep its requirements intact.'
+        wrapped='\n\n<pasted_content id="1a38">\n'+text+'\n</pasted_content id="1a38">\n'
+        self.write([dict(type='user',message=dict(role='user',content=wrapped)),
+                    dict(type='assistant',message=dict(role='assistant',content='Working on the fixture.'))])
+        messages=agent.history(self.path,'claude',include_activity=False)['messages']
+        self.assertEqual([m['role'] for m in messages],['user','assistant'])
+        self.assertEqual(messages[0]['text'],wrapped)
+        self.assertEqual(messages[0]['input_hash'],agent.input_hash(text))
+        with patch.object(agent,'observe',return_value=dict(self.observation,kind='claude')),patch.object(agent,'conversations',return_value=[self.candidate]),patch.object(agent,'provider_activity',return_value={'state':'working'}):
+            observed=agent.execute(dict(action='outbox_status',identity='process'))
+        self.assertEqual(observed['users'],[dict(position=0,digest=agent.input_hash(text))])
+        # Other providers, mismatched IDs, partial/prefixed and nested wrappers
+        # must retain their literal digest, never confirm just a substring.
+        for bad in [wrapped.replace('id="1a38">\n','id="abcd">\n',1),
+                    'Extra instructions'+wrapped,wrapped+'Extra instructions',
+                    wrapped.replace('</pasted_content id="1a38">',''),
+                    wrapped.replace(text,wrapped),wrapped.replace('1a38','../bad')]:
+            self.write([dict(type='user',message=dict(role='user',content=bad))])
+            self.assertEqual(agent.history(self.path,'claude',include_activity=False)['messages'][0]['input_hash'],agent.input_hash(bad))
+        self.write([dict(type='response_item',payload=dict(type='message',role='user',content=wrapped))])
+        self.assertEqual(agent.history(self.path,'codex',include_activity=False)['messages'][0]['input_hash'],agent.input_hash(wrapped))
+
+    def test_internal_notifications_cannot_confirm_receipts_and_invalidate_old_chat_cache(self):
+        self.write([dict(type='user',promptSource='system',origin={'kind':'task-notification'},message=dict(role='user',content='NOT_HUMAN')),
+                    dict(type='user',message=dict(role='user',content='Human message'))])
+        _,old_version=agent.transcript_version(self.candidate)
+        with patch.object(agent,'observe',return_value=dict(self.observation,kind='claude')),patch.object(agent,'conversations',return_value=[self.candidate]),patch.object(agent,'provider_activity',return_value={'state':'ready'}):
+            page=agent.execute(dict(action='conversation',known_version=old_version))
+            self.assertFalse(page.get('history_unchanged'))
+            self.assertEqual([m['text'] for m in page['messages']],['Human message'])
+            self.assertEqual([u['digest'] for u in page['_outbox_observation']['users']],[agent.input_hash('Human message')])
+            same=agent.execute(dict(action='conversation',known_version=page['history_version']))
+            self.assertTrue(same['history_unchanged'])
+            self.assertEqual(same['messages'],[])
+            self.assertEqual(page['reply']['version'],old_version)
+
     def test_confirmation_hash_is_computed_before_display_shortening(self):
         text='long user input '*700
         records=[dict(type='response_item',payload=dict(type='message',role='assistant',content='x'*16000)) for _ in range(99)]

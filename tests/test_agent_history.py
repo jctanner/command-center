@@ -35,6 +35,19 @@ class AgentHistory(unittest.TestCase):
         messages = agent.history(self.log, 'claude')['messages']
         self.assertEqual([(m['role'],m['text']) for m in messages], [('user','Hello'),('assistant','Visible reply')])
 
+    def test_claude_provider_notifications_and_summaries_are_not_human_messages(self):
+        xml='<task-notification>\n<task-id>fixture</task-id>\n</task-notification>'
+        flags=[{'promptSource':'system'}, {'turnOrigin':'task_notification'},
+               {'origin':{'kind':'task-notification','producer':'session-task'}},
+               {'isCompactSummary':True}]
+        self.write([{'type':'user',**flag,'message':{'role':'user','content':xml}} for flag in flags]+[
+            {'type':'user','origin':'unexpected-shape','message':{'role':'user','content':xml}},
+            {'type':'assistant','message':{'role':'assistant','content':'A real reply'}}])
+        page=agent.history(self.log,'claude')
+        self.assertEqual([(m['role'],m['text']) for m in page['messages']], [('user',xml),('assistant','A real reply')])
+        self.assertEqual(agent.launch_title({'path':str(self.log)},'claude'),' '.join(xml.split()))
+        self.assertEqual(page['messages'][0]['input_hash'],agent.input_hash(xml))
+
     def test_codex_excludes_tools_and_developer_messages(self):
         self.write([
             {'type':'response_item','payload':{'type':'message','role':'developer','content':[{'type':'input_text','text':'INTERNAL'}]}},
@@ -360,6 +373,27 @@ class PiBridge(unittest.TestCase):
     def observation(self):return dict(kind='pi',identity='verified',base=self.base,cwd=str(self.root),env={'PI_CODING_AGENT_DIR':str(self.home)},args=['pi'],target='$1:@2.%3',visible='')
     def write(self,**changes):
         self.file.write_text(json.dumps(dict(self.record,**changes)));self.file.chmod(0o600)
+    def test_empty_pi_session_has_pre_send_identity_without_guessing_a_log(self):
+        self.log.unlink();self.write(state='ready',leaf_id=None)
+        observation=self.observation();observation.update(screen='screen',context='',in_mode=False)
+        from unittest.mock import patch
+        with patch.object(agent,'observe',return_value=observation):
+            result=agent.execute(dict(action='outbox_status',identity='verified'))
+        self.assertIsNone(result['log'])
+        self.assertEqual(result['pending_pi_session'],self.session)
+        self.assertEqual(result['users'],[])
+        # A known leaf, stale bridge, or existing unvalidated file is not proof
+        # of a never-persisted session. Never adopt project history as baseline.
+        for update in [dict(leaf_id='existing'),dict(updated_at=time.time()-60)]:
+            self.write(state='ready',**update)
+            fresh=self.observation();fresh.update(screen='screen',context='',in_mode=False)
+            with patch.object(agent,'observe',return_value=fresh):
+                self.assertIsNone(agent.execute(dict(action='outbox_status',identity='verified')).get('pending_pi_session'))
+        self.log.write_text('not a session header');self.write(state='ready',leaf_id=None)
+        fresh=self.observation();fresh.update(screen='screen',context='',in_mode=False)
+        with patch.object(agent,'observe',return_value=fresh):
+            self.assertIsNone(agent.execute(dict(action='outbox_status',identity='verified')).get('pending_pi_session'))
+
     def test_live_bridge_links_exact_session_and_preserves_live_branch(self):
         self.write();observation=self.observation();candidates=agent.conversations(observation)
         self.assertEqual(len(candidates),1);self.assertTrue(candidates[0]['linked'])

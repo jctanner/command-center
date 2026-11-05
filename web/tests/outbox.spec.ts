@@ -198,3 +198,29 @@ test('bulk archive discloses uncertainty and a lost apply response is never retr
  let posts=0;await page.route('**/outbox/bulk',async route=>{posts++;await route.fetch();await route.abort('connectionfailed');});page.once('dialog',async d=>{expect(d.message()).toContain('1 uncertain');expect(d.message()).toContain('may proceed');await d.accept();});
  const before=tmux('capture-pane','-p','-t',pane);await dialog.getByRole('button',{name:'Archive all receipts',exact:true}).click();await expect(dialog).toContainText('will not be retried automatically');expect(posts).toBe(1);await dialog.getByRole('button',{name:'Refresh outbox',exact:true}).click();await expect(dialog.locator('.agent-outbox-message')).toHaveCount(0);expect(posts).toBe(1);expect(tmux('capture-pane','-p','-t',pane)).toBe(before);
 });
+
+
+test('first Pi input confirms after lazy log creation and releases the next queued message',async({page})=>{
+ copyFileSync('/bin/cat',join(dir,'pi'));
+ log=join(dir,'pi-session.jsonl');
+ tmux('respawn-pane','-k','-t',pane,`exec env PI_CODING_AGENT_DIR='${home}' '${join(dir,'pi')}'`);
+ await expect.poll(()=>tmux('display-message','-p','-t',pane,'#{pane_current_command}')).toBe('pi');
+ const pid=Number(tmux('display-message','-p','-t',pane,'#{pane_pid}'));
+ const start=readFileSync(`/proc/${pid}/stat`,'utf8').split(') ').slice(1).join(') ').split(' ')[19];
+ mkdirSync(join(home,'command-center-status'),{recursive:true});
+ const publish=(leaf:string|null)=>{const path=join(home,'command-center-status',`${pid}.json`);writeFileSync(path,JSON.stringify({schema:1,pid,proc_start:start,boot_id:readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim(),cwd:dir,tmux_pane:pane,session_id:nativeSession,session_file:log,leaf_id:leaf,state:'ready',transition:crypto.randomUUID(),updated_at:Date.now()/1000}));chmodSync(path,0o600);};
+ publish(null);
+ const first=await enqueue('PI_FIRST_INPUT');
+ await expect.poll(async()=>(await entry(first.id)).status).toBe('submitted');
+ const second=await enqueue('PI_SECOND_INPUT');
+ await expect.poll(async()=>(await entry(second.id)).status).toBe('queued');
+ const header=JSON.stringify({type:'session',version:3,id:nativeSession,cwd:dir})+'\n';
+ writeFileSync(log,header+JSON.stringify({type:'message',id:'first',parentId:null,message:{role:'user',content:[{type:'text',text:'PI_FIRST_INPUT'}]}})+'\n');publish('first');
+ await expect.poll(async()=>(await entry(first.id)).status,{timeout:15000}).toBe('seen');
+ await expect.poll(async()=>(await entry(second.id)).status,{timeout:15000}).toBe('submitted');
+ append({type:'message',id:'second',parentId:'first',message:{role:'user',content:[{type:'text',text:'PI_SECOND_INPUT'}]}});publish('second');
+ await expect.poll(async()=>(await entry(second.id)).status,{timeout:15000}).toBe('seen');
+ await page.setViewportSize({width:393,height:852});await page.goto(base+'/#/queue');await page.locator('.queue-card').click();
+ await expect(page.locator('.agent-history .agent-outbox-message')).toHaveCount(0);
+ await expect(page.locator('.agent-history .agent-message.user')).toHaveCount(2);
+});

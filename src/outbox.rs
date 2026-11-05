@@ -55,6 +55,8 @@ struct Record {
     created_at: u64,
     updated_at: u64,
     baseline: Option<Log>,
+    #[serde(default)]
+    pending_pi_session: Option<String>,
     seen_message: Option<u64>,
 }
 fn now() -> u64 {
@@ -306,6 +308,7 @@ pub(crate) async fn enqueue(
         created_at: now(),
         updated_at: now(),
         baseline: None,
+        pending_pi_session: None,
         seen_message: None,
     };
     let view = public(&record);
@@ -349,18 +352,28 @@ async fn annotate(
     Ok(())
 }
 fn matching_receipt(r: &Record, observation: &Value, used: &HashSet<(String, u64)>) -> Option<u64> {
-    let baseline = r.baseline.as_ref()?;
     let log: Log = serde_json::from_value(observation["log"].clone()).ok()?;
-    if log.conversation != baseline.conversation
-        || log.device != baseline.device
-        || log.inode != baseline.inode
-        || log.size < baseline.size
-    {
-        return None;
-    }
+    let minimum = if let Some(baseline) = &r.baseline {
+        if log.conversation != baseline.conversation
+            || log.device != baseline.device
+            || log.inode != baseline.inode
+            || log.size < baseline.size
+        {
+            return None;
+        }
+        baseline.size
+    } else {
+        // Pi allocates a process-linked UUID before persisting its first log.
+        // Only an empty-session anchor recorded BEFORE paste can confirm it.
+        let expected = r.pending_pi_session.as_deref()?;
+        if observation["pi_session"].as_str() != Some(expected) {
+            return None;
+        }
+        0
+    };
     observation["users"].as_array()?.iter().find_map(|u| {
         let position = u["position"].as_u64()?;
-        (position >= baseline.size
+        (position >= minimum
             && u["digest"].as_str() == Some(r.digest.as_str())
             && !used.contains(&(log.conversation.clone(), position)))
         .then_some(position)
@@ -377,7 +390,11 @@ async fn confirm_observed(
         .collect();
     let ambiguous_archived: Vec<_> = entries
         .iter()
-        .filter(|r| r.status == "archived" && r.baseline.is_some() && r.seen_message.is_none())
+        .filter(|r| {
+            r.status == "archived"
+                && (r.baseline.is_some() || r.pending_pi_session.is_some())
+                && r.seen_message.is_none()
+        })
         .cloned()
         .collect();
     for r in entries
@@ -387,13 +404,17 @@ async fn confirm_observed(
         if ambiguous_archived.iter().any(|old| {
             old.created_at <= r.created_at
                 && old.digest == r.digest
-                && old
-                    .baseline
-                    .as_ref()
-                    .map(|l| (&l.conversation, l.device, l.inode))
-                    == r.baseline
+                && (old.pending_pi_session.as_ref().is_some_and(|session| {
+                    r.pending_pi_session.as_ref() == Some(session)
+                        || observation["pi_session"].as_str() == Some(session.as_str())
+                }) || (old.baseline.is_some()
+                    && old
+                        .baseline
                         .as_ref()
                         .map(|l| (&l.conversation, l.device, l.inode))
+                        == r.baseline
+                            .as_ref()
+                            .map(|l| (&l.conversation, l.device, l.inode))))
         }) {
             let note = "An earlier identical submission has unconfirmed delivery; transcript matching is ambiguous. No retry was made.";
             if r.note != note
@@ -406,6 +427,13 @@ async fn confirm_observed(
         if let Some(position) = matching_receipt(r, observation, &used) {
             let mut updated = r.clone();
             updated.seen_message = Some(position);
+            if updated.baseline.is_none() {
+                let mut log: Log = serde_json::from_value(observation["log"].clone())
+                    .expect("matching_receipt validated the log");
+                log.size = 0;
+                updated.conversation = Some(log.conversation.clone());
+                updated.baseline = Some(log);
+            }
             if let Some(updated) = change(
                 s,
                 updated,
@@ -559,6 +587,13 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
     if next.conversation.is_none() {
         next.conversation = log.as_ref().map(|l| l.conversation.clone());
     }
+    next.pending_pi_session = if log.is_none() {
+        observation["pending_pi_session"]
+            .as_str()
+            .map(str::to_owned)
+    } else {
+        None
+    };
     next.baseline = log;
     let Some(claimed) = change(
         s,
@@ -731,6 +766,11 @@ async fn manual(s: &AppState, r: Record, token: &str) -> Result<(), ApiError> {
         ));
     }
     let mut intent = r;
+    intent.pending_pi_session = if log.is_none() {
+        observed["pending_pi_session"].as_str().map(str::to_owned)
+    } else {
+        None
+    };
     intent.baseline = log;
     if intent.conversation.is_none() {
         intent.conversation = intent.baseline.as_ref().map(|l| l.conversation.clone());
@@ -835,6 +875,7 @@ mod tests {
                 inode: 2,
                 size: 100,
             }),
+            pending_pi_session: None,
             seen_message: None,
         }
     }
@@ -910,6 +951,38 @@ mod tests {
             None
         );
         assert_eq!(digest("message\r\n"), digest("message\n"));
+    }
+    #[test]
+    fn pi_first_input_needs_pre_send_session_anchor_and_one_use_position() {
+        let mut r = fixture();
+        r.baseline = None;
+        r.conversation = None;
+        let observation = json!({"pi_session":"pi-session","log":{"conversation":"new-log","device":3,"inode":4,"size":200},"users":[{"position":80,"digest":digest("message")}]});
+        // Legacy unanchored receipts cannot be guessed from matching text.
+        assert_eq!(matching_receipt(&r, &observation, &HashSet::new()), None);
+        r.pending_pi_session = Some("pi-session".into());
+        assert_eq!(
+            matching_receipt(&r, &observation, &HashSet::new()),
+            Some(80)
+        );
+        let mut changed = observation.clone();
+        changed["pi_session"] = json!("another-session");
+        assert_eq!(matching_receipt(&r, &changed, &HashSet::new()), None);
+        changed = observation.clone();
+        changed["users"][0]["digest"] = json!(digest("other input"));
+        assert_eq!(matching_receipt(&r, &changed, &HashSet::new()), None);
+        assert_eq!(
+            matching_receipt(&r, &observation, &HashSet::from([("new-log".into(), 80)])),
+            None
+        );
+        let mut legacy = serde_json::to_value(&r).unwrap();
+        legacy.as_object_mut().unwrap().remove("pending_pi_session");
+        assert!(
+            serde_json::from_value::<Record>(legacy)
+                .unwrap()
+                .pending_pi_session
+                .is_none()
+        );
     }
     #[test]
     fn restart_recovers_inflight_as_uncertain_and_compare_and_swap_rejects_stale_changes() {

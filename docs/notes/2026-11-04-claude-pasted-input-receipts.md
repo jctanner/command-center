@@ -1,0 +1,3 @@
+# 2026-11-04: Claude pasted-input receipt reconciliation
+
+Completed [Task 0007](../tasks/done/0007-agent-history-ordering.md) and fixed [bug 0003](../bugs/fixed/0003-claude-pasted-input-duplicate.md). Claude wraps long pasted inputs; strict whole-wrapper normalization now confirms exact inner contents. Transcript, delivery and original process/log/offset/one-use guards remain unchanged. No resend. 46 Python checks, three Rust outbox checks, one browser receipt regression and release build passed. Deployed and verified the affected live receipt is Seen, native IDs unique/ordered, HTTPS healthy. Next task 0008; next bug 0004.

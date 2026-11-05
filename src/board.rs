@@ -110,10 +110,13 @@ impl Board {
         db.busy_timeout(std::time::Duration::from_secs(3))?;
         let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
         anyhow::ensure!(
-            version <= 1,
+            version <= 2,
             "Board database schema is newer than this backend"
         );
-        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS tickets(id TEXT NOT NULL UNIQUE, version TEXT NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agent_cards(scope TEXT PRIMARY KEY, revision INTEGER NOT NULL, name TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agent_outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, scope TEXT NOT NULL, phase TEXT NOT NULL, revision INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS agent_outbox_scope ON agent_outbox(scope,seq); UPDATE agent_outbox SET phase='uncertain', revision=revision+1, data=json_set(data,'$.status','uncertain','$.revision',revision+1,'$.note','Backend restarted during submission; delivery is uncertain. No retry was made.') WHERE phase='submitting'; PRAGMA user_version=1;")?;
+        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS tickets(id TEXT NOT NULL UNIQUE, version TEXT NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agent_cards(scope TEXT PRIMARY KEY, revision INTEGER NOT NULL, name TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agent_outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, scope TEXT NOT NULL, phase TEXT NOT NULL, revision INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS agent_outbox_scope ON agent_outbox(scope,seq); UPDATE agent_outbox SET phase='uncertain', revision=revision+1, data=json_set(data,'$.status','uncertain','$.revision',revision+1,'$.note','Backend restarted during submission; delivery is uncertain. No retry was made.') WHERE phase='submitting';")?;
+        if version < 2 {
+            db.execute_batch("BEGIN IMMEDIATE; ALTER TABLE agent_cards ADD COLUMN color TEXT NOT NULL DEFAULT ''; ALTER TABLE agent_cards ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0,1)); PRAGMA user_version=2; COMMIT;")?;
+        }
         Ok(Self {
             db: Arc::new(Mutex::new(db)),
         })
@@ -787,6 +790,38 @@ mod tests {
             result: None,
             released: false,
         }
+    }
+    #[tokio::test]
+    async fn card_preferences_migrate_legacy_rows_and_survive_reopening() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy.sqlite3");
+        let legacy = Connection::open(&path).unwrap();
+        legacy.execute_batch("CREATE TABLE agent_cards(scope TEXT PRIMARY KEY,revision INTEGER NOT NULL,name TEXT NOT NULL,notes TEXT NOT NULL); INSERT INTO agent_cards VALUES('legacy',7,'Existing card','Existing notes'); PRAGMA user_version=1;").unwrap();
+        drop(legacy);
+        let board = Board::new(Some(path.clone())).unwrap();
+        board.with(|c| {
+            let row:(u64,String,String,String,bool)=c.query_row("SELECT revision,name,notes,color,pinned FROM agent_cards WHERE scope='legacy'",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).map_err(db_error)?;
+            assert_eq!(row,(7,"Existing card".into(),"Existing notes".into(),String::new(),false));
+            c.execute("UPDATE agent_cards SET color='#b34fff',pinned=1 WHERE scope='legacy'",[]).map_err(db_error)?;
+            assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).map_err(db_error)?,2);
+            Ok(())
+        }).await.unwrap();
+        drop(board);
+        let reopened = Board::new(Some(path)).unwrap();
+        reopened
+            .with(|c| {
+                let value: (String, bool) = c
+                    .query_row(
+                        "SELECT color,pinned FROM agent_cards WHERE scope='legacy'",
+                        [],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .map_err(db_error)?;
+                assert_eq!(value, ("#b34fff".into(), true));
+                Ok(())
+            })
+            .await
+            .unwrap();
     }
     #[tokio::test]
     async fn claims_are_durable_and_one_per_revision() {

@@ -232,8 +232,9 @@ export class AttentionQueue {
   private openAgentClose(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentCloser.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
   private openCardActions(host:Host,item:Item,x:number,y:number){
     const action=(text:string,run:()=>void)=>{const button=node('button',text);button.type='button';button.setAttribute('role','menuitem');button.onclick=()=>{this.cardMenu.hidden=true;run();};button.disabled=!item.attention?.instance||stateOf(item)==='disconnected';return button;};
-    const edit=action('Edit card',()=>this.openCardEditor(host,item));const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';this.cardMenu.replaceChildren(edit,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
+    const edit=action('Edit card',()=>this.openCardEditor(host,item));const pin=action(item.card?.pinned?'Unpin card':'Pin card',()=>{void this.setCardPinned(host,item);});const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';this.cardMenu.replaceChildren(edit,pin,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
   }
+  private async setCardPinned(host:Host,item:Item){const instance=item.attention?.instance;if(!instance)return;try{await this.cardEditor.setPinned({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:agentTitle(item)},!item.card?.pinned);}catch(error){this.feedback.dataset.error='true';this.feedback.textContent=`${String(error)} Refresh this card before trying again.`;}}
   private openCardEditor(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected'){this.feedback.textContent='Refresh this agent before editing its card.';return;}void this.cardEditor.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:agentTitle({...item,card:undefined})});}
   private fitComposer() {
     this.composer.rows = 1;
@@ -254,17 +255,20 @@ export class AttentionQueue {
   private render() {
     if (!this.visible) return;
     const hosts = this.snapshot?.hosts || [];
+    for(const host of hosts)for(const item of host.items)if(item.card&&item.attention?.instance)this.mergeCard(item,item.attention.instance,item.card);
     this.options(this.hostSelect, 'All machines', hosts.map(h => [h.id, h.name]), this.host);
     const projects = new Map<string, string>();
     for (const h of hosts.filter(h => !this.host || h.id === this.host)) for (const item of h.items) projects.set(JSON.stringify([h.id, item.project]), `${h.name} · ${item.project}`);
     this.options(this.projectSelect, 'All projects', [...projects], this.project);
-    const entries = this.entries().sort((a, b) => Number(needsAttention(b.item)) - Number(needsAttention(a.item)) || rank[stateOf(a.item)] - rank[stateOf(b.item)] || a.h.name.localeCompare(b.h.name) || a.item.id.localeCompare(b.item.id));
+    const entries = this.entries().sort((a, b) => Number(!!b.item.card?.pinned)-Number(!!a.item.card?.pinned) || Number(needsAttention(b.item)) - Number(needsAttention(a.item)) || rank[stateOf(a.item)] - rank[stateOf(b.item)] || a.h.name.localeCompare(b.h.name) || a.item.id.localeCompare(b.item.id));
     if (!entries.some(e => e.item.id === this.selected) && !(this.openedForRead === this.selected && this.chosen())) this.selected = entries[0]?.item.id || '';
     const scroll = this.list.scrollTop;
     this.list.replaceChildren(...entries.map(({ h, item }) => {
       const b = node('button'); b.className = item.id === this.selected ? 'queue-card selected' : 'queue-card'; b.setAttribute('aria-pressed', String(item.id === this.selected)); b.classList.toggle('needs-attention', needsAttention(item));
       b.oncontextmenu=event=>{event.preventDefault();this.openCardActions(h,item,event.clientX,event.clientY);};b.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();const rect=b.getBoundingClientRect();this.openCardActions(h,item,rect.left,rect.bottom);}};b.title='Right-click or Shift+F10 for agent actions';
       const folder = node('span', compactClient() ? projectName(item.project) : item.project); folder.title = item.project; folder.hidden = compactClient() && agentTitle(item) === projectName(item.project);
+      b.classList.toggle('pinned',!!item.card?.pinned);
+      if(item.card?.color&&/^#[0-9a-f]{6}$/i.test(item.card.color)){b.classList.add('has-custom-color');b.style.setProperty('--agent-card-color',item.card.color);}
       folder.className='queue-card-path';
       const machine=node('small',`${h.name} / ${item.agent}`);machine.className='queue-card-machine';
       const name=node('strong',item.card?.name||(waiting(item)?item.prompt:agentTitle(item)));name.className='queue-card-name';name.title=name.textContent||'';
@@ -281,6 +285,7 @@ export class AttentionQueue {
       if (item.attention?.new_approval) flags.append(node('span', item.activity?.source === 'pi_bridge' ? 'New input request' : 'New approval'));
       if (item.attention?.unread_reply) flags.append(node('span', 'Unread reply'));
       b.append(flags);
+      if(item.card?.pinned){const label=node('span','Pinned');label.className='queue-card-pin-label';b.append(label);}
       b.onclick = () => {
         const firstOpen = this.openedForRead !== item.id;
         this.selected = item.id; this.openedForRead = item.id; this.body.dataset.detail = 'true'; this.render();
