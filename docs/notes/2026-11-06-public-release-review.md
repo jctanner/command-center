@@ -14,6 +14,10 @@ After this baseline review, the owner selected Apache License 2.0. [Task 0019](.
 
 [Task 0020](../tasks/done/0020-privacy-and-history-cleanup.md) generalizes current files and prepares all historical versions and commit identities in an isolated clean repository. Private operational details remain in ignored local notes. The owner accepted the GitHub cache limitation and authorized replacing existing main. The verified sanitized history has been pushed with an exact force-with-lease; no visibility change was made. See [privacy/history guide](../reference/privacy-and-history.md).
 
+## Follow-up: README release guidance
+
+[Task 0021](../tasks/done/0021-public-readme-setup-and-security.md) adds the prominent no-login/account-control warning, deployment boundaries, Linux platform scope, precise toolchain prerequisites and Settings navigation. Bug 0013 is fixed with the minimum-toolchain validation caveat explicit. The owner subsequently authorized committing and pushing these documentation changes. Licensing and privacy/history preparation/application are recorded above; actual publication remains an explicit owner action.
+
 ## Findings
 
 ### 1. Choose a project license and confirm provenance (release priority)

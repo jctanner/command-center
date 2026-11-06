@@ -13,9 +13,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 
 
+
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0021: public README setup and security](docs/tasks/done/0021-public-readme-setup-and-security.md)
 
 - [Task 0020: privacy and history cleanup](docs/tasks/done/0020-privacy-and-history-cleanup.md)
 
@@ -57,11 +60,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Open bugs
 
-- [Bug 0013: setup requirements and navigation](docs/bugs/open/0013-readme-toolchain-and-navigation-requirements.md)
 
 - [Bug 0005: Pi first input unconfirmed](docs/bugs/open/0005-pi-first-input-unconfirmed.md)
 
 ## Fixed bugs
+
+- [Bug 0013: setup requirements and navigation](docs/bugs/fixed/0013-readme-toolchain-and-navigation-requirements.md)
 
 - [Bug 0014: personal integration-source defaults](docs/bugs/fixed/0014-personal-machine-defaults-in-integration-settings.md)
 
@@ -91,6 +95,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-06: README release setup and security](docs/notes/2026-11-06-readme-release-setup-and-security.md)
 
 - [2026-11-06: privacy history applied](docs/notes/2026-11-06-privacy-history-applied.md)
 
