@@ -12,7 +12,7 @@ After this baseline review, the owner selected Apache License 2.0. [Task 0019](.
 
 ## Follow-up: privacy cleanup prepared
 
-[Task 0020](../tasks/current/0020-privacy-and-history-cleanup.md) generalizes current files and prepares all historical versions and commit identities in an isolated clean repository. Private operational details remain in ignored local notes. This addresses the source cleanup; replacing the remote history or selecting a genuinely new destination remains an owner decision because of GitHub cache limitations. See [privacy/history guide](../reference/privacy-and-history.md).
+[Task 0020](../tasks/done/0020-privacy-and-history-cleanup.md) generalizes current files and prepares all historical versions and commit identities in an isolated clean repository. Private operational details remain in ignored local notes. The owner accepted the GitHub cache limitation and authorized replacing existing main. The verified sanitized history has been pushed with an exact force-with-lease; no visibility change was made. See [privacy/history guide](../reference/privacy-and-history.md).
 
 ## Findings
 

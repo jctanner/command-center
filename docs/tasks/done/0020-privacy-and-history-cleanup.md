@@ -2,7 +2,8 @@
 
 Owner: CC dev
 Claimed: 2026-11-06
-State: current
+State: done
+Completed: 2026-11-06
 
 Generalize personal network/machine/operator details in the current tree and every historical tree; retain public project attribution and the SSH remote. Remove machine-name-biased integration defaults. Move live operational and pending receipt context into ignored private notes. Preserve runtime configuration, private state and agent processes. Back up original history and working files privately; prepare and validate an isolated sanitized Git repository with GitHub noreply author metadata. Original branch/remote history stays unchanged until the final publication decision. GitHub caches make force-push alone insufficient to guarantee deletion; no repository visibility change is authorized.
 
@@ -14,6 +15,10 @@ Generalize personal network/machine/operator details in the current tree and eve
 - Validation: frontend build, cargo fmt --check, full locked/offline Rust suite (42 library, 2 binary, 2 integration tests), Clippy with warnings denied and 45 Slack/Email/Jira browser tests pass. Known-identifier/credential pattern scan covers every prepared historical tree and commit; no matches. Original remote tip and live source/feature settings checked unchanged. Private local notes excluded.
 - Recorded fixed bug 0014 for the personal source-selection default. No publication, force-push, production restart, agent input or receipt action performed.
 
-## Remaining final decision
+## Final decision and completion
 
-See [privacy/history guide](../../reference/privacy-and-history.md). GitHub documents that force-push alone can retain cached old commits. Recommended: retain the old repository privately and use a genuinely new repository for the cleaned history. Alternative: explicitly accept that limitation and force-with-lease the existing private main. Prepare a clean clone/bundle with scan evidence and file hashes before either final action. Do not mark this task done until the owner chooses the destination and that chosen authorized action completes; no visibility change is inferred.
+The owner explicitly accepted the cache limitation and chose the existing repository. Adopted the verified sanitized snapshot locally, preserving every working-file hash, then replaced origin/main using an exact force-with-lease against the reviewed original tip. Push succeeded; both local and remote-tracking main now point to the sanitized history. No repository rename, creation or visibility change was made.
+
+The prepared six-commit repository/bundle was verified by a fresh clone: 208 tracked file hashes matched, fsck found no unreachable objects, all commit emails matched the verified GitHub noreply identity, and scans of 260 historical blobs/commit metadata found no known private identifiers or credential patterns. Clean npm ci/frontend build and offline Cargo check passed. The original Git bundle, source archive and index remain outside Git. Root runtime/source/feature configuration hashes were unchanged during adoption. Completion documentation is a normal follow-up commit on the cleaned history.
+
+Cache limitations are accepted, not claimed eliminated. Other clones should fetch/reclone or carefully align with the cleaned main instead of merging old history. Task 0009 receipt consent and setup bug 0013 remain pending. Next task 0021, bug 0015. See [privacy/history guide](../../reference/privacy-and-history.md).

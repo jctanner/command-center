@@ -6,11 +6,11 @@ Public examples use synthetic private LAN addresses and CGNAT addresses for tail
 
 ## Prepared cleanup
 
-The privacy cleanup preserves the development timeline as five sanitized historical commits plus one Apache/privacy follow-up. Every historical file version and commit identity is filtered; author and committer emails use the owner's GitHub noreply identity. Public repository links and project attribution remain intact. Original history, uncommitted source files, a private replacement map and operational context are backed up outside Git.
+The privacy cleanup preserves the development timeline as five sanitized historical commits plus an Apache/privacy follow-up and completion documentation. Every historical file version and commit identity is filtered; author and committer emails use the owner's GitHub noreply identity. Public repository links and project attribution remain intact. Original history, uncommitted source files, a private replacement map and operational context are backed up outside Git.
 
-The prepared repository and bundle contain only the cleaned reachable history. They are staged privately for review; the working repository's original branch and GitHub remote history remain unchanged until an explicit final action. Do not push original backup branches, merge old clones into the cleaned history, or upload the backup directory.
+The prepared repository and bundle contain only the cleaned reachable history and have been verified by a fresh clone. The owner accepted the GitHub cache limitation and chose to replace the existing main branch with an exact force-with-lease. The original private backup remains outside Git. Do not push original backup branches, merge old clones into the cleaned history, or upload the backup directory.
 
-## GitHub publication decision
+## GitHub history update
 
 A force-push changes reachable branch history but cannot guarantee deletion of old GitHub cached commit views, pull-request references, other clones or forks. GitHub Support's removal process is limited and does not generally purge ordinary non-sensitive identifiers. See [GitHub's sensitive-data removal guidance](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
 

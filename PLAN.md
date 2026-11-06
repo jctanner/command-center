@@ -9,7 +9,6 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task 0020: privacy and history cleanup](docs/tasks/current/0020-privacy-and-history-cleanup.md) — CC dev; cleanup and clean history prepared, final GitHub destination decision pending.
 
 
 
@@ -17,6 +16,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0020: privacy and history cleanup](docs/tasks/done/0020-privacy-and-history-cleanup.md)
 
 - [Task 0019: Apache License 2.0](docs/tasks/done/0019-apache-license.md)
 
@@ -90,6 +91,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-06: privacy history applied](docs/notes/2026-11-06-privacy-history-applied.md)
 
 - [2026-11-06: privacy/history preparation](docs/notes/2026-11-06-privacy-history-preparation.md)
 
