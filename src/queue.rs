@@ -3,7 +3,7 @@ use crate::{AppState, tmux};
 use axum::{Json, extract::State};
 use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::{
     collections::HashSet,
     sync::{
@@ -110,6 +110,7 @@ struct Item {
     last_seen: u64,
     attention: crate::attention::View,
     card: crate::agent_cards::Card,
+    background_tasks: Value,
 }
 type PaneTarget = (String, String, String);
 fn retain_disconnected(
@@ -231,17 +232,33 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                 let machine = state.registry.get(&host.id).await.map_err(|e| anyhow::anyhow!(e.1))?;
                 let inventory = tmux::inventory(&machine.transport).await?;
                 present=Some(inventory.sessions.iter().flat_map(|s|s.windows.iter().flat_map(move|w|w.panes.iter().map(move|p|(s.id.clone(),w.id.clone(),p.id.clone())))).collect::<HashSet<PaneTarget>>());
+                // One bounded process-discovery RPC per host, not per shell pane.
+                // Keep the cheap tmux-name fallback for hosts without /proc support.
+                let discovery=machine.transport.agent_request(json!({"action":"discover_agents"})).await;
+                let mut providers=std::collections::HashMap::new();
+                if let Ok(value)=discovery && let Some(agents)=value["ok"]["agents"].as_array() {
+                    result.limited |= value["ok"]["limited"]==true;
+                    for agent in agents.iter().take(256) {
+                        if let (Some(pane),Some(provider))=(agent["pane"].as_str(),agent["provider"].as_str())
+                            && matches!(provider,"codex"|"claude"|"pi") {
+                            providers.insert(pane.to_owned(),provider.to_owned());
+                        }
+                    }
+                } else { result.limited=true; }
                 let mut seen = std::collections::HashSet::new();
                 for session in inventory.sessions {
                     for window in session.windows {
                         for pane in window.panes {
                             let command = pane.command.to_lowercase();
-                            if !(command.contains("codex") || command.contains("claude") || command == "pi" || command == "pi-coding-agent") || !seen.insert(pane.id.clone()) { continue; }
+                            let hinted=if command.contains("codex"){Some("codex")}else if command.contains("claude"){Some("claude")}else if command=="pi"||command=="pi-coding-agent"{Some("pi")}else{None};
+                            let provider=providers.get(&pane.id).cloned().or_else(||hinted.map(str::to_owned));
+                            let Some(provider)=provider else {continue;};
+                            if !seen.insert(pane.id.clone()) { continue; }
                             if seen.len() > 32 { result.limited = true; continue; }
                             let (endpoint,attention_key)=crate::attention::scope(&machine.config,&session.id,&window.id,&pane.id);
                             let (watch,version)=state.attention.observation_args(&attention_key).await;
                             let observation = machine.transport.agent_request(json!({"action":"status", "session":session.id,"window":window.id,"pane":pane.id,"conversation":watch,"known_reply_version":version})).await;
-                            let (context, activity, instance, reply) = match observation {
+                            let (context, activity, instance, reply, background_tasks) = match observation {
                                 // A dead/replaced foreground process is retained below
                                 // with its original last-seen time, never refreshed as live.
                                 Ok(value) if value["status"] == 409 => continue,
@@ -251,9 +268,9 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                                     let activity = Activity::from_value(&value["activity"], &text);
                                     let instance=value["instance"].as_str().map(str::to_owned);
                                     let reply=serde_json::from_value::<crate::attention::Reply>(value["reply"].clone()).ok();
-                                    (text, activity, instance, reply)
+                                    (text, activity, instance, reply, value["background_tasks"].clone())
                                 }
-                                _ => (String::new(), Activity::unknown("Agent observation unavailable; refresh or open terminal"),None,None),
+                                _ => (String::new(), Activity::unknown("Agent observation unavailable; refresh or open terminal"),None,None,Value::Null),
                             };
                             let attention=match state.attention.observe((&attention_key,&endpoint),instance.as_deref(),&activity,reply,true,None).await {
                                 Ok(view)=>view,
@@ -263,10 +280,10 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                             result.items.push(Item {
                                 id:format!("{}/{}/{}/{}/{}",host.id,host.connection_revision,session.id,window.id,pane.id),
                                 session:session.id.clone(), session_name:session.name.clone(), window:window.id.clone(), window_name:window.name.clone(),
-                                pane:pane.id, project:pane.cwd, agent:pane.command,
+                                pane:pane.id, project:pane.cwd, agent:provider,
                                 status:if activity.state == AgentState::Approval {"attention"} else {"live"}.into(),
                                 prompt:detected.unwrap_or_else(|| if activity.state == AgentState::Approval {if activity.source == "pi_bridge" {"Agent is waiting for input"} else {"Agent is awaiting approval"}} else {"Live agent"}.into()),
-                                context:context.chars().take(24000).collect(), activity, last_seen:now(), attention,card:Default::default(),
+                                context:context.chars().take(24000).collect(), activity, last_seen:now(), attention,card:Default::default(),background_tasks,
                             });
                         }
                     }
@@ -315,6 +332,7 @@ mod tests {
             last_seen: 100,
             attention: crate::attention::View::default(),
             card: Default::default(),
+            background_tasks: Value::Null,
         };
         let mut items = vec![];
         retain_disconnected(
@@ -352,6 +370,7 @@ mod tests {
             last_seen: 100,
             attention: Default::default(),
             card: Default::default(),
+            background_tasks: Value::Null,
         };
         let mut missing = vec![];
         retain_disconnected(

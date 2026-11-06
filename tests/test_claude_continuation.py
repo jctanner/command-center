@@ -79,4 +79,35 @@ class ClaudeContinuation(unittest.TestCase):
     def test_future_turn_evidence_cannot_establish_ready(self):
         self.child_records[-1]['timestamp']=self.now+120;self.save();self.assertEqual(a.provider_activity(self.o)['state'],'unknown')
 
+    def test_resumed_log_in_old_project_folder_auto_selects_exact_continued_session(self):
+        from unittest.mock import patch
+        old=self.home/'projects'/'old-repository';self.directory.rename(old);self.directory=old
+        self.o['args']=['claude','--resume',self.root]
+        current=a.claude_project(self.home,self.cwd);current.mkdir()
+        unrelated='cccccccc-cccc-cccc-cccc-cccccccccccc'
+        (current/(unrelated+'.jsonl')).write_text(json.dumps(dict(type='user',sessionId=unrelated,cwd=self.cwd,timestamp=self.now,message=dict(role='user',content='Unrelated newer history')))+'\n')
+        candidates=a.conversations(self.o);linked=[c for c in candidates if c['linked']]
+        self.assertEqual(len(linked),1);self.assertEqual(linked[0]['session'],self.child)
+        self.assertEqual(a.provider_activity(self.o)['state'],'ready')
+        observed=dict(self.o,screen='screen',context='',in_mode=False)
+        with patch.object(a,'observe',return_value=observed):result=a.execute(dict(action='details'))
+        self.assertEqual(result['association'],'process');self.assertEqual(result['selected'],linked[0]['id'])
+    def test_duplicate_fallback_uuid_paths_are_not_guessed(self):
+        self.root_records=self.root_records[:1];self.save()
+        old=self.home/'projects'/'old-repository';self.directory.rename(old);self.directory=old
+        duplicate=self.home/'projects'/'another-repository';duplicate.mkdir()
+        (duplicate/(self.root+'.jsonl')).write_text((old/(self.root+'.jsonl')).read_text())
+        self.assertIsNone(a.claude_session_path(self.home,self.cwd,self.root))
+        self.assertFalse(any(c['linked'] for c in a.conversations(self.o)))
+    def test_verified_runtime_registry_wins_over_old_startup_resume_argument(self):
+        self.root_records=self.root_records[:1];self.save();self.registry['sessionId']=self.child;self.save_registry()
+        self.o['args']=['claude','--resume',self.root]
+        self.assertEqual([c['session'] for c in a.conversations(self.o) if c['linked']],[self.child])
+    def test_cross_project_symlinks_or_mismatched_uuid_are_not_followed(self):
+        self.root_records=self.root_records[:1];self.save();old=self.home/'projects'/'old-repository';self.directory.rename(old);self.directory=old
+        outside=Path(self.cwd)/'outside.jsonl';outside.write_text((old/(self.root+'.jsonl')).read_text());(old/(self.root+'.jsonl')).unlink();(old/(self.root+'.jsonl')).symlink_to(outside)
+        self.assertIsNone(a.claude_session_path(self.home,self.cwd,self.root))
+        (old/(self.root+'.jsonl')).unlink();(old/(self.root+'.jsonl')).write_text(json.dumps(dict(type='user',sessionId=self.child,cwd=self.cwd))+'\n')
+        self.assertIsNone(a.claude_session_path(self.home,self.cwd,self.root))
+
 if __name__=='__main__':unittest.main()

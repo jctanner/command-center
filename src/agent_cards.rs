@@ -73,6 +73,30 @@ pub(crate) fn initialize(
     .map_err(storage)?;
     Ok(())
 }
+// Only called after an explicit restart's replacement process/session is proven.
+pub(crate) fn transfer_restart(
+    c: &rusqlite::Connection,
+    scope: &str,
+    old: &str,
+    new: &str,
+) -> Result<(), ApiError> {
+    let card = read(c, &key(scope, old))?;
+    if card.revision == 0 || read(c, &key(scope, new))?.revision != 0 {
+        return Ok(());
+    }
+    let count: u64 = c
+        .query_row("SELECT count(*) FROM agent_cards", [], |r| r.get(0))
+        .map_err(storage)?;
+    if count >= 4096 {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            "Agent card metadata limit reached; original settings retained".into(),
+        ));
+    }
+    c.execute("INSERT OR IGNORE INTO agent_cards(scope,revision,name,notes,color,pinned) VALUES(?1,1,?2,?3,?4,?5)",params![key(scope,new),card.name,card.notes,card.color,card.pinned]).map_err(storage)?;
+    Ok(())
+}
+
 pub(crate) async fn views(
     state: &AppState,
     scopes: Vec<(String, String)>,
@@ -242,4 +266,39 @@ pub(crate) async fn save(
         Ok(card)
     }).await?;
     Ok(Json(card))
+}
+
+#[cfg(test)]
+mod restart_tests {
+    use super::*;
+    #[test]
+    fn restart_handoff_copies_preferences_once_and_keeps_subsequent_edits() {
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        c.execute_batch("CREATE TABLE agent_cards(scope TEXT PRIMARY KEY, revision INTEGER NOT NULL,name TEXT NOT NULL,notes TEXT NOT NULL,color TEXT NOT NULL,pinned INTEGER NOT NULL);").unwrap();
+        c.execute(
+            "INSERT INTO agent_cards VALUES(?1,7,'Named','Notes','#46acec',1)",
+            [key("scope", "old")],
+        )
+        .unwrap();
+        transfer_restart(&c, "scope", "old", "new").unwrap();
+        let copied = read(&c, &key("scope", "new")).unwrap();
+        assert_eq!(
+            (
+                copied.name.as_str(),
+                copied.notes.as_str(),
+                copied.color.as_str(),
+                copied.pinned
+            ),
+            ("Named", "Notes", "#46acec", true)
+        );
+        c.execute(
+            "UPDATE agent_cards SET revision=2,name='Later edit' WHERE scope=?1",
+            [key("scope", "new")],
+        )
+        .unwrap();
+        transfer_restart(&c, "scope", "old", "new").unwrap();
+        assert_eq!(read(&c, &key("scope", "new")).unwrap().name, "Later edit");
+        transfer_restart(&c, "scope", "missing", "unrelated").unwrap();
+        assert_eq!(read(&c, &key("scope", "unrelated")).unwrap().revision, 0);
+    }
 }

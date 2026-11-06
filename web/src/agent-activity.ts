@@ -1,6 +1,6 @@
 export type AgentActivityEntry = {
   id: string; position: number; order: number; timestamp: string;
-  kind: 'thinking' | 'tool'; title: string; status: 'recorded' | 'pending' | 'completed' | 'error';
+  kind: 'thinking' | 'tool'; title: string; status: 'recorded' | 'pending' | 'completed' | 'error' | 'background';
   text: string; arguments?: string; output?: string; truncated?: boolean;
 };
 
@@ -11,7 +11,7 @@ export function activityElement(entry: AgentActivityEntry, open = false) {
   const summary = document.createElement('summary');
   const title = document.createElement('span'); title.textContent = entry.title;
   const status = document.createElement('small');
-  status.textContent = ({ recorded: 'Recorded', pending: 'Awaiting result', completed: 'Completed', error: 'Failed' })[entry.status];
+  status.textContent = ({ recorded: 'Recorded', pending: 'Awaiting result', completed: 'Completed', error: 'Failed', background: 'Started in background' })[entry.status];
   summary.append(title, status); details.append(summary);
   if (entry.timestamp) {
     const stamp = document.createElement('small'); stamp.className = 'activity-time';

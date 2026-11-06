@@ -1,3 +1,4 @@
+import {enableFeatures} from './feature-fixture';
 import {test,expect} from '@playwright/test';
 import {mkdtempSync,cpSync,mkdirSync,symlinkSync,writeFileSync,readFileSync,existsSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';import {spawn,spawnSync} from 'node:child_process';import {createServer} from 'node:net';
@@ -19,7 +20,7 @@ test.beforeAll(async()=>{
  fixture={issues:[issue(),issue('WORK-2','Second fixture')],older:[issue('WORK-3','Older issue')],cursor:'next-token',issue:issue('WORK-1','Jira fixture issue',{description:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Description <img src="https://jira-spy.invalid/pixel" onerror="window.jiraScript=1">'}]}]},comment:{comments:[{id:'one',author:{displayName:'Alice'},body:'Initial comment'}],startAt:0,total:2},attachment:[{filename:'note.txt',size:12,content:'PRIVATE_JIRA_TOKEN'}]}),comments:[{id:'two',author:{displayName:'Bob'},body:'Second comment'}],comment_total:2};update();writeFileSync(join(other,'fixture.json'),JSON.stringify({...fixture,issues:[issue('OTHER-1','Other source issue')]}));
  tm('-f','/dev/null','new-session','-d','-s','jira-test','-x','120','-y','35');writeFileSync(join(dir,'config'),`[[hosts]]\nid="local"\nname="Jira fixture host"\nsocket=${JSON.stringify(socket)}\n`);
  const p=await port();base=`http://127.0.0.1:${p}`;backend=spawn(resolve(process.env.CC_BINARY||'../target/release/command-center'),['--listen',`127.0.0.1:${p}`,'--config',join(dir,'config'),'--web-dir',resolve(process.env.CC_WEB_DIR||'dist-next')],{stdio:'pipe'});
- await expect.poll(async()=>{try{return(await fetch(base+'/api/v1/health')).status;}catch{return 0;}}).toBe(200);
+ await expect.poll(async()=>{try{return(await fetch(base+'/api/v1/health')).status;}catch{return 0;}}).toBe(200);await enableFeatures(base);
 });
 test.afterAll(()=>{backend?.kill('SIGTERM');if(socket)spawnSync('tmux',['-S',socket,'kill-server']);if(dir)rmSync(dir,{recursive:true,force:true});});
 

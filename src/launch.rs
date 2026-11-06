@@ -122,6 +122,20 @@ pub(crate) async fn prepare(
 pub(crate) struct Start {
     token: String,
     conversation: Option<String>,
+    initial_prompt: Option<String>,
+}
+fn validate_initial_prompt(value: Option<String>) -> Result<Option<String>, ApiError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if value.len() > 24000
+        || value
+            .chars()
+            .any(|c| c.is_control() && c != '\n' && c != '\t')
+    {
+        return Err(ApiError(StatusCode::BAD_REQUEST,"Initial prompt must be at most 24,000 UTF-8 bytes without control characters other than newlines and tabs".into()));
+    }
+    Ok((!value.trim().is_empty()).then_some(value))
 }
 pub(crate) async fn start(
     State(state): State<Arc<AppState>>,
@@ -134,6 +148,10 @@ pub(crate) async fn start(
             "Agent operations busy".into(),
         )
     })?;
+    let initial_prompt = validate_initial_prompt(start.initial_prompt)?;
+    if initial_prompt.is_some() && start.conversation.is_some() {
+        return Err(ApiError(StatusCode::BAD_REQUEST,"Initial prompts are for new conversations; send follow-ups from the agent chat after resuming".into()));
+    }
     let (revision, prepared, id, board) = {
         let mut grants = state.launches.grants.lock().await;
         let g = grants.get_mut(&start.token).ok_or_else(|| {
@@ -156,6 +174,12 @@ pub(crate) async fn start(
             return Err(ApiError(
                 StatusCode::BAD_REQUEST,
                 "Choose an available project conversation".into(),
+            ));
+        }
+        if g.board.is_some() && initial_prompt.is_some() {
+            return Err(ApiError(
+                StatusCode::BAD_REQUEST,
+                "Ticket launches use the prompt reviewed with the ticket".into(),
             ));
         }
         g.used = true;
@@ -212,6 +236,8 @@ pub(crate) async fn start(
     let mut request = prepared;
     if let Some(binding) = &board {
         request["initial_prompt"] = json!(binding.prompt);
+    } else {
+        request["initial_prompt"] = json!(initial_prompt);
     }
 
     request["action"] = json!("launch");
@@ -314,7 +340,39 @@ pub(crate) async fn board_start(
         Json(Start {
             token,
             conversation: None,
+            initial_prompt: None,
         }),
     )
     .await
+}
+
+#[cfg(test)]
+mod initial_prompt_tests {
+    use super::*;
+    #[test]
+    fn validates_initial_prompt_without_rewriting_literal_content() {
+        let text = "  Write a plan.\n\tKeep $(literal) and `quotes` intact.  ";
+        assert_eq!(
+            validate_initial_prompt(Some(text.into()))
+                .unwrap()
+                .as_deref(),
+            Some(text)
+        );
+        assert!(validate_initial_prompt(None).unwrap().is_none());
+        assert!(
+            validate_initial_prompt(Some(" \n\t".into()))
+                .unwrap()
+                .is_none()
+        );
+        assert!(validate_initial_prompt(Some("x".repeat(24000))).is_ok());
+        for bad in [
+            "x".repeat(24001),
+            "😀".repeat(6001),
+            "bad\0input".into(),
+            "bad\x1binput".into(),
+            "bad\rinput".into(),
+        ] {
+            assert!(validate_initial_prompt(Some(bad)).is_err());
+        }
+    }
 }

@@ -296,3 +296,38 @@ test('launch names reject control characters and oversized UTF-8 before creating
  }
  expect(tmux('list-windows','-a','-F','#{window_id}')).toBe(before);
 });
+
+
+for(const provider of ['codex','claude','pi'])test(`new ${provider} agent receives the initial prompt once as literal input`,async()=>{
+ const prompt='  Initial fixture task.\n\nKeep $(touch /tmp/cc-initial-must-not-exist), `literal`, "quotes" and --resume untouched.  ';
+ const p=await prepare(provider);const before=calls().length;
+ const response=await api('/api/v1/hosts/local/agents/launch',{token:p.token,conversation:null,initial_prompt:prompt});expect(response.status).toBe(200);
+ await expect.poll(()=>calls().length).toBe(before+1);const call=calls().find(c=>c.args.at(-1)===prompt);expect(call).toBeTruthy();expect(call.args.at(-2)).toBe('--');expect(call.cwd).toBe(project);expect(existsSync('/tmp/cc-initial-must-not-exist')).toBe(false);
+ expect((await api('/api/v1/hosts/local/agents/launch',{token:p.token,initial_prompt:prompt})).status).toBe(410);expect(calls().length).toBe(before+1);
+ if(provider==='codex'&&(await(await api('/api/v1/hosts')).json()).some((h:any)=>h.id==='remote')){const remote=await prepare('codex',project,'remote');const text=prompt+' Remote fixture.';expect((await api('/api/v1/hosts/remote/agents/launch',{token:remote.token,initial_prompt:text})).status).toBe(200);await expect.poll(()=>calls().some(c=>c.args.at(-1)===text)).toBe(true);expect(existsSync('/tmp/cc-initial-must-not-exist')).toBe(false);}
+});
+
+test('initial prompt validation preserves launch grants and ticket-owned prompts',async()=>{
+ const p=await prepare();const before=calls().length;
+ for(const prompt of ['x'.repeat(24001),'😀'.repeat(6001),'bad\0prompt','bad\u001bprompt']){
+  expect((await api('/api/v1/hosts/local/agents/launch',{token:p.token,initial_prompt:prompt})).status).toBe(400);
+ }
+ expect((await api('/api/v1/hosts/local/agents/launch',{token:p.token,conversation:p.conversations[0].id,initial_prompt:'Must not inject into resumed history'})).status).toBe(400);expect(calls().length).toBe(before);
+ expect((await api('/api/v1/hosts/local/agents/launch',{token:p.token,initial_prompt:'Validated fixture prompt'})).status).toBe(200);await expect.poll(()=>calls().length).toBe(before+1);
+ const ticket=await boardTicket('Protected prompt fixture');const prepared=await boardPrepare(ticket,'codex','local','Reviewed ticket prompt');
+ expect((await api('/api/v1/hosts/local/agents/launch',{token:prepared.token,initial_prompt:'Unreviewed override'})).status).toBe(400);
+ expect((await api(`/api/v1/board/tickets/${ticket.id}/launch`,{token:prepared.token})).status).toBe(200);
+ await expect.poll(()=>calls().some(c=>c.args.at(-1)==='Reviewed ticket prompt')).toBe(true);expect(calls().some(c=>c.args.includes('Unreviewed override'))).toBe(false);
+ const full='"'.repeat(24000), large=await prepare();expect((await api('/api/v1/hosts/local/agents/launch',{token:large.token,initial_prompt:full})).status).toBe(200);await expect.poll(()=>calls().some(c=>c.args.at(-1)===full)).toBe(true);
+});
+
+test('phone initial prompt preserves drafts across resume selection and sends once',async({page})=>{
+ await page.setViewportSize({width:393,height:852});let sockets=0;page.on('websocket',s=>{if(s.url().includes('/terminal?'))sockets++;});
+ await page.goto(base);await page.getByRole('button',{name:'Start agent',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Start an agent',exact:true});
+ const prompt=dialog.getByRole('textbox',{name:'Initial prompt',exact:true});await expect(prompt).toBeEnabled();const text='Plan the mobile fixture.\nThen implement and verify it.';await prompt.fill(text);
+ const conversations=dialog.getByLabel('Start or resume',{exact:true});await expect(conversations.locator('option')).not.toHaveCount(1);const id=await conversations.locator('option:not([disabled])').nth(1).getAttribute('value');await conversations.selectOption(id!);await expect(prompt).toBeDisabled();await expect(prompt).toHaveValue(text);await conversations.selectOption('');await expect(prompt).toBeEnabled();await expect(prompt).toHaveValue(text);
+ await prompt.fill('😀'.repeat(6001));await expect(dialog.getByRole('button',{name:'Start Codex',exact:true})).toBeDisabled();await expect(dialog).toContainText('Prompt is too long');await prompt.fill(text);
+ await page.screenshot({path:'../test-results/launch-initial-prompt-phone.png'});expect(await dialog.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
+ await dialog.getByRole('button',{name:'Start Codex',exact:true}).click();await expect(dialog).toBeHidden({timeout:15000});expect(calls().filter(c=>c.args.at(-1)===text)).toHaveLength(1);expect(sockets).toBe(0);
+ await page.getByRole('button',{name:'← Agents',exact:true}).click();await page.getByRole('button',{name:'Start agent',exact:true}).click();await expect(prompt).toHaveValue('');
+});

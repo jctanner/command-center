@@ -1,0 +1,3 @@
+# 2026-11-05: Restart success feedback
+
+Completed [Task 0011](../tasks/done/0011-restart-success-feedback.md), fixed [bug 0007](../bugs/fixed/0007-restart-success-modal-stays-open.md). The two reported docs-agent operations were verified Complete with successive process identities. The modal previously stayed open with only Cancel after success. Verified success now closes it and shows an accessible ten-second result; uncertain status controls remain. Six isolated restart checks and frontend build passed. Frontend deployed/HTTPS verified, no live agents restarted for the fix. Reload app; do not restart docs-agent again just to clear this old modal. Next task 0012; bug 0008.

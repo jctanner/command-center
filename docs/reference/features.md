@@ -2,6 +2,14 @@
 
 Maintained implementation and integration details, moved from README during ledger adoption. This is reference material; future task progress and verification receipts belong in the [work ledger](../work-ledger.md). Product entry point: [README](../../README.md).
 
+## Settings and optional integrations
+
+Open **Settings** in the header (gear on compact screens). **Machines** contains the existing local/SSH/ProxyJump configuration and connection tests. **Features** controls Slack, Email and Jira for the whole backend installation, with explicit Save and revision checks across browsers. Settings has its own `#/settings` route and scrolls on phones without attaching a terminal.
+
+Fresh configurations start with all three optional workspaces disabled. Their navigation items are hidden and all their backend routes return 403. Enable a workspace, open it, then configure its existing machine/project source. These integrations require the compatible personal-assistant environment and credentials on the source machine; enabling a flag does not grant source write permissions or install anything.
+
+Flags live in the private, atomically saved `config.features.json` sidecar next to `config.toml`. On first startup without that sidecar, integrations with existing configured sources are enabled once to preserve an upgraded installation. Explicitly disabled flags remain disabled on restart. Source settings, local read state and delivery receipts are retained. Disabling waits for already-started guarded requests, then blocks new integration requests. Visible clients refresh flags every ten seconds and when returning to the page; an open disabled workspace moves to Settings. The backend gate takes effect immediately after save. These are runtime availability flags; integration code remains part of the repository and binary.
+
 ## Native pi in AI Queue
 
 Running native **pi** agents now appear alongside Codex and Claude, including over SSH/ProxyJump. No extensions, RPC wrapper, launch changes or restarts are required. Open the agent and choose its project conversation under **Details → Conversation history** when several logs exist. Sole candidates auto-select as unverified project history; cwd or timestamps never prove that a log belongs to a running process.
@@ -231,3 +239,26 @@ Claude may register its tmux target under a disposable `cc-view-<32 hex>` sessio
 Right-click a card (or Shift+F10) for Edit card / Close agent, or open its conversation and choose Details → Close agent. The confirmation previews the actual machine/window, all panes, linked sessions and any last-window session closures, with Cancel focused. Closing terminates every process in that tmux window and removes all its live cards; ticket history and message receipts remain stored. It does not automatically archive/cancel receipts, mark tickets done, or retry uncertain closures.
 
 The existing window-close API accepts optional paired `agent_pane` / `agent_instance` fields. Its preview fingerprint binds that exact process as well as the existing topology/endpoint checks; confirmation rejects stale processes, renamed/replaced windows, changed panes/links and omitted bindings. A final read-only foreground-process verification occurs on the target machine immediately before the structured kill-window operation. Compact clients use only HTTP actions, never terminal attachment or resize. Test closures use isolated fixture agents/windows only.
+
+
+## Restart an agent
+
+Desktop card actions and phone Details expose Restart agent. A confirmation identifies the uniquely process-linked native session and directory, warning that the selected pane's shell/agent/children will stop. The same pane resumes Codex/Claude/Pi through structured CLI arguments; sibling panes and window identities remain. New process/session verification carries card preferences forward without replaying old queued input or drafts. A durable one-use receipt and Check restart status handle lost responses and backend/page reloads without repeating the action. Missing or ambiguous session evidence prevents a restart. See [API details](../api.md#explicit-agent-restart).
+
+
+## Initial prompt when starting an agent
+
+New agent includes an optional multiline Initial prompt for Codex, Claude and Pi. Leave it blank to open interactively. The text is passed once as literal CLI input when starting a new conversation. Resume disables the field while retaining its draft if you switch back. Successful launch clears it; recovery checks the original launch without repeating the prompt. Ticket launches continue using their reviewed ticket prompt.
+
+
+## Background-task feedback
+
+Claude agents show a compact background-work badge on cards and an expandable Background tasks panel in chat, including phones. Descriptions, elapsed time and completion/failure distinguish a background launch from the foreground agent being Ready or Working. Missing/stale proof is labelled completion unverified. Recent task outcomes come from explicit native notifications without restoring XML into human chat. This is a bounded recent view with a limited-history note, not a full inventory. Codex/Pi keep their existing activity UI until equivalent provider evidence is supported. No task control actions, input, approval or queue dispatch are triggered by this display.
+
+
+## Agents launched through shell wrappers
+
+Agent cards can detect a unique foreground-terminal Codex/Claude/Pi launched by a shell script even when tmux reports bash. Discovery and action verification share the same bounded process/TTY/ancestry checks. Background jobs and ambiguous same-terminal agents are excluded. Existing direct-agent identities and card preferences survive this detection change. Native conversation linking still requires its own process-backed evidence.
+
+
+Claude session auto-selection also handles resumed conversations whose files remain under an older repository's Claude folder. It follows exact process-proven UUIDs and explicit continuation edges, with bounded path/metadata/ambiguity checks; it does not choose unrelated newer project history.

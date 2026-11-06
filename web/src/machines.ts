@@ -14,8 +14,8 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
   if (!response.ok) throw new RequestError(result.error || `Request failed (${response.status})`, response.status);
   return result;
 }
-export function initMachines(onChange: (hosts: Host[]) => void) {
-  const dialog = el<HTMLDialogElement>('machine-dialog'), form = el<HTMLFormElement>('machine-form');
+export function initMachines(onChange: (hosts: Host[]) => void, onClose:()=>void) {
+  const form = el<HTMLFormElement>('machine-form');
   const name = el<HTMLInputElement>('machine-name'), kind = el<HTMLSelectElement>('machine-kind'), ssh = el<HTMLInputElement>('machine-ssh');
   const jump = el<HTMLInputElement>('machine-ssh-jump');
   const socket = el<HTMLInputElement>('machine-socket'), sshConfig = el<HTMLInputElement>('machine-ssh-config');
@@ -62,16 +62,16 @@ export function initMachines(onChange: (hosts: Host[]) => void) {
     finally { busy = false; controls(); }
   }
   async function updateTabs() { onChange(await request<Host[]>('/hosts')); }
-  el('manage-machines').onclick = () => {
-    dialog.showModal();
+  function activate() {
+    if(dirty||busy)return;
     void run(async () => {
       say('Loading machines…'); settings = await request<Settings>('/settings/hosts');
       fill(settings.hosts[0]);
     });
   };
-  function close() { if (!busy && discard()) { operation++; dialog.close(); } }
+  function close() { if (canLeave()) { operation++; onClose(); } }
+  function canLeave(){if(busy||!discard())return false;dirty=false;return true;}
   el('close-machines').onclick = close;
-  dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   form.oninput = () => { dirty = JSON.stringify(draft()) !== savedDraft; operation++; showConnection(); say(); };
   el('add-machine').onclick = () => { if (!busy && discard()) fill(); };
   reload.onclick = () => void run(async () => {
@@ -106,4 +106,5 @@ export function initMachines(onChange: (hosts: Host[]) => void) {
       fill(settings.hosts[0]); say('Machine removed. Its tmux sessions are still running.', 'success'); await updateTabs();
     });
   };
+  return {activate,canLeave};
 }

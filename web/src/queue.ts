@@ -1,3 +1,5 @@
+import {BackgroundTasks,backgroundLabel,type BackgroundSnapshot} from './agent-background';
+import {AgentRestarter} from './agent-restart';
 import {AgentCloser} from './agent-close';
 import {chatMarkdown} from './chat-markdown';
 import {AgentOutbox,OutboxSendError,type OutboxEntry} from './agent-outbox';
@@ -10,13 +12,13 @@ type ReadState = { key: string; instance: string; revision: number; finished: bo
 type AgentState = 'working' | 'ready' | 'approval' | 'unknown' | 'disconnected';
 type Activity = { state: AgentState; source: string; reason: string; evidence_at?: number; observed_at: number; transition?: string };
 export type QueueTarget = { instance?:string|null;host: string; connection: string; session: string; window: string; pane: string };
-type Item = { card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
+type Item = { background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
 type Host = { id: string; name: string; connection_revision: string; error?: string; limited: boolean; items: Item[] };
 type Snapshot = { checked_at: number; hosts: Host[] };
 type Message = { id: string; role: 'user' | 'assistant'; text: string; timestamp: string; order?: number; truncated?: boolean };
 type Conversation = { id: string; session: string; timestamp: string; linked: boolean };
 type Approval = { id: string; title: string; context: string; choices: { id: string; label: string }[]; token?: string; submitted?: boolean };
-type Detail = { outbox_entries?:OutboxEntry[]; card?:AgentCard;approval?: Approval; read_state?: ReadState; activity?: Activity; instance?: string; context: string; project: string; provider: string; selected?: string; association: string; conversations: Conversation[]; messages: Message[]; activities?: AgentActivityEntry[]; activity_limited?: boolean; older_cursor?: number; send_available: boolean; send_reason?: string; message_token?: string; attention: boolean; history_version?: string; history_unchanged?: boolean; history_branch?: string; history_reset?: boolean; history_notice?: string };
+type Detail = { background_tasks?:BackgroundSnapshot|null;outbox_entries?:OutboxEntry[]; card?:AgentCard;approval?: Approval; read_state?: ReadState; activity?: Activity; instance?: string; context: string; project: string; provider: string; selected?: string; association: string; conversations: Conversation[]; messages: Message[]; activities?: AgentActivityEntry[]; activity_limited?: boolean; older_cursor?: number; send_available: boolean; send_reason?: string; message_token?: string; attention: boolean; history_version?: string; history_unchanged?: boolean; history_branch?: string; history_reset?: boolean; history_notice?: string };
 const node = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] => { const n = document.createElement(tag); n.textContent = text; return n; };
 const stateOf = (item: Item): AgentState => item.activity?.state || (item.status === 'disconnected' ? 'disconnected' : item.status === 'attention' || (!item.status && item.prompt !== 'Live agent') ? 'approval' : 'unknown');
 const projectName = (path: string) => path.split('/').filter(Boolean).at(-1) || '/';
@@ -36,6 +38,7 @@ function stateBadge(activity?: Activity, fallback: AgentState = 'unknown') {
 export class AttentionQueue {
   private notifications = new AgentNotifications();
   private mute = node('button', 'Mute notifications');
+  private restartAgent=node('button','Restart agent…');private agentRestarter:AgentRestarter;
   private closeAgent=node('button','Close agent…');private agentCloser:AgentCloser;private cardMenu=node('div');private editCard=node('button','Edit card');private cardNotes=node('p');private cardVersions=new Map<string,AgentCard>();private cardEditor:AgentCardEditor;
   private visible = false;
   private refreshing?: Promise<void>;
@@ -56,6 +59,7 @@ export class AttentionQueue {
   private detailFeedback = node('p');
   private activityBadge = stateBadge();
   private liveActivity = node('div');
+  private backgroundTasks=new BackgroundTasks();
   private detailUnavailable = false;
   private lastDetailPoll = 0;
   private pendingReplies = new Map<string, { at: number; reply: string; activity: string }>();
@@ -94,6 +98,8 @@ export class AttentionQueue {
   private filterPanel = node('details');
   private inboxControls = node('div');
   constructor(private open: (target: QueueTarget) => Promise<void>) {
+    this.agentRestarter=new AgentRestarter(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
+    this.restartAgent.type='button';this.restartAgent.onclick=()=>{const c=this.chosen();if(c)this.openAgentRestart(c.h,c.item);};
     this.agentCloser=new AgentCloser(async()=>{this.body.dataset.detail='false';await this.refresh();});
     this.closeAgent.type='button';this.closeAgent.className='danger';this.closeAgent.onclick=()=>{const c=this.chosen();if(c)this.openAgentClose(c.h,c.item);};
     this.cardMenu.className='agent-card-menu';this.cardMenu.setAttribute('role','menu');this.cardMenu.setAttribute('aria-label','Agent actions');this.cardMenu.hidden=true;document.body.append(this.cardMenu);
@@ -184,11 +190,11 @@ export class AttentionQueue {
     this.deliveryReview.onclick = () => { this.uncertain.delete(this.draftKey()); this.deliveryReview.hidden = true; this.sendFeedback.textContent = ''; void this.loadDetail(); };
     form.append(this.deliveryReview);
     const chatHeader = node('div'); chatHeader.className = 'queue-chat-header'; chatHeader.append(actions, this.title, this.subtitle);
-    this.cardNotes.className='agent-card-notes';this.metadata.append(this.outbox.button(),this.editCard,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
+    this.cardNotes.className='agent-card-notes';this.metadata.append(this.outbox.button(),this.editCard,this.restartAgent,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
     this.history.append(this.older);
     this.approvalCard.className = 'agent-approval'; this.approvalCard.setAttribute('aria-label', 'Tool approval'); this.approvalCard.hidden = true;
     this.liveActivity.className = 'agent-live-activity'; this.liveActivity.setAttribute('role', 'status'); this.liveActivity.setAttribute('aria-live', 'polite');
-    this.detail.append(chatHeader, this.chatNotice, this.metadata, this.history, this.liveActivity, this.approvalCard, form);
+    this.detail.append(chatHeader, this.chatNotice, this.metadata, this.backgroundTasks.element, this.history, this.liveActivity, this.approvalCard, form);
     this.render(); void this.refresh();
     window.setInterval(() => { if (!document.hidden || this.notifications.enabled()) void this.refresh(); if(!document.hidden&&this.visible)void this.outbox.refresh(); }, 6000);
     window.setInterval(() => {
@@ -229,10 +235,11 @@ export class AttentionQueue {
     this.selected = id; this.openedForRead = id; this.body.dataset.detail = 'true'; this.render();
   }
   private mergeCard(item:Item,instance:string,card:AgentCard){const key=`${item.id}/${instance}`,old=this.cardVersions.get(key);if(old&&old.revision>card.revision)item.card=old;else{item.card=card;this.cardVersions.set(key,card);}if(this.cardVersions.size>512)this.cardVersions.delete(this.cardVersions.keys().next().value!);}
+  private openAgentRestart(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentRestarter.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
   private openAgentClose(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentCloser.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
   private openCardActions(host:Host,item:Item,x:number,y:number){
     const action=(text:string,run:()=>void)=>{const button=node('button',text);button.type='button';button.setAttribute('role','menuitem');button.onclick=()=>{this.cardMenu.hidden=true;run();};button.disabled=!item.attention?.instance||stateOf(item)==='disconnected';return button;};
-    const edit=action('Edit card',()=>this.openCardEditor(host,item));const pin=action(item.card?.pinned?'Unpin card':'Pin card',()=>{void this.setCardPinned(host,item);});const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';this.cardMenu.replaceChildren(edit,pin,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
+    const edit=action('Edit card',()=>this.openCardEditor(host,item));const pin=action(item.card?.pinned?'Unpin card':'Pin card',()=>{void this.setCardPinned(host,item);});const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';const restart=action('Restart agent…',()=>this.openAgentRestart(host,item));this.cardMenu.replaceChildren(edit,pin,restart,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
   }
   private async setCardPinned(host:Host,item:Item){const instance=item.attention?.instance;if(!instance)return;try{await this.cardEditor.setPinned({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:agentTitle(item)},!item.card?.pinned);}catch(error){this.feedback.dataset.error='true';this.feedback.textContent=`${String(error)} Refresh this card before trying again.`;}}
   private openCardEditor(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected'){this.feedback.textContent='Refresh this agent before editing its card.';return;}void this.cardEditor.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:agentTitle({...item,card:undefined})});}
@@ -276,6 +283,7 @@ export class AttentionQueue {
       const attention=[item.attention?.finished?'Finished':'',item.attention?.new_approval?(item.activity?.source==='pi_bridge'?'New input request':'New approval'):'',item.attention?.unread_reply?'Unread reply':''].filter(Boolean);
       if(attention.length){const dot=node('span');dot.className='queue-card-unread';dot.setAttribute('role','img');dot.setAttribute('aria-label',attention.join(' · '));dot.title=attention.join(' · ');context.append(dot);}
       context.append(document.createTextNode(`${h.name} · ${item.agent} · ${projectName(item.project)}`));
+      const background=backgroundLabel(item.background_tasks,stateOf(item)==='disconnected');if(background){for(const parent of [machine,context]){const badge=node('span',background);badge.className='queue-background-count';if(parent===context)parent.prepend(badge,document.createTextNode(' · '));else parent.append(badge);}}
       b.title=`${name.textContent}\n${context.title}\nRight-click or Shift+F10 for agent actions`;
       b.append(machine,stateBadge(item.activity,stateOf(item)),name,folder,context,node('small',`${item.session_name} / ${item.window_name} / ${item.pane}`));
       b.dataset.hasPrompt=String(!!item.card?.name&&waiting(item));
@@ -302,7 +310,7 @@ export class AttentionQueue {
     this.root.querySelector('h1')!.textContent = compactClient() ? 'Agents' : 'AI Queue';
     for (const b of this.inboxControls.querySelectorAll('button')) b.setAttribute('aria-pressed', String(this.statusSelect.value === b.dataset.filter));
     const chosen = this.chosen();
-    this.closeAgent.disabled=this.editCard.disabled=!chosen?.item.attention?.instance||stateOf(chosen.item)==='disconnected';this.cardNotes.textContent=chosen?.item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;
+    this.restartAgent.disabled=this.closeAgent.disabled=this.editCard.disabled=!chosen?.item.attention?.instance||stateOf(chosen.item)==='disconnected';this.cardNotes.textContent=chosen?.item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;
     this.mute.hidden = !chosen?.item.attention;
     if (chosen?.item.attention) { this.mute.textContent = this.notifications.isMuted(JSON.stringify([chosen.item.attention.key, chosen.item.attention.instance])) ? 'Unmute notifications' : 'Mute notifications'; }
     this.subtitle.textContent = chosen ? `${chosen.h.name} · ${projectName(chosen.item.project)}${this.detailData?.association === 'project' && this.detailKey === this.selected ? ' · Project history' : ''}` : '';
@@ -356,6 +364,7 @@ export class AttentionQueue {
     return activity ? `${activity.state}/${activity.source}/${activity.transition || activity.evidence_at || ''}` : '';
   }
   private renderActivity() {
+    const selected=this.chosen();const detailed=this.detailKey===this.selected&&this.detailData?.instance===selected?.item.attention?.instance?this.detailData?.background_tasks:undefined;const queued=selected?.item.background_tasks;const background=detailed&&(!queued||detailed.observed_at>=queued.observed_at)?detailed:queued;this.backgroundTasks.update(background,this.detailUnavailable||this.currentActivity()?.state==='disconnected');
     const activity = this.currentActivity(), key = this.draftKey(), pending = this.pendingReplies.get(key);
     if (pending && (Date.now() - pending.at > 15 * 60 * 1000 || this.latestReply() !== pending.reply ||
       (activity?.state === 'ready' && this.activitySignature(activity) !== pending.activity))) this.pendingReplies.delete(key);

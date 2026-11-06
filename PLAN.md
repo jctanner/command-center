@@ -9,9 +9,26 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0017: transient host feedback](docs/tasks/done/0017-transient-host-connection-feedback.md)
+
+- [Task 0016: Settings and feature flags](docs/tasks/done/0016-settings-and-feature-flags.md)
+
+- [Task 0015: resumed Claude history location](docs/tasks/done/0015-claude-resume-history-location.md)
+
+- [Task 0014: wrapped-agent discovery](docs/tasks/done/0014-wrapped-agent-discovery.md)
+
+- [Task 0013: background-task feedback](docs/tasks/done/0013-background-task-feedback.md)
+
+- [Task 0012: launch initial prompt](docs/tasks/done/0012-launch-initial-prompt.md)
+
+- [Task 0011: restart success feedback](docs/tasks/done/0011-restart-success-feedback.md)
+
+- [Task 0010: restart agent](docs/tasks/done/0010-restart-agent.md)
 
 - [Task 0008: Claude internal chat records](docs/tasks/done/0008-claude-internal-chat-records.md)
 
@@ -35,6 +52,19 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Fixed bugs
 
+- [Bug 0011: background host feedback](docs/bugs/fixed/0011-background-host-errors-leak-across-workspaces.md)
+- [Bug 0012: close fixture host identity](docs/bugs/fixed/0012-window-close-fixture-assumes-removed-host-id.md)
+
+- [Bug 0010: resumed Claude log location](docs/bugs/fixed/0010-resumed-claude-log-outside-current-project.md)
+
+- [Bug 0009: wrapped agent missing](docs/bugs/fixed/0009-wrapped-agent-missing-from-queue.md)
+
+- [Bug 0008: launch prompt size boundaries](docs/bugs/fixed/0008-launch-prompt-json-limits.md)
+
+- [Bug 0007: restart success modal](docs/bugs/fixed/0007-restart-success-modal-stays-open.md)
+
+- [Bug 0006: restart recovery revision](docs/bugs/fixed/0006-restart-recovery-connection-revision.md)
+
 - [Bug 0004: Claude internal XML in chat](docs/bugs/fixed/0004-claude-internal-xml-in-chat.md)
 
 - [Bug 0003: Claude pasted-input duplicate](docs/bugs/fixed/0003-claude-pasted-input-duplicate.md)
@@ -48,6 +78,22 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-06: transient host feedback](docs/notes/2026-11-06-transient-host-feedback.md)
+
+- [2026-11-05: Settings and feature flags](docs/notes/2026-11-05-settings-and-feature-flags.md)
+
+- [2026-11-05: resumed Claude auto-selection](docs/notes/2026-11-05-resumed-claude-auto-selection.md)
+
+- [2026-11-05: wrapped-agent discovery](docs/notes/2026-11-05-wrapped-agent-discovery.md)
+
+- [2026-11-05: background-task feedback](docs/notes/2026-11-05-background-task-feedback.md)
+
+- [2026-11-05: launch initial prompt](docs/notes/2026-11-05-launch-initial-prompt.md)
+
+- [2026-11-05: restart success feedback](docs/notes/2026-11-05-restart-success-feedback.md)
+
+- [2026-11-05: agent restart](docs/notes/2026-11-05-agent-restart.md)
 
 - [2026-11-04: Claude internal chat records](docs/notes/2026-11-04-claude-internal-chat-records.md)
 

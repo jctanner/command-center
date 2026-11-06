@@ -40,6 +40,80 @@ def proc(pid):
     fields = raw[raw.rindex(')') + 2:].split()
     return base, fields[19], int(fields[5])  # starttime and terminal foreground group
 
+def process_info(pid):
+    base=Path('/proc')/str(pid)
+    fields=(base/'stat').read_text().rsplit(')',1)[1].split()
+    return dict(pid=int(pid),base=base,start=fields[19],parent=int(fields[1]),group=int(fields[2]),tty=int(fields[4]),foreground=int(fields[5]))
+
+
+def process_kind(base):
+    command=(base/'comm').read_text().strip().lower()
+    with (base/'cmdline').open('rb') as source: argv=source.read(8192).decode(errors='replace').split('\0')
+    names=(command,os.path.basename(argv[0]).lower())
+    for kind in ('codex','claude','pi'):
+        if kind in names or kind=='pi' and 'pi-coding-agent' in names: return kind
+    return None
+
+
+def foreground_agent(pid):
+    pane=process_info(pid)
+    if pane['foreground']<=0 or not pane['tty']: return None
+    leader=process_info(pane['foreground'])
+    if leader['tty']!=pane['tty'] or leader['group']!=leader['pid']: return None
+    ancestor=leader
+    for _ in range(32):
+        if ancestor['pid']==pane['pid']: break
+        if ancestor['parent']<=1: return None
+        ancestor=process_info(ancestor['parent'])
+    else: fail(413,'Foreground ancestry exceeds the discovery bound')
+    kind=process_kind(leader['base'])
+    if kind: candidate=leader
+    else:
+        import stat
+        terminal=os.stat(pane['base']/'fd/0')
+        if not stat.S_ISCHR(terminal.st_mode): return None
+        pending=[leader];visited=set();candidates=[]
+        while pending:
+            current=pending.pop(0)
+            if current['pid'] in visited: continue
+            visited.add(current['pid'])
+            if len(visited)>32: fail(413,'Foreground process tree exceeds the discovery bound')
+            if current['group']!=leader['pid'] or current['tty']!=pane['tty']: continue
+            current_kind=process_kind(current['base'])
+            if current_kind:
+                stdin=os.stat(current['base']/'fd/0')
+                if stat.S_ISCHR(stdin.st_mode) and stdin.st_rdev==terminal.st_rdev: candidates.append((current,current_kind))
+                continue  # A CLI's delegated children are not separate pane agents.
+            for child in (current['base']/'task'/str(current['pid'])/'children').read_text().split()[:33]:
+                try: child_info=process_info(int(child))
+                except (OSError,ValueError): continue
+                if child_info['parent']==current['pid']: pending.append(child_info)
+        if len(candidates)!=1: return None
+        candidate,kind=candidates[0]
+    fresh_pane=process_info(pid);fresh_leader=process_info(leader['pid']);fresh_agent=process_info(candidate['pid'])
+    if (fresh_pane['start']!=pane['start'] or fresh_pane['foreground']!=leader['pid']
+        or fresh_leader['start']!=leader['start'] or fresh_agent['start']!=candidate['start']
+        or fresh_agent['group']!=leader['pid'] or fresh_agent['tty']!=pane['tty']
+        or process_kind(fresh_agent['base'])!=kind): return None
+    return pane,leader,candidate,kind
+
+
+def discover_agents(request):
+    rows=tmux(request,'list-panes','-a','-F','#{pane_id}\t#{pane_pid}\t#{pane_dead}').splitlines()
+    seen=set();agents=[];limited=False
+    for row in rows:
+        fields=row.split('\t')
+        if len(fields)!=3 or fields[0] in seen or fields[2]!='0': continue
+        seen.add(fields[0])
+        if len(seen)>256: limited=True;break
+        try:
+            resolved=foreground_agent(int(fields[1]))
+            if resolved: agents.append(dict(pane=fields[0],provider=resolved[3]))
+        except Failure: limited=True
+        except (OSError,ValueError,IndexError): pass
+    return dict(agents=agents,limited=limited)
+
+
 def observe(request):
     for name, prefix in [('session', '$'), ('window', '@'), ('pane', '%')]:
         if not re.fullmatch(re.escape(prefix) + r'\d+', request.get(name, '')):
@@ -55,31 +129,28 @@ def observe(request):
         fail(409, 'Agent pane has exited')
     command = info[1].lower()
     kind = 'codex' if 'codex' in command else 'claude' if 'claude' in command else 'pi' if command in ('pi', 'pi-coding-agent') else None
-    if not kind:
-        fail(409, 'This pane is no longer running a supported agent')
     captured = tmux(request, 'capture-pane', '-p', '-t', target, '-S', '-40')
     text = captured[-48000:]
     identity, agent_base, args, env = None, None, [], {}
     try:
-        base, start, foreground = proc(int(info[0]))
-        # Only the foreground process may be messaged; background agents and
-        # similarly named files in a project are never treated as running agents.
-        agent_base, agent_start, _ = proc(foreground)
-        argv = (agent_base / 'cmdline').read_bytes().decode(errors='replace').split('\0')
-        comm = (agent_base / 'comm').read_text().strip().lower()
-        verified = (comm in ('pi', 'pi-coding-agent') or os.path.basename(argv[0]).lower() in ('pi', 'pi-coding-agent')) if kind == 'pi' else (kind in comm or any(kind in os.path.basename(a).lower() for a in argv[:2]))
-        if not verified:
-            fail(409, 'Agent is not the foreground process')
+        resolved=foreground_agent(int(info[0]))
+        if not resolved: fail(409,'No unique supported agent owns this foreground terminal')
+        pane_process,leader,agent_process,kind=resolved
+        start=pane_process['start'];foreground=leader['pid'];agent_start=agent_process['start'];agent_base=agent_process['base']
+        argv=(agent_base/'cmdline').read_bytes().decode(errors='replace').split('\0')
         args = argv
         # Read only the two provider-home variables. Never return environments.
         for value in (agent_base / 'environ').read_bytes().decode(errors='replace').split('\0'):
             key, _, val = value.partition('=')
-            if key in ('CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CC_LAUNCH_ID', 'PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR'):
+            if key in ('CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CC_LAUNCH_ID', 'PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'CC_RESTART_ID'):
                 env[key] = val
         boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-        identity = hashlib.sha256(f'{boot}:{info[0]}:{start}:{foreground}:{agent_start}:{kind}'.encode()).hexdigest()
+        basis=f'{boot}:{info[0]}:{start}:{foreground}:{agent_start}:{kind}'
+        if agent_process['pid']!=foreground: basis+=f":wrapped:{agent_process['pid']}:{leader['start']}"
+        identity = hashlib.sha256(basis.encode()).hexdigest()
         cwd = os.path.realpath(agent_base / 'cwd')
     except (OSError, ValueError, IndexError):
+        if not kind: fail(409,'No process-backed agent association is available')
         cwd = tmux(request, 'display-message', '-p', '-t', target, '#{pane_current_path}').rstrip('\n')
     return dict(target=target, kind=kind, identity=identity, base=agent_base, args=args,
                 env=env, cwd=cwd, context=text, visible=tmux(request, 'capture-pane', '-p', '-t', target, '-S', '0'), in_mode=info[3] != '0',
@@ -218,10 +289,41 @@ def bounded_events(path, limit=512*1024):
     return records
 
 
+def claude_session_path(home, cwd, session):
+    # UUID is supplied only by process evidence, never by a project-history guess.
+    if not isinstance(session,str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session): return None
+    root=(home/'projects').resolve()
+    if not root.is_relative_to(home.resolve()): return None
+    def verified(path):
+        try:
+            if path.is_symlink(): return None
+            resolved=path.resolve(strict=True)
+            if resolved.parent.parent!=root or not resolved.is_file(): return None
+            log_cwd,log_session,_=metadata(resolved,'claude')
+            return resolved if log_session==session and isinstance(log_cwd,str) and os.path.isabs(log_cwd) else None
+        except OSError: return None
+    direct=claude_project(home,cwd)/(session+'.jsonl')
+    if direct.exists() or direct.is_symlink(): return verified(direct)
+    matches=set()
+    try:
+        for index,directory in enumerate(root.iterdir()):
+            if index>=2000: return None
+            path=directory/(session+'.jsonl')
+            if path.is_file():
+                candidate=verified(path)
+                if candidate: matches.add(candidate)
+                if len(matches)>1: return None
+    except OSError: return None
+    return next(iter(matches),None)
+
+
 def claude_current_session(home, cwd, session):
     """Follow only explicit provider continuation edges from a verified PID registry."""
-    directory=claude_project(home,cwd).resolve();visited=set()
-    if not directory.is_relative_to(home.resolve()): return None
+    initial=claude_session_path(home,cwd,session)
+    if initial is None:
+        direct=claude_project(home,cwd)/(session+'.jsonl')
+        return None if direct.exists() or direct.is_symlink() else session
+    directory=initial.parent;visited=set()
     for hop in range(9):
         if session in visited: return None
         visited.add(session);path=directory/(session+'.jsonl')
@@ -478,6 +580,97 @@ def claude_internal_user(record):
             or (isinstance(origin, dict) and origin.get('kind') == 'task-notification'))
 
 
+def background_task_id(value):
+    if not isinstance(value,dict): return None
+    identifier=value.get('backgroundTaskId') or (value.get('agentId') if value.get('isAsync') is True else None)
+    return identifier if isinstance(identifier,str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}',identifier) else None
+
+
+def native_task_notice(record):
+    origin=record.get('origin')
+    if (record.get('type')!='user' or record.get('isSidechain')
+        or not (record.get('turnOrigin')=='task_notification' or record.get('promptSource')=='system'
+                or isinstance(origin,dict) and origin.get('kind')=='task-notification')): return None
+    message=record.get('message')
+    if not isinstance(message,dict): return None
+    text=message_text(message.get('content')).strip()
+    if len(text)>64000 or not text.startswith('<task-notification>') or '<!' in text: return None
+    end=text.find('</task-notification>')
+    if end<0: return None
+    import xml.etree.ElementTree as ET
+    try: root=ET.fromstring(text[:end+len('</task-notification>')])
+    except ET.ParseError: return None
+    def field(name):
+        values=root.findall(name)
+        return values[0].text or '' if len(values)==1 and not list(values[0]) else ''
+    identifier=field('task-id');state=field('status');summary=field('summary')
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',identifier): return None
+    states={'completed':'completed','failed':'failed','killed':'cancelled','cancelled':'cancelled','running':'running','in_progress':'running'}
+    if not state or len(state)>40: return None
+    state=states.get(state,'unverified')
+    # Claude explicitly reports a subagent yielding while its child work runs.
+    if state=='completed' and 'is waiting on its own background work' in summary: state='waiting'
+    return dict(id=identifier,state=state,summary=summary[:500],call_id=field('tool-use-id'))
+
+
+def fold_background_tasks(records, session, now):
+    calls={};tasks={}
+    for record in records:
+        if record.get('isSidechain') or record.get('sessionId') not in (None,session): continue
+        stamp=event_time(record.get('timestamp'))
+        if stamp is None or stamp<0 or stamp>now+30: continue
+        notice=native_task_notice(record)
+        if notice:
+            old=tasks.get(notice['id'])
+            if old and old['updated_at']>stamp: continue
+            call=calls.get(notice['call_id'],{})
+            task=old or dict(id=notice['id'],title=call.get('title') or notice['summary'][:160] or 'Background task',started_at=call.get('started_at'))
+            task.update(state=notice['state'],summary=notice['summary'],updated_at=stamp)
+            if notice['state'] in ('completed','failed','cancelled'): task['finished_at']=stamp
+            else: task.pop('finished_at',None)
+            tasks[notice['id']]=task
+            continue
+        if record.get('isMeta') or claude_internal_user(record): continue
+        message=record.get('message',{});content=message.get('content',[]) if isinstance(message,dict) else []
+        if not isinstance(content,list): continue
+        for block in content[:64]:
+            if not isinstance(block,dict): continue
+            if message.get('role')=='assistant' and block.get('type')=='tool_use' and block.get('name') in ('Bash','Agent','Task'):
+                arguments=block.get('input',{});identifier=block.get('id')
+                if not isinstance(arguments,dict) or not isinstance(identifier,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}',identifier): continue
+                title=arguments.get('description')
+                calls[identifier]=dict(title=title[:160] if isinstance(title,str) and title.strip() else 'Background '+block['name'],started_at=stamp,requested=arguments.get('run_in_background') is True)
+            elif message.get('role')=='user' and block.get('type')=='tool_result':
+                call=calls.get(block.get('tool_use_id'),{})
+                results=[b for b in content if isinstance(b,dict) and b.get('type')=='tool_result']
+                identifier=background_task_id(record.get('toolUseResult')) if len(results)==1 else None
+                if not identifier and call.get('requested'):
+                    text=activity_text(block.get('content'),2000)
+                    match=re.search(r'^Command running in background with ID: ([A-Za-z0-9_-]{1,100})(?:[.\s]|$)',text,re.M)
+                    if match: identifier=match[1]
+                if not identifier or block.get('is_error'): continue
+                old=tasks.get(identifier)
+                if old and (old['updated_at']>=stamp or old['state'] in ('completed','failed','cancelled')): continue
+                tasks[identifier]=dict(id=identifier,title=call.get('title','Background task'),started_at=call.get('started_at'),updated_at=stamp,state='running',summary='Started in background; completion has not been reported.')
+    for task in tasks.values():
+        if task['state'] in ('running','waiting') and now-task['updated_at']>900:
+            task['state']='unverified';task['summary']='No recent task completion/status evidence. '+task['summary']
+    values=sorted(tasks.values(),key=lambda t:(t['state'] in ('completed','failed','cancelled'),-t['updated_at']))
+    return values[:8],len(values)>8
+
+
+def observed_background_tasks(observation, chosen):
+    if observation['kind']!='claude' or not chosen or not chosen.get('linked'): return None
+    now=int(time.time());result=dict(source='claude_tasks',observed_at=now,conversation=chosen['id'],tasks=[],limited=False,unavailable=False)
+    try:
+        info=os.stat(chosen['path']);records=bounded_events(chosen['path'])
+        if records is None: result.update(unavailable=True,limited=True);return result
+        tasks,limited=fold_background_tasks(records,chosen['session'],now)
+        result.update(tasks=tasks,limited=limited or info.st_size>512*1024)
+    except OSError: result.update(unavailable=True,limited=True)
+    return result
+
+
 def message_order(content):
     if not isinstance(content,list): return -1
     return next((index for index,block in enumerate(content) if isinstance(block,dict) and block.get('type') in ('text','input_text','output_text') and isinstance(block.get('text'),str) and block['text'].strip()),-1)
@@ -500,9 +693,14 @@ def history_activities(records, kind, floor=0):
         entries.append(entry)
         if isinstance(call_id, str) and call_id and len(call_id)<=256: calls[call_id]=entry
         return entry
-    def finish(call_id, output, error=False):
+    def finish(call_id, output, error=False, metadata=None):
         if not isinstance(call_id, str) or call_id not in calls: return
         entry=calls[call_id]; entry['status']='error' if error else 'completed'; entry['output']=activity_text(output,12001); entry['truncated']=entry.get('truncated',False) or len(entry['output'])>12000; entry['output']=entry['output'][:12000]
+        identifier=background_task_id(metadata)
+        if not identifier and entry.get('background_requested'):
+            match=re.search(r'^Command running in background with ID: ([A-Za-z0-9_-]{1,100})(?:[.\s]|$)',entry['output'],re.M)
+            if match: identifier=match[1]
+        if identifier and not error: entry['status']='background';entry['background_task_id']=identifier
     for offset, record in records:
         if record.get('isMeta') or record.get('isSidechain'): continue
         timestamp=record.get('timestamp','')
@@ -544,11 +742,12 @@ def history_activities(records, kind, floor=0):
             elif role=='assistant' and category in ('tool_use','toolCall'):
                 entry=add(offset,order,timestamp,'tool',str(block.get('name') or 'Tool call'),call_id=block.get('id'))
                 arguments=block.get('input') if category=='tool_use' else block.get('arguments')
+                if kind=='claude' and isinstance(arguments,dict): entry['background_requested']=arguments.get('run_in_background') is True
                 if isinstance(arguments,(dict,list,str)):
                     rendered=json.dumps(arguments,ensure_ascii=True,indent=2) if not isinstance(arguments,str) else arguments
                     entry['arguments']=rendered[:4000]; entry['truncated']=len(rendered)>4000
             elif role=='user' and category=='tool_result':
-                finish(block.get('tool_use_id'),block.get('content'),block.get('is_error') is True)
+                finish(block.get('tool_use_id'),block.get('content'),block.get('is_error') is True,record.get('toolUseResult') if kind=='claude' and sum(isinstance(b,dict) and b.get('type')=='tool_result' for b in content)==1 else None)
     # Keep existing message pagination and reply/read cursors unchanged. Activity
     # is supplementary, bounded, and explicitly reports omissions on busy pages.
     entries=[entry for entry in entries if entry['position']>=floor]
@@ -637,9 +836,11 @@ def conversations(observation):
             pass
     explicit = process_sessions(observation, home)
     args = observation['args']
-    for i, arg in enumerate(args[:-1]):
-        if arg in ('resume', '--resume', '--session-id', '-r') and re.fullmatch(r'[0-9a-fA-F-]{36}', args[i+1]):
-            explicit.add(args[i+1])
+    if kind!='claude' or not explicit:
+        for i, arg in enumerate(args[:-1]):
+            if arg in ('resume', '--resume', '--session-id', '-r') and re.fullmatch(r'[0-9a-fA-F-]{36}', args[i+1]):
+                session=claude_current_session(home,cwd,args[i+1]) if kind=='claude' else args[i+1]
+                if session: explicit.add(session)
     if kind == 'codex':
         for db in sorted(home.glob('state*.sqlite'), reverse=True)[:2]:
             try:
@@ -657,6 +858,9 @@ def conversations(observation):
     else:
         project = re.sub(r'[^a-zA-Z0-9]', '-', cwd)
         directory = home / 'projects' / project
+        for session in explicit:
+            resolved=claude_session_path(home,cwd,session)
+            if resolved: paths.append(resolved)
         if directory.is_dir():
             paths += [directory / f'{session}.jsonl' for session in explicit if (directory / f'{session}.jsonl').is_file()]
             import itertools
@@ -807,8 +1011,8 @@ def provider_activity(observation, candidates=None):
             if len(current)!=1:
                 return state_result('unknown','claude_events','Claude session continuation cannot be verified')
             active=next(iter(current))
-            path=claude_project(home,observation['cwd'])/(active+'.jsonl')
-            events=claude_log_activity(path,active,now)
+            path=claude_session_path(home,observation['cwd'],active)
+            events=claude_log_activity(path,active,now) if path else state_result('unknown','claude_events','No verified native session log is available')
             if events['reason'] in ('Claude event timestamp is invalid','Claude event update is incomplete'): return events
             # Root turn events supersede an older registry transition. Registry
             # updatedAt is only freshness, never a new phase transition.
@@ -1069,6 +1273,30 @@ def launch_status(request):
                 running=row[3]=='0' and kind in row[4].lower(),exited=row[3]=='1',
                 context=tmux(request,'capture-pane','-p','-t',row[2],'-S','0')[-12000:],**association)
 
+def respawn_launch(request, pane, directory, environment, command):
+    # tmux's protocol rejects large argv messages. A private one-shot argv file
+    # keeps long prompts literal without typing terminal input or shell quoting.
+    if sum(len(arg.encode())+1 for arg in environment+command) <= 6000:
+        return tmux(request,'respawn-pane','-k','-t',pane,'-c',directory,*environment,*command)
+    import tempfile
+    fd, filename = tempfile.mkstemp(prefix='cc-launch-argv-',suffix='.json')
+    try:
+        with os.fdopen(fd,'w') as source: json.dump(command,source,ensure_ascii=False)
+        loader = ("import os,sys,json,stat\n"
+                  "fd=os.open(sys.argv[1],os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)\n"
+                  "info=os.fstat(fd)\n"
+                  "if not (stat.S_ISREG(info.st_mode) and info.st_uid==os.geteuid() and not info.st_mode&0o077 and info.st_size<=163840): raise RuntimeError('Invalid private launch handoff')\n"
+                  "with os.fdopen(fd,'rb') as source: argv=json.load(source)\n"
+                  "if not (isinstance(argv,list) and argv and all(isinstance(a,str) for a in argv)): raise RuntimeError('Invalid launch arguments')\n"
+                  "os.unlink(sys.argv[1])\n"
+                  "os.execv(argv[0],argv)\n")
+        return tmux(request,'respawn-pane','-k','-t',pane,'-c',directory,*environment,sys.executable,'-c',loader,filename)
+    except BaseException:
+        try: os.unlink(filename)
+        except FileNotFoundError: pass
+        raise
+
+
 def launch_agent(request):
     # Validate everything before creating a new, uniquely named session.
     identifier=request.get('launch_id','')
@@ -1126,15 +1354,85 @@ def launch_agent(request):
             environment += ['-e',key+'='+os.environ.get(key,str(Path.home()/default))]
         for key in ('PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR'):
             if key in os.environ: environment += ['-e',key+'='+os.environ[key]]
-        tmux(request,'respawn-pane','-k','-t',row[2],'-c',path,*environment,*command)
+        respawn_launch(request,row[2],path,environment,command)
     except (Failure,subprocess.SubprocessError): fail(502,'Launch setup or delivery uncertain; check the new session before trying again')
     return launch_status(request)
 
+def restart_plan(request, observation):
+    if not observation.get('identity') or observation['identity'] != request.get('identity'):
+        fail(409, 'Agent process changed; no restart was attempted')
+    linked = [c for c in conversations(observation) if c.get('linked')]
+    if len(linked) != 1: fail(409, 'Restart requires one verified process-linked conversation')
+    chosen = linked[0]
+    session = chosen.get('session')
+    if not isinstance(session,str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session):
+        fail(409, 'The active conversation has no supported resume identity')
+    kind = observation['kind']
+    executable, executable_identity, search = launch_executable(kind)
+    project, directory_identity = project_directory(observation['cwd'])
+    command = [executable]
+    if kind == 'codex':
+        try:
+            result=subprocess.run([executable,'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=2)
+            if result.returncode==0 and b'--no-daemon' in result.stdout[:256*1024]: command += ['--no-daemon']
+        except (OSError,subprocess.SubprocessError): pass
+    command += ['resume',session] if kind=='codex' else ['--session',chosen['path']] if kind=='pi' else ['--resume',session]
+    info=os.stat(chosen['path'])
+    environment={key:value for key,value in observation['env'].items() if key in ('CODEX_HOME','CLAUDE_CONFIG_DIR','PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR')}
+    environment['PATH']=search
+    return dict(identity=observation['identity'],provider=kind,session=session,conversation=chosen['id'],
+                path=chosen['path'],project=project,directory_identity=directory_identity,
+                executable_identity=executable_identity,command=command,environment=environment,
+                log_device=info.st_dev,log_inode=info.st_ino)
+
+
+def restart_agent(request, observation):
+    plan=request.get('plan')
+    if not isinstance(plan,dict) or restart_plan(request,observation)!=plan:
+        fail(409,'Agent, conversation, directory or installation changed. Review a fresh restart.')
+    identifier=request.get('restart_id','')
+    if not isinstance(identifier,str) or not re.fullmatch(r'[0-9a-f-]{36}',identifier): fail(400,'Invalid restart identity')
+    # The backend persisted this attempt before IO. The pane marker is additional
+    # evidence for recovery; it never authorizes a second respawn.
+    marker=json.dumps(dict(id=identifier,old=plan['identity']),sort_keys=True)
+    tmux(request,'set-option','-p','-t',observation['target'],'@cc_restart',marker)
+    tmux(request,'set-option','-p','-t',observation['target'],'remain-on-exit','on')
+    fresh=observe(request)
+    if fresh.get('identity')!=plan['identity'] or restart_plan(request,fresh)!=plan:
+        fail(409,'The agent changed immediately before restart; inspect the pane')
+    environment=[]
+    for key,value in {**plan['environment'],'CC_RESTART_ID':identifier}.items(): environment += ['-e',key+'='+value]
+    tmux(request,'respawn-pane','-k','-t',observation['target'],'-c',plan['project'],*environment,*plan['command'])
+    return dict(state='checking')
+
+
+def restart_status(request):
+    plan=request.get('plan',{});identifier=request.get('restart_id')
+    try: observation=observe(request)
+    except Failure: return dict(state='checking',note='The resumed CLI is not yet observable; inspect the pane if it exited.')
+    if observation['identity']==plan.get('identity'): return dict(state='checking',note='Original process is still present; this restart will not be retried.')
+    if (observation.get('env',{}).get('CC_RESTART_ID')!=identifier
+        or observation['kind']!=plan.get('provider') or observation['cwd']!=plan.get('project')):
+        fail(409,'A different process occupies this pane; restart settings were not transferred')
+    marker=tmux(request,'show-options','-p','-v','-t',observation['target'],'@cc_restart').strip()
+    try: marker=json.loads(marker)
+    except ValueError: fail(409,'Restart evidence is unavailable; inspect the pane')
+    if marker!=dict(id=identifier,old=plan.get('identity')): fail(409,'Restart marker changed; inspect the pane')
+    linked=[c for c in conversations(observation) if c.get('linked')]
+    if len(linked)!=1 or linked[0]['session']!=plan.get('session') or linked[0]['id']!=plan.get('conversation'):
+        return dict(state='checking',note='Waiting for the exact resumed conversation to become process-linked.')
+    return dict(state='complete',instance=observation['identity'])
+
+
 def execute(request):
+    if request.get('action') == 'discover_agents': return discover_agents(request)
     if request.get('action') == 'launch_options': return launch_options(request)
     if request.get('action') == 'launch_status': return launch_status(request)
     if request.get('action') == 'launch': return launch_agent(request)
+    if request.get('action') == 'restart_status': return restart_status(request)
     observation = observe(request)
+    if request.get('action') == 'restart_prepare': return restart_plan(request, observation)
+    if request.get('action') == 'restart_agent': return restart_agent(request, observation)
     if request.get('action') == 'close_agent':
         if not observation.get('identity') or observation['identity'] != request.get('identity'):
             fail(409,'Agent process changed; no window was closed')
@@ -1170,7 +1468,7 @@ def execute(request):
         if not chosen and len(candidates) == 1 and not observation['env'].get('CC_LAUNCH_ID'): chosen = candidates[0]
         return dict(instance=observation['identity'], context=observation['context'],
                     reply=reply_observation(chosen, observation['kind'], request.get('known_reply_version')),
-                    activity=provider_activity(observation, candidates))
+                    activity=provider_activity(observation, candidates),background_tasks=observed_background_tasks(observation,chosen if len(linked)==1 and chosen is linked[0] else None))
     if request.get('action') == 'outbox_status':
         if request.get('identity') and observation['identity'] != request['identity']:
             fail(409, 'Agent process changed; queued messages were not sent')
@@ -1241,9 +1539,10 @@ def execute(request):
     if observation['kind']=='pi' and (pi_dialog(observation) or result['activity']['state']=='approval'):
         result['send_available']=False
         result['send_reason']='Pi is waiting for input in a dialog. Answer it in the terminal before sending a message.'
+    result['background_tasks']=observed_background_tasks(observation,chosen)
     if chosen:
         info, version = transcript_version(chosen)
-        history_version = 'claude-visible-v2:' + version if observation['kind']=='claude' else version
+        history_version = 'claude-visible-v3:' + version if observation['kind']=='claude' else version
         result['history_version'] = history_version
         if request.get('before') is None and request.get('known_version') == history_version:
             result['history_unchanged'] = True
@@ -1258,7 +1557,9 @@ def execute(request):
 
 if __name__ == '__main__':
     try:
-        request = json.loads(sys.stdin.buffer.read(32 * 1024 + 1))
+        body = sys.stdin.buffer.read(160 * 1024 + 1)
+        if len(body) > 160 * 1024: fail(413, 'Agent request exceeded its bounded JSON limit')
+        request = json.loads(body)
         response = {'ok': execute(request)}
     except Failure as e:
         response = {'status': e.status, 'error': e.message}

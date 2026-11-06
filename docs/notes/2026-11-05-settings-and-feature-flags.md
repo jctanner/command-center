@@ -1,0 +1,7 @@
+# 2026-11-05: Settings and feature flags
+
+Completed [Task 0016](../tasks/done/0016-settings-and-feature-flags.md). Settings now owns Machines and Features. Installation-wide Slack/Email/Jira flags default off for fresh configurations, preserve existing configured sources during first migration, persist privately and guard every integration route. No plugin extraction or source credential/permission changes. Explicit saves and shared-client polling retain conflict guards; disabled bookmarks do not discard machine drafts. Backend gating waits for in-flight requests and blocks subsequent work.
+
+Validated 42 Rust tests, formatting/Clippy/release/frontend build; 12 Settings/navigation tests; integration/mobile/tmux regressions including corrected full-page machine test; all four SSH/ProxyJump tests. Reviewed synthetic desktop/phone screenshots. Deployed with all listener/origin flags retained, source configuration hashes unchanged, existing integrations enabled, and all current pane processes predating restart. Loopback/LAN/HTTPS checks pass. No live posting, agent input or agent restart. Git changes remain uncommitted; no commit/push requested.
+
+Next available task 0017, bug 0011. Task 0009 legacy Pi receipt review remains pending. Flags are availability switches: code is still in the binary/repository; a fresh user must provide the compatible personal-assistant environment and source credentials. Source checks remain in the integration settings/use path, not flag-toggle preflight.

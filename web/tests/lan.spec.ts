@@ -1,3 +1,4 @@
+import {enableFeatures} from './feature-fixture';
 import {test,expect} from '@playwright/test';
 import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -14,7 +15,7 @@ test.beforeAll(async()=>{
  const localPort=await port('127.0.0.1'),lanPort=await port(lanIp!);loopback=`http://127.0.0.1:${localPort}`;lan=`http://${lanIp}:${lanPort}`;
  const config=join(dir,'config.toml');writeFileSync(config,`[[hosts]]\nid="local"\nname="LAN fixture"\nsocket=${JSON.stringify(socket)}\n`);
  backend=spawn(resolve(process.env.CC_BINARY||'../target/debug/command-center'),['--listen',`127.0.0.1:${localPort}`,'--lan-listen',`${lanIp}:${lanPort}`,'--config',config,'--web-dir',resolve(process.env.CC_WEB_DIR||'dist')],{stdio:'pipe'});
- await expect.poll(async()=>{try{return(await fetch(lan+'/api/v1/health')).status;}catch{return 0;}}).toBe(200);
+ await expect.poll(async()=>{try{return(await fetch(lan+'/api/v1/health')).status;}catch{return 0;}}).toBe(200);await enableFeatures(loopback);
 });
 test.afterAll(()=>{backend?.kill('SIGTERM');if(socket)spawnSync('tmux',['-S',socket,'kill-server']);if(dir)rmSync(dir,{recursive:true,force:true});});
 test('LAN serves the frontend/API and attaches terminal WebSockets while preserving loopback',async({page,request})=>{

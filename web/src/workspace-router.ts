@@ -1,5 +1,5 @@
-export type Workspace='terminal'|'files'|'queue'|'slack'|'email'|'board'|'jira';
-const workspaces:Workspace[]=['terminal','files','queue','slack','email','board','jira'];
+export type Workspace='terminal'|'files'|'queue'|'slack'|'email'|'board'|'jira'|'settings';
+const workspaces:Workspace[]=['terminal','files','queue','slack','email','board','jira','settings'];
 export function readWorkspace():Workspace|undefined {
  const match=/^#\/([a-z]+)\/?$/.exec(location.hash);
  return match&&workspaces.includes(match[1] as Workspace)?match[1] as Workspace:undefined;

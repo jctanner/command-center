@@ -1,3 +1,4 @@
+import {SettingsWorkspace,type FeatureFlags} from './settings';
 import {startHeaderClock} from './header-clock';
 import {JiraWorkspace} from './jira';
 import {readWorkspace,writeWorkspace,type Workspace} from './workspace-router';
@@ -33,6 +34,7 @@ let inputTargetEpoch = 0;
 let generation = 0, reconnectTimer = 0, retry = 0, stopped = false;
 let hostEvents: EventSource | undefined;
 let files: FileWorkspace | undefined, filesLoading: Promise<void> | undefined, drawerVisible = false;
+let settingsVisible=false;let settingsReturn:Workspace='queue';let featureFlags:FeatureFlags={slack:false,email:false,jira:false};
 let queueVisible = false, slackVisible = false, emailVisible=false, jiraVisible=false, boardVisible=false, fileWorkspaceVisible=false;let fileNavigation=0;
 const slack = new SlackWorkspace();
 const email = new EmailWorkspace();
@@ -59,8 +61,13 @@ let selections: Record<string, Selection> = {};
 try { selections = JSON.parse(localStorage.getItem('cc.selections') || '{}'); } catch { /* private storage is optional */ }
 function selection(): Selection { return selections[hostId] ??= { windows: {} }; }
 function remember() { try { localStorage.setItem('cc.selections', JSON.stringify(selections)); localStorage.setItem('cc.host', hostId); } catch { /* optional */ } }
-function status(text: string, state = '') { el('connection').textContent = text; el('connection').dataset.state = state; }
-function notice(text: string) { const box = el('notice'); box.textContent = text; box.hidden = !text; }
+let terminalStatus={text:'Connecting',state:''};
+let activeNotice={text:'',connection:false};
+function renderConnection(){const tmux=currentWorkspace()==='terminal'&&!compactClient();el('connection').textContent=tmux||terminalStatus.text==='Backend unavailable'?terminalStatus.text:'Connected';el('connection').dataset.state=tmux||terminalStatus.text==='Backend unavailable'?terminalStatus.state:'online';const box=el('notice');box.textContent=activeNotice.text;box.hidden=!activeNotice.text||activeNotice.connection&&!tmux;}
+function status(text: string, state = '') { terminalStatus={text,state};renderConnection(); }
+function notice(text: string, connection=false) { if(connection&&activeNotice.text&&!activeNotice.connection)return;activeNotice={text,connection};renderConnection(); }
+function clearConnectionNotice(){if(activeNotice.connection)notice('');}
+
 function message(text: string) { empty.textContent = text; empty.hidden = !text; terminalElement.hidden = !!text; }
 function button(text: string, action: () => void, className = '') {
   const b = document.createElement('button'); b.textContent = text; b.className = className; b.onclick = action; return b;
@@ -165,7 +172,7 @@ function windowMenu(event: MouseEvent | KeyboardEvent, w: Window) {
 }
 function terminalAvailable() {
   const pane = el('terminal-pane');
-  return !compactClient() && !queueVisible && !slackVisible && !emailVisible && !jiraVisible && !boardVisible && !fileWorkspaceVisible && pane.getClientRects().length > 0 && pane.clientWidth > 0 && pane.clientHeight > 0;
+  return !compactClient() && !settingsVisible && !queueVisible && !slackVisible && !emailVisible && !jiraVisible && !boardVisible && !fileWorkspaceVisible && pane.getClientRects().length > 0 && pane.clientWidth > 0 && pane.clientHeight > 0;
 }
 function send(control: object) {
   if (['focus', 'select_window'].includes((control as {type?: string}).type || '')) inputTargetEpoch++;
@@ -229,7 +236,7 @@ function connect() {
   if (!session || !windowId) return;
   closeTerminal(); requestedWindow=windowId; const token = generation, connectionHost = hostId;
   activeConnection = `${hostId}/${session}`;
-  status('Connecting', 'pending'); message(''); notice('');
+  status('Connecting', 'pending'); message(''); clearConnectionNotice();
   terminal = createTerminal(terminalElement, data => {
     if (!terminalAvailable() || socket?.readyState !== WebSocket.OPEN || requestedWindow || !viewer?.attached) return;
     if (data.byteLength > 128 * 1024 || socket.bufferedAmount + data.byteLength > 128 * 1024) { notice('Input buffer full or paste too large (128 KiB maximum). Input was not sent.'); return; }
@@ -256,7 +263,7 @@ function connect() {
     }
     const eventData = JSON.parse(event.data);
     if (eventData.type === 'error') {
-      notice(eventData.message); requestedWindow = '';
+      notice(eventData.message,eventData.scope==='connection'||!viewer?.attached); requestedWindow = '';
       const active = viewer?.windows.find(w => w.active);
       if (active) selection().windows[session] = active.id;
       render(); return;
@@ -268,11 +275,11 @@ function connect() {
       viewer = eventData.session;
       const nextWindow = viewer?.windows.find(w => w.active);
       if (previousTarget !== `${nextWindow?.id}/${nextWindow?.panes.find(p => p.active)?.id}`) inputTargetEpoch++;
-      if (viewer?.attached && !wasAttached) { retry = 0; if (!queueVisible && !fileWorkspaceVisible && !slackVisible && !emailVisible && !jiraVisible && !boardVisible && !drawerVisible && !el<HTMLDialogElement>('machine-dialog').open && !managementDialog.open) terminal?.focus(); }
+      if (viewer?.attached && !wasAttached) { retry = 0; if (!queueVisible && !fileWorkspaceVisible && !slackVisible && !emailVisible && !jiraVisible && !boardVisible && !drawerVisible && !settingsVisible && !managementDialog.open) terminal?.focus(); }
       const active = viewer!.windows.find(w => w.active);
       // Do not let an in-flight old state undo the tab the user just selected.
       if (active && (!requestedWindow || requestedWindow === active.id)) {
-        selection().windows[session] = active.id; requestedWindow = ''; if (viewer?.attached) status('Attached', 'online'); remember();
+        selection().windows[session] = active.id; requestedWindow = ''; if (viewer?.attached) {clearConnectionNotice(); status('Attached', 'online');} remember();
       }
       if (queueTarget && queueTarget.host === connectionHost && queueTarget.session === session && viewer?.attached && active?.id === queueTarget.window) {
         const target = queueTarget; queueTarget = undefined;
@@ -305,6 +312,7 @@ async function refresh() {
   try {
     const inventory = await api<{ sessions: Session[] }>(`/hosts/${encodeURIComponent(host)}/inventory`);
     if (host !== hostId || refreshGeneration !== generation || connection !== hosts.find(h => h.id === hostId)?.connection_revision || stopped) return;
+    clearConnectionNotice();
     sessions = inventory.sessions;
     const selected = selection();
     let session = sessions.find(s => s.id === selected.session);
@@ -318,14 +326,13 @@ async function refresh() {
     if (terminalAvailable() && (activeConnection !== `${host}/${session.id}` || !socket || socket.readyState >= WebSocket.CLOSING)) connect();
   } catch (error) {
     if (host !== hostId || refreshGeneration !== generation || connection !== hosts.find(h => h.id === hostId)?.connection_revision || stopped) return;
-    notice(error instanceof Error ? error.message : String(error));
-    if (!terminal) { status('Host unavailable', 'error'); message('Unable to discover tmux sessions. Check the host connection and configuration.'); }
+    if (!terminal || socket?.readyState !== WebSocket.OPEN) { status('Machine unavailable · retrying', 'pending'); if(!terminal)message('This machine is unavailable. Retrying automatically…'); }
   }
 }
 function chooseHost(id: string) {
   if (id === hostId) return;
   closeTerminal(); hostId = id; sessions = []; retry = 0; remember(); renderMachines(); render();
-  if (!id) { status('No machines'); message('Add a machine using the Machines button above.'); notice(''); return; }
+  if (!id) { status('No machines'); message('Add a machine in Settings > Machines.'); notice(''); return; }
   status('Discovering', 'pending'); message('Discovering tmux sessions…'); notice(''); void refresh();
 }
 sessionSelect.onchange = () => {
@@ -374,7 +381,7 @@ function applyHosts(next: Host[]) {
   const after = hosts.find(h => h.id === hostId);
   if (!after) {
     if (hostId || hosts.length) chooseHost(hosts[0]?.id ?? '');
-    else { renderMachines(); status('No machines'); message('Add a machine using the Machines button above.'); }
+    else { renderMachines(); status('No machines'); message('Add a machine in Settings > Machines.'); }
   } else if (before && before.connection_revision !== after.connection_revision) {
     closeTerminal(); sessions = []; retry = 0; renderMachines(); render(); void refresh();
   } else { renderMachines(); }
@@ -389,27 +396,32 @@ function fileContext(): FileContext {
   return { host: hostId, cwd: window?.panes.find(p => p.active)?.cwd, folders: window?.panes.filter(p => p.cwd).map(p => ({ pane: p.id, path: p.cwd })) || [] };
 }
 function showQueue(visible: boolean) {
-  if(visible){slackVisible=false;slack.setVisible(false);emailVisible=false;email.setVisible(false);jiraVisible=false;jira.setVisible(false);boardVisible=false;board.setVisible(false);fileWorkspaceVisible=false;}
-  queueVisible=visible;const overlay=visible||slackVisible||emailVisible||jiraVisible||boardVisible||fileWorkspaceVisible;
+  if(visible){settingsVisible=false;settingsWorkspace.setVisible(false);slackVisible=false;slack.setVisible(false);emailVisible=false;email.setVisible(false);jiraVisible=false;jira.setVisible(false);boardVisible=false;board.setVisible(false);fileWorkspaceVisible=false;}
+  queueVisible=visible;const overlay=settingsVisible||visible||slackVisible||emailVisible||jiraVisible||boardVisible||fileWorkspaceVisible;
+  settingsWorkspace.setVisible(settingsVisible);el('open-settings').setAttribute('aria-pressed',String(settingsVisible));
   el('board-pane').hidden=!boardVisible;el('show-board').setAttribute('aria-pressed',String(boardVisible));
   el('jira-pane').hidden=!jiraVisible;el('show-jira').setAttribute('aria-pressed',String(jiraVisible));
   el('email-pane').hidden=!emailVisible;el('show-email').setAttribute('aria-pressed',String(emailVisible));
   el('slack-pane').hidden=!slackVisible;el('show-slack').setAttribute('aria-pressed',String(slackVisible));el('queue-pane').hidden=!visible;
   el('terminal-pane').hidden=overlay||compactClient();el('machines').hidden=overlay||compactClient();document.querySelector<HTMLElement>('.workspace-bar')!.hidden=overlay||compactClient();document.querySelector<HTMLElement>('footer')!.hidden=overlay||compactClient();
   el('show-queue').setAttribute('aria-pressed',String(visible));el('toggle-files').setAttribute('aria-pressed',String(fileWorkspaceVisible));el('show-terminal').setAttribute('aria-pressed',String(!compactClient()&&!overlay));el('terminal-files').setAttribute('aria-pressed',String(!overlay&&drawerVisible));
-  const showFiles=!visible&&!slackVisible&&!emailVisible&&!jiraVisible&&!boardVisible&&(fileWorkspaceVisible||drawerVisible);el('files-pane').hidden=!showFiles;el('workspace').classList.toggle('with-files',!overlay&&drawerVisible);el('workspace').classList.toggle('files-workspace',fileWorkspaceVisible&&!visible&&!slackVisible&&!emailVisible&&!jiraVisible&&!boardVisible);files?.setVisible(showFiles);attention.setVisible(visible);menu.hidden=true;
+  const showFiles=!settingsVisible&&!visible&&!slackVisible&&!emailVisible&&!jiraVisible&&!boardVisible&&(fileWorkspaceVisible||drawerVisible);el('files-pane').hidden=!showFiles;el('workspace').classList.toggle('with-files',!overlay&&drawerVisible);el('workspace').classList.toggle('files-workspace',fileWorkspaceVisible&&!settingsVisible&&!visible&&!slackVisible&&!emailVisible&&!jiraVisible&&!boardVisible);files?.setVisible(showFiles);attention.setVisible(visible);menu.hidden=true;renderConnection();
 }
 async function ensureFiles(mode:'workspace'|'context'){
   if(!hostsReady)return;
   const navigation=++fileNavigation;if(files)return;
   if(!files){filesLoading??=import('./files').then(module=>{files=new module.FileWorkspace(hosts,fileContext());}).catch(error=>{el('files-pane').textContent=String(error);}).finally(()=>{filesLoading=undefined;});await filesLoading;}
   const workspace=files as FileWorkspace|undefined;
-  if(navigation!==fileNavigation||!workspace||queueVisible||slackVisible||emailVisible||jiraVisible||boardVisible||mode!==(fileWorkspaceVisible?'workspace':'context')||!fileWorkspaceVisible&&!drawerVisible)return;
+  if(navigation!==fileNavigation||!workspace||settingsVisible||queueVisible||slackVisible||emailVisible||jiraVisible||boardVisible||mode!==(fileWorkspaceVisible?'workspace':'context')||!fileWorkspaceVisible&&!drawerVisible)return;
   workspace.setMode(mode,fileContext(),mode==='context');workspace.setVisible(true);
 }
-function currentWorkspace():Workspace{return boardVisible?'board':jiraVisible?'jira':emailVisible?'email':slackVisible?'slack':fileWorkspaceVisible?'files':queueVisible?'queue':'terminal';}
+function currentWorkspace():Workspace{return settingsVisible?'settings':boardVisible?'board':jiraVisible?'jira':emailVisible?'email':slackVisible?'slack':fileWorkspaceVisible?'files':queueVisible?'queue':'terminal';}
 function navigateWorkspace(requested:Workspace,replace=false){
-  const next=compactClient()&&requested==='terminal'?'queue':requested;
+  let next=compactClient()&&requested==='terminal'?'queue':requested;
+  if((next==='slack'||next==='email'||next==='jira')&&!featureFlags[next]){next='settings';settingsWorkspace.select('features');settingsReturn='queue';}
+  if(settingsVisible&&next!=='settings'&&!settingsWorkspace.canLeave()){writeWorkspace('settings',true);return;}
+  if(next==='settings'&&!settingsVisible&&requested==='settings'){const previous=currentWorkspace();settingsReturn=(previous==='slack'||previous==='email'||previous==='jira')&&!featureFlags[previous]?'queue':previous;}
+  settingsVisible=next==='settings';
   writeWorkspace(next,replace);
   slackVisible=next==='slack';slack.setVisible(slackVisible);
   emailVisible=next==='email';email.setVisible(emailVisible);
@@ -426,7 +438,7 @@ function navigateWorkspace(requested:Workspace,replace=false){
   if(next==='files'){closeTerminal();void ensureFiles('workspace');}
   else if(next==='terminal'){if(drawerVisible)void ensureFiles('context');terminal?.fit();terminal?.focus();void refresh();}
 }
-for(const [id,workspace] of Object.entries({'show-terminal':'terminal','toggle-files':'files','show-queue':'queue','show-slack':'slack','show-email':'email','show-jira':'jira','show-board':'board'}))el(id).onclick=()=>navigateWorkspace(workspace as Workspace);
+for(const [id,workspace] of Object.entries({'show-terminal':'terminal','toggle-files':'files','show-queue':'queue','show-slack':'slack','show-email':'email','show-jira':'jira','show-board':'board','open-settings':'settings'}))el(id).onclick=()=>navigateWorkspace(workspace as Workspace);
 function restoreWorkspace(){const requested=readWorkspace()||(compactClient()?'queue':'terminal');const next=compactClient()&&requested==='terminal'?'queue':requested;if(currentWorkspace()!==next||location.hash!==`#/${next}`)navigateWorkspace(next,true);}
 window.addEventListener('popstate',restoreWorkspace);
 window.addEventListener('hashchange',restoreWorkspace);
@@ -440,9 +452,12 @@ function applyViewportPolicy(){
 }
 compactViewport.addEventListener('change',applyViewportPolicy);
 // Apply the route before discovering hosts or creating any terminal viewer.
-navigateWorkspace(readWorkspace()||(compactClient()?'queue':'terminal'),true);
-applyViewportPolicy();
-initMachines(applyHosts);
+const machineSettings=initMachines(applyHosts,()=>navigateWorkspace(settingsReturn));
+const settingsWorkspace=new SettingsWorkspace(machineSettings,flags=>{featureFlags=flags;for(const name of ['slack','email','jira'] as const)el('show-'+name).hidden=!flags[name];const active=currentWorkspace();if((active==='slack'||active==='email'||active==='jira')&&!flags[active]){settingsWorkspace.select('features',true);navigateWorkspace('settings',true);}},workspace=>navigateWorkspace(workspace));
+for(const name of ['slack','email','jira'])el('show-'+name).hidden=true;
+void settingsWorkspace.refresh().finally(()=>{navigateWorkspace(readWorkspace()||(compactClient()?'queue':'terminal'),true);applyViewportPolicy();void start();});
+window.setInterval(()=>{if(!document.hidden)void settingsWorkspace.refresh();},10000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void settingsWorkspace.refresh();});
 window.addEventListener('pagehide', () => { stopped = true; hostEvents?.close(); closeTerminal(); });
 window.addEventListener('pageshow', event => { if (event.persisted) { stopped = false; restoreWorkspace();subscribeHosts(); void refresh(); } });
 async function poll() { if (!document.hidden && !stopped) await refresh(); window.setTimeout(poll, 2000); }
@@ -451,10 +466,9 @@ async function start() {
     hosts = await api<Host[]>('/hosts');hostsReady=true;applyHosts(hosts);
     let saved = ''; try { saved = localStorage.getItem('cc.host') ?? ''; } catch { /* optional */ }
     if (hosts.length) chooseHost(hosts.find(h => h.id === saved)?.id ?? hosts[0].id);
-    else { status('No machines'); message('Add a machine using the Machines button above.'); }
+    else { status('No machines'); message('Add a machine in Settings > Machines.'); }
     if(fileWorkspaceVisible)void ensureFiles('workspace');
     subscribeHosts();
     window.setTimeout(poll, 2000);
   } catch (error) { status('Backend unavailable', 'error'); message(String(error)); }
 }
-void start();

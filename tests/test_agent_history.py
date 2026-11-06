@@ -48,6 +48,27 @@ class AgentHistory(unittest.TestCase):
         self.assertEqual(agent.launch_title({'path':str(self.log)},'claude'),' '.join(xml.split()))
         self.assertEqual(page['messages'][0]['input_hash'],agent.input_hash(xml))
 
+    def test_large_launch_argv_handoff_is_private_literal_and_removed_on_start_or_failure(self):
+        from unittest.mock import patch
+        prompt='"' * 24000
+        output=self.root/'received.json'
+        command=[sys.executable,'-c','import json,sys; open(sys.argv[1],"w").write(json.dumps(sys.argv[2:]))',str(output),'--',prompt]
+        def spawn(_request,*args,**kwargs):
+            marker=args.index('-c',args.index('-c')+1)
+            filename=Path(args[-1]);self.assertEqual(filename.stat().st_mode & 0o777,0o600)
+            self.assertEqual(json.loads(filename.read_text()),command)
+            subprocess.run([sys.executable,'-c',args[marker+1],str(filename)],check=True)
+            self.assertFalse(filename.exists())
+            return ''
+        with patch.object(agent,'tmux',side_effect=spawn): agent.respawn_launch({},'%0',str(self.root),[],command)
+        self.assertEqual(json.loads(output.read_text()),['--',prompt])
+        filenames=[]
+        def failed(_request,*args,**kwargs):
+            filenames.append(Path(args[-1]));raise agent.Failure(409,'fixture failure')
+        with patch.object(agent,'tmux',side_effect=failed):
+            with self.assertRaises(agent.Failure):agent.respawn_launch({},'%0',str(self.root),[],command)
+        self.assertFalse(filenames[0].exists())
+
     def test_codex_excludes_tools_and_developer_messages(self):
         self.write([
             {'type':'response_item','payload':{'type':'message','role':'developer','content':[{'type':'input_text','text':'INTERNAL'}]}},

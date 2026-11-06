@@ -100,7 +100,7 @@ pub async fn serve(
         Err(e) => {
             let _ = socket
                 .send(Message::Text(
-                    json!({"type":"error", "message":e.to_string()})
+                    json!({"type":"error", "scope":"connection", "message":e.to_string()})
                         .to_string()
                         .into(),
                 ))
@@ -220,7 +220,7 @@ async fn stream(
                 Err(error) => {
                     let _ = event_tx
                         .send(Message::Text(
-                            json!({"type":"error","message":error.to_string()})
+                            json!({"type":"error","scope":"connection","message":error.to_string()})
                                 .to_string()
                                 .into(),
                         ))

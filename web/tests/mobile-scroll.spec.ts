@@ -1,3 +1,4 @@
+import {enableFeatures} from './feature-fixture';
 import {test,expect,type Page,type Locator} from '@playwright/test';
 import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';
@@ -7,7 +8,7 @@ test.beforeAll(async()=>{
  dir=mkdtempSync(join(tmpdir(),'cc-mobile-scroll-'));const server=createServer();const port=await new Promise<number>(r=>server.listen(0,'127.0.0.1',()=>r((server.address() as {port:number}).port)));await new Promise<void>(r=>server.close(()=>r()));base=`http://127.0.0.1:${port}`;
  writeFileSync(join(dir,'config'),`[[hosts]]\nid="local"\nname="Scroll fixture"\nsocket=${JSON.stringify(join(dir,'unused.sock'))}\n`);
  backend=spawn(resolve(process.env.CC_BINARY||'../target/release/command-center'),['--listen',`127.0.0.1:${port}`,'--config',join(dir,'config'),'--web-dir',resolve(process.env.CC_WEB_DIR||'dist-next')],{stdio:'pipe'});
- await expect.poll(async()=>{try{return(await fetch(base+'/api/v1/health')).status;}catch{return 0;}}).toBe(200);
+ await expect.poll(async()=>{try{return(await fetch(base+'/api/v1/health')).status;}catch{return 0;}}).toBe(200);await enableFeatures(base);
 });
 test.afterAll(()=>{backend?.kill('SIGTERM');if(dir)rmSync(dir,{recursive:true,force:true});});
 async function swipe(page:Page,area:Locator,up:boolean){

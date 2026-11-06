@@ -1,3 +1,4 @@
+import {enableFeatures} from './feature-fixture';
 import { makeSlackSource } from './slack-fixture';
 import { test, expect } from '@playwright/test';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
@@ -36,7 +37,7 @@ test.beforeAll(async () => {
   const config = join(dir, 'config.toml');
   writeFileSync(config, `[[hosts]]\nid="ssh"\nname="SSH fixture"\nssh="cc-fixture"\nssh_config=${JSON.stringify(sshConfig)}\nsocket=${JSON.stringify(socket)}\n`);
   backend = spawn(resolve(process.env.CC_BINARY || '../target/debug/command-center'), ['--listen', `127.0.0.1:${backendPort}`, '--config', config, '--web-dir', resolve(process.env.CC_WEB_DIR || 'dist')], { stdio: 'pipe' });
-  await expect.poll(async () => { try { return (await fetch(`${base}/api/v1/health`)).status; } catch { return 0; } }).toBe(200);
+  await expect.poll(async () => { try { return (await fetch(`${base}/api/v1/health`)).status; } catch { return 0; } }).toBe(200);await enableFeatures(base);
 });
 test.afterAll(async () => {
   backend?.kill('SIGTERM'); sshd?.kill('SIGTERM');
@@ -47,17 +48,17 @@ test('real SSH discovery, PTY input, and reconnect preserve remote processes', a
   await page.goto(base);
   await expect(page.locator('#connection'), sshLog).toHaveText('Attached', { timeout: 15000 });
   await expect(page.getByRole('button', { name: /^0\s+ssh terminal$/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Machines', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Machines', exact: true });
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const dialog = page.locator('#machine-dialog');
   await expect(dialog.getByLabel('Display name', { exact: true })).toHaveValue('SSH fixture');
   await dialog.getByRole('button', { name: 'Test connection', exact: true }).click();
   await expect(dialog.getByRole('status')).toContainText('Connected · tmux');
   await dialog.getByLabel('SSH destination', { exact: true }).fill('cc-unreachable');
   await dialog.getByRole('button', { name: 'Test connection', exact: true }).click();
   await expect(dialog.getByRole('status')).toContainText('refused');
-  await expect(page.locator('#connection')).toHaveText('Attached');
+  await expect(page.locator('#connection')).toHaveText('Connected');
   await dialog.getByLabel('SSH destination', { exact: true }).fill('cc-fixture');
-  await dialog.getByRole('button', { name: 'Close machine settings', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Done editing machines', exact: true }).click();
   await page.locator('.xterm-helper-textarea').focus();
   await page.keyboard.type("printf 'CC_SSH_%s\\n' WORKS"); await page.keyboard.press('Enter');
   await expect(page.locator('.xterm-rows')).toContainText('CC_SSH_WORKS');
@@ -130,14 +131,14 @@ test('ProxyJump supports two-hop discovery, terminal input and files while verif
   expect(tmux('display-message','-p','-t',newPane.pane,'#{pane_current_path}')).toBe(folder);expect(tmux('display-message','-p','-t',sourcePane.id,'#{pane_pid}')).toBe(previousPid);
 
   const listing=await fetch(base+`/api/v1/hosts/${host.id}/fs?`+new URLSearchParams({path:folder}));expect(listing.status).toBe(200);
-  await page.getByRole('button',{name:'Machines',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Machines',exact:true});await dialog.getByRole('button',{name:'Jump laptop',exact:true}).click();
+  await page.getByRole('button',{name:'Settings',exact:true}).click();const dialog=page.locator('#machine-dialog');await dialog.getByRole('button',{name:'Jump laptop',exact:true}).click();
   await expect(dialog.getByLabel('Jump host (optional)',{exact:true})).toHaveValue('cc-fixture');
   await dialog.getByLabel('Jump host (optional)',{exact:true}).fill('cc-unknown-jump');await dialog.getByRole('button',{name:'Save machine',exact:true}).click();
   await expect(dialog.getByRole('status')).toHaveText('Saved. Changes are live.');
   const before=(await(await fetch(base+'/api/v1/hosts')).json()).find((h:{id:string})=>h.id===host.id).connection_revision;
   await dialog.getByLabel('Jump host (optional)',{exact:true}).fill('cc-fixture');await dialog.getByRole('button',{name:'Save machine',exact:true}).click();await expect(dialog.getByRole('status')).toHaveText('Saved. Changes are live.');
   const after=(await(await fetch(base+'/api/v1/hosts')).json()).find((h:{id:string})=>h.id===host.id).connection_revision;expect(after).not.toBe(before);
-  await dialog.getByRole('button',{name:'Close machine settings',exact:true}).click();
+  await dialog.getByRole('button',{name:'Done editing machines',exact:true}).click();
   const slackProject=join(dir,"slack ' project");makeSlackSource(slackProject);
   const slackSettings=await(await fetch(base+'/api/v1/slack/settings')).json();
   const slackSource=await fetch(base+'/api/v1/slack/settings',{method:'PUT',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({revision:slackSettings.revision,host:host.id,connection_revision:after,project:slackProject})});expect(slackSource.status).toBe(200);const slackConfigured=await slackSource.json();

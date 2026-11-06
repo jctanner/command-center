@@ -70,3 +70,50 @@ Locations are `(host ID, absolute path)` pairs. The host ID also identifies the 
 The file PUT route allows an 8 MiB JSON body to accommodate escaped text, but decoded UTF-8 content is limited to 1 MiB. There are eight concurrent file-operation slots; writes are serialized per machine without blocking terminals. Local I/O runs off the async executor; SSH operations use a bounded one-request helper and a 20-second timeout. Neither requests nor responses containing file contents are logged. The same-origin requirement applies to file and pin mutations.
 
 Treat connection revisions as opaque and retain the one from the original read until the file is explicitly reopened. They change on connection edits and backend restarts. Clients must preserve drafts on 409, never silently retarget a save by substituting a newer machine token, and guard asynchronous reloads against edits made while the request was in flight.
+
+
+## Explicit agent restart
+
+- `GET /hosts/{id}/agents/restart?connection_revision=...&session=...&window=...&pane=...&instance=...` prepares a 120-second confirmation. Requires a unique process-linked native conversation and supported CLI installation. Returns an opaque `id`, provider, native session, directory and literal resume argument array.
+- `POST /hosts/{id}/agents/restart` takes `{id}`. Durably claims that receipt once before replacing the selected pane process with the harness resume command. Other panes/windows remain. A repeated/expired start is rejected. The response is `checking`; no client or status read repeats the action after uncertainty.
+- `GET /hosts/{id}/agents/restart-status?id=...` verifies the pane marker, new foreground-process identity and exact native conversation, then transfers original card preferences without overwriting newer edits. Status uses the recorded endpoint fingerprint so unchanged-host recovery survives a backend restart. Failed verification never transfers metadata. A browser retains only the opaque outstanding operation ID for recovery on reload.
+
+Restart retains the tmux IDs and directory but replaces the selected pane's shell, agent and children. Keep unsaved work/active-tool interruption explicit. Old outbox records and drafts remain tied to the original instance for review; restarting never authorizes replay. `agent_restarts` in the private board database stores bounded operation receipts/verification plans, without conversation contents or credential environments. The additive table is compatible with existing version-2 database readers.
+
+
+## New-agent initial prompt
+
+`POST /hosts/{id}/agents/launch` accepts optional `initial_prompt` alongside `token` and `conversation`. Omit it, use null, or provide whitespace only to open interactively. A nonblank prompt is valid only for a new conversation, preserves literal content and whitespace, and is limited to 24,000 UTF-8 bytes with newline/tab control characters only. Invalid prompts and resume+prompt combinations are rejected before consuming the launch grant. Ticket-bound launches reject caller-supplied prompts and retain their server-reviewed ticket prompt.
+
+The harness receives one positional argument after `--`, using the existing guarded local/SSH launcher. Prompts never enter launch-preparation URLs or browser recovery receipts. A lost response still uses Check launch to observe the same target; it never resends the initial prompt. The web launcher preserves a staged prompt across new/resume selection, disables it for Resume, and clears it after a verified successful launch.
+
+For large argument payloads, the local/SSH helper uses a mode-0600 temporary argv handoff, checked and deleted by a fixed pane-side launcher before exec; tmux still receives only structured arguments. Launch HTTP/helper JSON envelopes are bounded at 160 KiB to accommodate escaping, independently of the 24,000-byte prompt limit. Successful startup does not retain a separate prompt handoff file.
+
+
+## Observed background tasks
+
+Queue items and agent conversation responses add optional `background_tasks` (null when unsupported/unlinked). The first implementation supports Claude process-linked native logs. A snapshot contains `source: claude_tasks`, `conversation`, `observed_at`, `tasks`, `limited` and `unavailable`. Each task has a provider task `id`, bounded `title`/`summary`, `state`, optional `started_at`/`finished_at`, and `updated_at` UTC epoch seconds. States are running, waiting, unverified, completed, failed and cancelled. Waiting covers explicit provider reports that a subagent is waiting on child work. Unknown native states remain unverified.
+
+A successful async launch tool result produces activity status `background` (Started in background), not a claim of task completion. Completion/failure requires an explicitly provider-marked task notification for that ID. Human XML, sidechains, foreign sessions, malformed/future evidence and ambiguous tool-result metadata do not establish task state. Stale nonterminal evidence becomes unverified after 15 minutes; disconnected/stale client observations also display unverified. Foreground Ready/Working, send grants, outbox dispatch and reply/read cursors are independent.
+
+Scans are bounded to the latest 512 KiB of the uniquely process-linked log and at most eight task rows. `limited` discloses truncated history/rows; this is observed recent evidence, not a complete task inventory or OS process probe. Status/details reuse the existing helper transport, adding no task-output-file polling or SSH connection. Background snapshots omit tool commands, prompts and task output-file paths. The web UI uses compact card badges and an expandable bounded chat panel with elapsed time, reported status and literal text. Raw notifications remain excluded from human messages.
+
+
+## Wrapped agent discovery
+
+Agent queue discovery supplements tmux's current-command hint with one bounded process-discovery request per host. A supported CLI can be inside a foreground shell wrapper: it must be the unique eligible CLI in the pane's foreground group, descended from the pane process, with the same controlling terminal and interactive stdin. Other process groups, redirected stdin and ambiguous candidates are excluded. Supported CLI group leaders remain primary over their delegated children.
+
+The resolver checks at most 32 ancestry/descendant nodes and discovery considers at most 256 distinct live panes; existing per-host agent/time limits still apply. Status and actions re-resolve/revalidate the same target. Queue `agent` identifies the detected harness even when tmux reports bash. No transcript/window-name guesses or launch-script contents are used. Direct-agent process identity hashes remain byte-for-byte compatible; wrapped identities add the actual child and wrapper-start evidence. Detecting a process does not itself prove its native conversation identity; existing history-association labels and guards remain.
+
+
+## Claude history after moving or resuming repositories
+
+A uniquely process-proven Claude session can auto-select even when its log remains under an older project folder. Lookup uses the exact UUID from the validated PID registry, or explicit foreground CLI resume arguments when no valid registry session is available. It validates the current-project file first; otherwise a bounded lookup of at most 2,000 project entries accepts one matching regular file under the configured projects root, with matching native UUID metadata. Duplicate fallback matches, unsafe/symlink paths, mismatched metadata and invalid continuation edges do not auto-link.
+
+Explicit continuation edges remain bounded and confined to that resolved file's project folder. Current verified registry sessions take precedence over stale startup arguments. No project-wide recency guess, log move/rewrite, process restart or native registry edit is required. A process can still report verified registry idle status before its log exists; log-derived activity and process history require the separately validated path.
+
+## Installation features
+
+`GET /api/v1/settings/features` returns `{revision, features: {slack, email, jira}}` with no-store caching. `PUT` accepts the same shape with the observed revision and literal booleans; mutations require the configured same-origin guard. Stale revisions return 409. Saving requires a configuration file; the private `.features.json` sidecar persists flags atomically. Disabled integration routes, including integration settings and send/recovery routes, return 403 before integration handlers run. Already-started requests finish before disable commits. Core APIs remain available. Flags do not override source permissions.
+
+Terminal stream `error` events may include `scope: "connection"` for viewer creation/state-read failures. These are transient connection feedback and may clear on authoritative recovery; errors without this scope retain action-warning behavior. This field never authorizes retrying input or mutations. The shared header presents tmux connection state only in the tmux workspace; other workspaces do not inherit a selected machine's offline status.

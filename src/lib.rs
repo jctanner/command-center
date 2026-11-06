@@ -1,9 +1,11 @@
 mod agent_cards;
+mod agent_restart;
 mod agents;
 mod attention;
 mod board;
 pub mod config;
 mod email;
+mod features;
 mod filesystem;
 mod jira;
 mod launch;
@@ -47,6 +49,7 @@ pub struct AppState {
     connection_tests: Semaphore,
     file_slots: Semaphore,
     queue: queue::Queue,
+    features: features::Features,
     slack: slack::Slack,
     email: email::Email,
     jira: jira::Jira,
@@ -76,11 +79,13 @@ impl AppState {
         let slack = slack::Slack::new(path.as_ref().map(|p| p.with_extension("slack.json")))?;
         let email = email::Email::new(path.as_ref().map(|p| p.with_extension("email.json")))?;
         let jira = jira::Jira::new(path.as_ref().map(|p| p.with_extension("jira.json")))?;
+        let features = features::Features::new(path.as_deref())?;
         let board = board::Board::new(path.as_ref().map(|p| p.with_extension("board.sqlite3")))?;
         let registry = machines::Registry::new(config, path, runtime.path())?;
         let (shutdown, _) = tokio::sync::watch::channel(false);
         Ok(Arc::new(Self {
             registry,
+            features,
             slack,
             email,
             jira,
@@ -120,10 +125,23 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
     outbox::start(state.clone());
     Router::new()
         .merge(outbox::routes())
-        .merge(slack::routes())
-        .merge(email::routes())
-        .merge(jira::routes())
+        .merge(slack::routes().layer(middleware::from_fn_with_state(
+            (state.clone(), features::Feature::Slack),
+            features::gate,
+        )))
+        .merge(email::routes().layer(middleware::from_fn_with_state(
+            (state.clone(), features::Feature::Email),
+            features::gate,
+        )))
+        .merge(jira::routes().layer(middleware::from_fn_with_state(
+            (state.clone(), features::Feature::Jira),
+            features::gate,
+        )))
         .merge(board::routes())
+        .route(
+            "/api/v1/settings/features",
+            get(features::get).put(features::save),
+        )
         .route(
             "/api/v1/health",
             get(|| async { Json(json!({"status":"ok", "version":env!("CARGO_PKG_VERSION")})) }),
@@ -136,6 +154,14 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
         )
         .route("/api/v1/hosts/{host}/agents/message", post(agents::message))
         .route(
+            "/api/v1/hosts/{host}/agents/restart",
+            get(agent_restart::prepare).post(agent_restart::start),
+        )
+        .route(
+            "/api/v1/hosts/{host}/agents/restart-status",
+            get(agent_restart::status),
+        )
+        .route(
             "/api/v1/hosts/{host}/agents/card",
             get(agent_cards::get).put(agent_cards::save),
         )
@@ -143,7 +169,10 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
             "/api/v1/hosts/{host}/agents/launch-options",
             get(launch::prepare),
         )
-        .route("/api/v1/hosts/{host}/agents/launch", post(launch::start))
+        .route(
+            "/api/v1/hosts/{host}/agents/launch",
+            post(launch::start).layer(DefaultBodyLimit::max(160 * 1024)),
+        )
         .route(
             "/api/v1/hosts/{host}/agents/launch-status",
             get(launch::status),

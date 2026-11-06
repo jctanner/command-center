@@ -15,6 +15,8 @@ export class AgentLauncher {
   private path = element('input');
   private provider = element('select');
   private model = element('input');
+  private initialPrompt = element('textarea');
+  private promptHelp = element('small');
   private conversation = element('select');
   private destination = element('select');
   private pin = element('input');
@@ -54,6 +56,8 @@ export class AgentLauncher {
     fields.append(element('small', 'Enter a model name or alias, or leave blank for no override.'));
     label('Tmux destination',this.destination);
     label('Conversation', this.conversation);
+    this.initialPrompt.setAttribute('aria-label','Initial prompt');this.initialPrompt.rows=5;this.initialPrompt.maxLength=24000;this.initialPrompt.placeholder='What should the agent work on?';this.promptHelp.id='agent-launch-prompt-help';this.initialPrompt.setAttribute('aria-describedby',this.promptHelp.id);
+    label('Initial prompt (optional)',this.initialPrompt);fields.append(this.promptHelp);this.initialPrompt.oninput=()=>this.update();
     const pinLabel = element('label', 'Keep this project in Files and the launcher'); pinLabel.className = 'agent-launch-pin'; pinLabel.prepend(this.pin); fields.append(pinLabel, this.name);
     this.feedback.setAttribute('role', 'status'); this.context.hidden = true;
     const actions = element('div'); actions.className = 'agent-launch-actions'; this.start.className = 'primary';
@@ -99,9 +103,12 @@ export class AgentLauncher {
   private url(host: string, action: string) { return `/api/v1/hosts/${encodeURIComponent(host)}/agents/${action}`; }
   private update() {
     const locked = this.busy || !!this.receipt;
-    for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.destination, this.conversation, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
+    for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.destination, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
     this.check.disabled = locked || this.checking || !this.path.value.trim() || !this.projects;
-    this.start.disabled = locked || !this.prepared || this.checking;
+    const resumed=!!this.conversation.value, tooLong=new TextEncoder().encode(this.initialPrompt.value).length>24000;
+    this.initialPrompt.disabled=locked||!this.projects||resumed;
+    this.promptHelp.textContent=resumed?'Resume keeps the existing conversation. Send follow-up instructions from its chat.':tooLong?'Prompt is too long. Shorten it to continue.':'Sent once when starting a new conversation. Leave blank to open the agent without a prompt.';
+    this.start.disabled = locked || !this.prepared || this.checking || (!resumed&&tooLong);
     this.close.disabled = this.busy; this.close.textContent = this.receipt ? 'Close' : 'Cancel';
     this.another.hidden = !this.receipt || !this.checkedReceipt; this.another.disabled = this.busy;
     this.recover.hidden = !this.receipt; this.recover.disabled = this.busy;
@@ -156,7 +163,7 @@ export class AgentLauncher {
       // Retain the receipt before IO. Recovery only observes; it never resends.
       this.receipt = { host: host.id, revision: host.connection_revision, endpoint: prepared.endpoint, id: prepared.launch_id };
       this.saveReceipt(); this.checkedReceipt = false;
-      let result = await request<LaunchedAgent>(this.url(host.id, 'launch'), { token: prepared.token, conversation: this.conversation.value || null });
+      let result = await request<LaunchedAgent>(this.url(host.id, 'launch'), { token: prepared.token, conversation: this.conversation.value || null, initial_prompt: !this.conversation.value&&this.initialPrompt.value.trim()?this.initialPrompt.value:null });
       for (let i = 0; result.found && !result.running && !result.exited && i < 6; i++) {
         await new Promise(resolve => window.setTimeout(resolve, 500));
         result = await request<LaunchedAgent>(this.url(host.id, `launch-status?${new URLSearchParams({ connection_revision: host.connection_revision, endpoint: prepared.endpoint, launch_id: prepared.launch_id })}`));
@@ -179,7 +186,7 @@ export class AgentLauncher {
   }
   private async finish(result: LaunchedAgent) {
     if (result.found && result.running) {
-      await this.opened(result); this.clearReceipt(); this.prepared = undefined; this.dialog.close(); return;
+      await this.opened(result); this.initialPrompt.value='';this.clearReceipt(); this.prepared = undefined; this.dialog.close(); return;
     }
     this.feedback.textContent = result.exited ? 'The agent exited during startup. Review its output below; the tmux pane is preserved.' : result.found ? 'Tmux target created. The agent is still starting or needs CLI setup. Use Check launch to continue.' : 'No launch target found yet. Check again before starting another agent.';
     this.context.textContent = result.context || ''; this.context.hidden = !result.context;

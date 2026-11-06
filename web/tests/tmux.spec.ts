@@ -151,12 +151,12 @@ test('manage machines live across browsers without reconnecting unaffected termi
   let connections = 0; page.on('websocket', ws => { if (ws.url().includes('/terminal?')) connections++; });
   let peerConnections = 0; peer.on('websocket', ws => { if (ws.url().includes('/terminal?')) peerConnections++; });
   const pids = tmux('list-panes', '-s', '-t', 'project', '-F', '#{pane_pid}');
-  await page.getByRole('button', { name: 'Machines', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Machines', exact: true });
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const dialog = page.locator('#machine-dialog');
   await dialog.getByLabel('Display name', { exact: true }).fill('Renamed machine');
   await dialog.getByRole('button', { name: 'Save machine', exact: true }).click();
   await expect(dialog.getByRole('status')).toHaveText('Saved. Changes are live.');
-  await expect(page.locator('#machines').getByRole('button', { name: 'Renamed machine', exact: true })).toBeVisible();
+  await expect(dialog.locator('#machine-list').getByRole('button', { name: 'Renamed machine', exact: true })).toBeVisible();
   await expect(peer.locator('#machines').getByRole('button', { name: 'Renamed machine', exact: true })).toBeVisible();
   expect(readFileSync(configFile, 'utf8')).toContain('name = "Renamed machine"');
   expect(connections).toBe(0); expect(peerConnections).toBe(0);
@@ -183,9 +183,9 @@ test('manage machines live across browsers without reconnecting unaffected termi
   await dialog.getByLabel('tmux socket path', { exact: true }).fill(alternateSocket);
   await dialog.getByRole('button', { name: 'Save machine', exact: true }).click();
   await expect(dialog.getByRole('status')).toHaveText('Saved. Changes are live.');
-  await expect(page.locator('#connection')).toHaveText('Attached');
+  await expect(page.locator('#connection')).toHaveText('Connected');
   await expect(peer.locator('#connection')).toHaveText('Attached');
-  expect(connections).toBe(1); expect(peerConnections).toBe(1); expect(unrelatedConnections).toBe(0);
+  expect(connections).toBe(0); expect(peerConnections).toBe(1); expect(unrelatedConnections).toBe(0);
   expect(tmux('list-panes', '-s', '-t', 'project', '-F', '#{pane_pid}')).toBe(pids);
   connections = 0; peerConnections = 0;
   await observer.close();
@@ -201,8 +201,8 @@ test('manage machines live across browsers without reconnecting unaffected termi
   expect(tmux('list-panes', '-s', '-t', 'project', '-F', '#{pane_pid}')).toBe(pids);
 
   // Two editors share a revision; stale saves keep their draft and cannot win.
-  await peer.getByRole('button', { name: 'Machines', exact: true }).click();
-  const peerDialog = peer.getByRole('dialog', { name: 'Machines', exact: true });
+  await peer.getByRole('button', { name: 'Settings', exact: true }).click();
+  const peerDialog = peer.locator('#machine-dialog');
   await expect(peerDialog.getByLabel('Display name', { exact: true })).toHaveValue('Renamed machine');
   await peerDialog.getByLabel('Display name', { exact: true }).fill('Stale draft');
   await dialog.getByLabel('Display name', { exact: true }).fill('Newest alias');
@@ -213,7 +213,7 @@ test('manage machines live across browsers without reconnecting unaffected termi
   await expect(peerDialog.getByLabel('Display name', { exact: true })).toHaveValue('Stale draft');
   expect(readFileSync(configFile, 'utf8')).toContain('Newest alias');
   peer.once('dialog', d => d.accept());
-  await peerDialog.getByRole('button', { name: 'Close machine settings', exact: true }).click();
+  await peerDialog.getByRole('button', { name: 'Done editing machines', exact: true }).click();
   expect(connections).toBe(0); expect(peerConnections).toBe(0);
 
   // Mutations require Origin, even for nonbrowser clients.
@@ -232,15 +232,15 @@ test('manage machines live across browsers without reconnecting unaffected termi
   await expect(peer.locator('#empty')).toContainText('Add a machine');
   await expect(dialog.getByRole('status')).toHaveText('Machine removed. Its tmux sessions are still running.');
   expect(readFileSync(configFile, 'utf8')).toContain('hosts = []');
-  await dialog.getByRole('button', { name: 'Close machine settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Machines', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Done editing machines', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Display name', { exact: true }).fill('Restored machine');
   if (!(await dialog.getByLabel('tmux socket path').isVisible())) await dialog.getByText('Advanced settings', { exact: true }).click();
   await dialog.getByLabel('tmux socket path').fill(socket);
   await dialog.getByRole('button', { name: 'Save machine', exact: true }).click();
   await expect(peer.locator('#connection')).toHaveText('Attached');
-  await dialog.getByRole('button', { name: 'Close machine settings', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Done editing machines', exact: true }).click();
   await peer.close();
 });
 
@@ -380,10 +380,11 @@ test('renumber inserts windows in either direction, preserves processes and reje
  expect(pids()).toEqual(before);
 });
 
-async function closeTarget(session:string,window:string,host='test'){
- const hosts=await(await fetch(base+'/api/v1/hosts')).json();const connection_revision=hosts.find((h:any)=>h.id===host).connection_revision;const query=new URLSearchParams({connection_revision,session,window});const r=await fetch(`${base}/api/v1/hosts/${host}/windows/close?${query}`);expect(r.status,await r.clone().text()).toBe(200);return {connection_revision,session,window,...await r.json()};
+async function closeTarget(session:string,window:string,host?:string){
+ if(!host){const settings=await(await fetch(base+'/api/v1/settings/hosts')).json();host=settings.hosts.find((h:any)=>h.socket===socket)?.id;expect(host).toBeTruthy();}
+ const hosts=await(await fetch(base+'/api/v1/hosts')).json();const connection_revision=hosts.find((h:any)=>h.id===host).connection_revision;const query=new URLSearchParams({connection_revision,session,window});const r=await fetch(`${base}/api/v1/hosts/${host}/windows/close?${query}`);expect(r.status,await r.clone().text()).toBe(200);return {host,connection_revision,session,window,...await r.json()};
 }
-async function closeRequest(p:any,host='test'){return fetch(`${base}/api/v1/hosts/${host}/windows/close`,{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({connection_revision:p.connection_revision,session:p.session,window:p.window,expected:p.expected})});}
+async function closeRequest(p:any,host=p.host){return fetch(`${base}/api/v1/hosts/${host}/windows/close`,{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({connection_revision:p.connection_revision,session:p.session,window:p.window,expected:p.expected})});}
 test('close window confirms pane termination, permits cancel, and preserves an inactive window selection',async({page})=>{
  const sid=tmux('new-session','-d','-P','-F','#{session_id}','-s','close-fixture','-n','keep','/bin/sleep','86400');const keep=tmux('display-message','-p','-t',sid,'#{window_id}');const target=tmux('new-window','-d','-P','-F','#{window_id}','-t',sid,'-n','close-me','/bin/sleep','86400');tmux('split-window','-d','-t',target,'/bin/sleep','86400');const original=tmux('list-panes','-t',sid+':'+keep,'-F','#{pane_id}/#{pane_pid}');await page.goto(base);await expect(page.locator('#connection')).toHaveText('Attached');await page.getByLabel('Session',{exact:true}).selectOption(sid);await expect(page.locator('#windows button[aria-current=true]')).toContainText('keep');const tab=page.locator('#windows button').filter({hasText:'close-me'});await tab.click({button:'right'});await page.getByRole('button',{name:'Close window…',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Close tmux window',exact:true});await expect(dialog).toContainText('2 panes');await expect(dialog).toContainText('terminates all');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();expect(tmux('list-windows','-t',sid,'-F','#{window_id}')).toContain(target);await tab.focus();await tab.press('Shift+F10');await page.getByRole('button',{name:'Close window…',exact:true}).click();await expect(dialog.getByRole('button',{name:'Close window',exact:true})).toBeEnabled();await page.screenshot({path:'../test-results/close-window-confirm.png'});await dialog.getByRole('button',{name:'Close window',exact:true}).click();await expect(dialog).toBeHidden();await expect(tab).toHaveCount(0);await expect(page.locator('#windows button[aria-current=true]')).toContainText('keep');expect(tmux('list-panes','-t',sid+':'+keep,'-F','#{pane_id}/#{pane_pid}')).toBe(original);expect(tmux('list-windows','-a','-F','#{window_id}').split('\n')).not.toContain(target);
 });

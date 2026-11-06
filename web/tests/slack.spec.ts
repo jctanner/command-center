@@ -1,3 +1,4 @@
+import {enableFeatures} from './feature-fixture';
 import {test,expect} from '@playwright/test';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync} from 'node:fs';
 import {tmpdir,userInfo} from 'node:os';
@@ -27,7 +28,7 @@ test.beforeAll(async()=>{
   writeFileSync(join(dir,'known_hosts'),`[127.0.0.1]:${sshPort} ${readFileSync(join(dir,'hostkey.pub'),'utf8')}`);writeFileSync(join(dir,'ssh_config'),`Host slack-fixture\n HostName 127.0.0.1\n Port ${sshPort}\n User ${userInfo().username}\n IdentityFile ${dir}/identity\n IdentitiesOnly yes\n UserKnownHostsFile ${dir}/known_hosts\n`);remote=`\n[[hosts]]\nid="ssh"\nname="SSH Slack source"\nssh="slack-fixture"\nssh_config=${JSON.stringify(join(dir,'ssh_config'))}\nsocket=${JSON.stringify(socket)}\n`;
  }
  const p=await port();base=`http://127.0.0.1:${p}`;const config=join(dir,'config.toml');writeFileSync(config,`[[hosts]]\nid="local"\nname="Local Slack source"\nsocket=${JSON.stringify(socket)}\n${remote}`);
- backend=spawn(resolve(process.env.CC_BINARY||'../target/debug/command-center'),['--listen',`127.0.0.1:${p}`,'--config',config,'--web-dir',resolve(process.env.CC_WEB_DIR||'dist')],{stdio:'pipe'});await expect.poll(async()=>{try{return(await fetch(base+'/api/v1/health')).status;}catch{return 0;}}).toBe(200);
+ backend=spawn(resolve(process.env.CC_BINARY||'../target/debug/command-center'),['--listen',`127.0.0.1:${p}`,'--config',config,'--web-dir',resolve(process.env.CC_WEB_DIR||'dist')],{stdio:'pipe'});await expect.poll(async()=>{try{return(await fetch(base+'/api/v1/health')).status;}catch{return 0;}}).toBe(200);await enableFeatures(base);
 });
 test.afterAll(()=>{backend?.kill('SIGTERM');sshd?.kill('SIGTERM');if(socket)spawnSync('tmux',['-S',socket,'kill-server']);if(dir)rmSync(dir,{recursive:true,force:true});});
 
