@@ -47,3 +47,7 @@ The default listener is loopback. Explicit private LAN/tailnet listeners and a c
 - [Testing](docs/testing.md): build and focused verification commands.
 
 Keep task progress, discoveries and evidence in the ledger. Keep this file focused on understanding and running the project.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE). Third-party dependencies retain their own licenses.

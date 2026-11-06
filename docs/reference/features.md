@@ -210,7 +210,7 @@ Validation: `python3 -B -m unittest discover -s tests -p test_jira.py`, `cargo t
 
 ## Private HTTPS
 
-CC accepts an explicit HTTPS reverse-proxy origin with `--public-origin https://cc.example.ts.net:8443`. The proxy must preserve Host; browser Origin must match exactly. Existing loopback/LAN/tailnet HTTP addresses retain their own same-origin checks, and forwarded headers never grant access. TLS terminates at the proxy.
+CC accepts an explicit HTTPS reverse-proxy origin with `--public-origin https://cc.example.ts.net:8443`. The example hostname is a placeholder; substitute your backend's actual MagicDNS or proxy hostname. The proxy must preserve Host; browser Origin must match exactly. Existing loopback/LAN/tailnet HTTP addresses retain their own same-origin checks, and forwarded headers never grant access. TLS terminates at the proxy.
 
 An optional setup is `sudo tailscale serve --bg --https=8443 http://127.0.0.1:8080`, with automatic certificates for the backend's full MagicDNS hostname. Choose an available HTTPS port and record the actual origin privately. Access requires Tailscale and tailnet permission. Existing direct HTTP access remains available if explicitly configured. HTTPS browser storage is separate from HTTP storage, including drafts/preferences.
 

@@ -22,4 +22,4 @@ Deployed 2026-11-05 using existing backend arguments; HTTPS healthy. No live inp
 
 ## Handoff
 
-On explicit archive approval, read current receipt revision and use the normal revision-guarded archive API for ID [private receipt ID in local operational notes] only. Verify status Archived, no resend, then complete this record and bug 0005. If user declines, retain it and record that choice. Next task number: 0010; next bug: 0006.
+On explicit archive approval, read current receipt revision and consult ignored .local/operations.md for the exact original receipt ID and use the normal revision-guarded archive API for that receipt only. Do not guess or substitute any identifier. Verify status Archived, no resend, then complete this record and bug 0005. If user declines, retain it and record that choice. Next task number: 0010; next bug: 0006.

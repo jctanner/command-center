@@ -26,3 +26,6 @@ __pycache__/
 .env.*
 !.env.example
 *.log
+
+# Private deployment notes and operational identifiers.
+/.local/

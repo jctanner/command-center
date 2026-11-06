@@ -9,10 +9,18 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task 0020: privacy and history cleanup](docs/tasks/current/0020-privacy-and-history-cleanup.md) — CC dev; cleanup and clean history prepared, final GitHub destination decision pending.
+
+
+
 
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0019: Apache License 2.0](docs/tasks/done/0019-apache-license.md)
+
+- [Task 0018: public release review](docs/tasks/done/0018-public-release-review.md)
 
 - [Task 0017: transient host feedback](docs/tasks/done/0017-transient-host-connection-feedback.md)
 
@@ -48,9 +56,13 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Open bugs
 
+- [Bug 0013: setup requirements and navigation](docs/bugs/open/0013-readme-toolchain-and-navigation-requirements.md)
+
 - [Bug 0005: Pi first input unconfirmed](docs/bugs/open/0005-pi-first-input-unconfirmed.md)
 
 ## Fixed bugs
+
+- [Bug 0014: personal integration-source defaults](docs/bugs/fixed/0014-personal-machine-defaults-in-integration-settings.md)
 
 - [Bug 0011: background host feedback](docs/bugs/fixed/0011-background-host-errors-leak-across-workspaces.md)
 - [Bug 0012: close fixture host identity](docs/bugs/fixed/0012-window-close-fixture-assumes-removed-host-id.md)
@@ -78,6 +90,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-06: privacy/history preparation](docs/notes/2026-11-06-privacy-history-preparation.md)
+
+- [2026-11-06: Apache License 2.0](docs/notes/2026-11-06-apache-license.md)
+
+- [2026-11-06: public release review](docs/notes/2026-11-06-public-release-review.md)
 
 - [2026-11-06: transient host feedback](docs/notes/2026-11-06-transient-host-feedback.md)
 
