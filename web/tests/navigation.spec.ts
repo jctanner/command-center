@@ -95,3 +95,11 @@ test('stream connection errors clear on recovery while explicit action warnings 
  await page.locator('#show-terminal').click();await expect(page.locator('#notice')).toBeHidden();await expect(page.locator('#connection')).toHaveText('Attached');
  await error('action');await error('connection');await page.locator('#show-queue').click();await expect(page.locator('#notice')).toHaveText('Fixture warning');await expect(page.locator('#notice')).toBeVisible();
 });
+
+
+test('desktop header controls align and touch reload keeps its 44px target',async({page,browser})=>{
+ await page.goto(base+'/#/queue');await expect(page.locator('#queue-pane')).toBeVisible();
+ for(const width of [1920,1440,1280]){await page.setViewportSize({width,height:900});await expect(page.locator('#reload-app')).toHaveCSS('height','32px');const controls=await page.locator('header button,header select').evaluateAll(elements=>elements.filter(el=>el.getClientRects().length).map(el=>{const b=el.getBoundingClientRect();return{id:el.id,height:b.height,center:b.y+b.height/2};}));expect(controls.length).toBeGreaterThan(6);for(const control of controls){expect(control.height,control.id).toBe(32);expect(Math.abs(control.center-controls[0].center),control.id).toBeLessThanOrEqual(.5);}expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);}
+ await page.setViewportSize({width:1440,height:900});await page.screenshot({path:'../test-results/header-control-heights-desktop.png'});await page.getByRole('button',{name:'Reload app',exact:true}).click();await expect(page.getByRole('dialog',{name:'Reload app?'})).toBeVisible();await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page).toHaveURL(/#\/queue$/);
+ const touch=await browser.newPage({viewport:{width:393,height:852},isMobile:true,hasTouch:true});await touch.goto(base+'/#/queue');for(const width of [393,1440]){await touch.setViewportSize({width,height:852});await expect(touch.locator('#reload-app')).toHaveCSS('height','44px');await expect(touch.locator('#reload-app')).toHaveCSS('width','44px');}await touch.close();
+});

@@ -945,3 +945,16 @@ button:disabled { opacity: .5; cursor: default; }
  #header-theme-select { width:146px;max-width:146px;min-height:32px;font-size:11px; }
  .header-actions { gap:10px; }
 }
+
+@media(min-width:901px) and (pointer:fine){
+ #workspace-nav>button,.header-actions>button { height:32px;min-height:32px; }
+ #reload-app { display:grid;place-items:center;width:32px;min-width:32px;height:32px;font-size:20px;line-height:1; }
+}
+
+.notification-sound-controls { border-top:1px solid var(--cc-border);margin-top:18px;padding-top:12px; }
+.notification-sound-controls h3 { margin:0 0 12px;font-size:15px; }
+.notification-sound-controls label { display:flex;gap:10px;align-items:center;margin:10px 0;font-size:13px;min-height:32px; }
+.notification-sound-controls input[type=checkbox] { width:18px;height:18px;accent-color:var(--cc-accent); }
+.notification-sound-controls input[type=range] { min-width:0;flex:1;accent-color:var(--cc-accent); }
+.notification-sound-controls .notification-volume-value { min-width:4ch;text-align:right;font-variant-numeric:tabular-nums; }
+.notification-sound-controls p { font-size:12px; }

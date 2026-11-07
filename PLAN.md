@@ -16,9 +16,15 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 
 
+
+
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0025: notification sound](docs/tasks/done/0025-notification-sound.md)
+
+- [Task 0024: header control heights](docs/tasks/done/0024-header-control-height.md)
 
 - [Task 0023: desktop header theme selector](docs/tasks/done/0023-desktop-header-theme-selector.md)
 
@@ -67,9 +73,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 ## Open bugs
 
 
+
 - [Bug 0005: Pi first input unconfirmed](docs/bugs/open/0005-pi-first-input-unconfirmed.md)
 
 ## Fixed bugs
+
+- [Bug 0015: desktop reload height](docs/bugs/fixed/0015-desktop-reload-button-too-tall.md)
 
 - [Bug 0013: setup requirements and navigation](docs/bugs/fixed/0013-readme-toolchain-and-navigation-requirements.md)
 
@@ -101,6 +110,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-06: notification sound](docs/notes/2026-11-06-notification-sound.md)
+
+- [2026-11-06: header control heights](docs/notes/2026-11-06-header-control-heights.md)
 
 - [2026-11-06: desktop header theme selector](docs/notes/2026-11-06-desktop-header-theme-selector.md)
 

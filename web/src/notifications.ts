@@ -1,13 +1,18 @@
+import {NotificationSound} from './notification-sound';
+import {compactClient} from './layout';
 // Browser-local preferences and opaque event receipts; no conversation copies.
 export type Notice = { scope: string; tokens: string[]; title: string; body: string; open: () => void; reading: boolean };
 const preference = 'cc.notifications.enabled';
 const receipts = 'cc.notifications.receipts';
 const muted = 'cc.notifications.muted';
+const soundReceipts='cc.notifications.sound.receipts';
+const lastSound='cc.notifications.sound.last';
 function read(key: string): string[] { try { const v: unknown = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string').slice(-512) : []; } catch { return []; } }
 export class AgentNotifications {
   private previous = new Map<string, string[]>();
   private initialized = false;
   private problem = '';
+  readonly sound=new NotificationSound(()=>!compactClient()&&this.available()&&this.enabled()&&Notification.permission==='granted');
   enabled() { try { return localStorage.getItem(preference) === 'true'; } catch { return false; } }
   available() { return isSecureContext && 'Notification' in window && !!navigator.locks; }
   status() {
@@ -41,15 +46,28 @@ export class AgentNotifications {
       if (!this.initialized || !changed.length || !this.available() || !this.enabled() || Notification.permission !== 'granted') continue;
       try {
         await navigator.locks.request('cc-agent-notifications', () => {
-          const seen = read(receipts);
+          const seen = read(receipts), heard=read(soundReceipts);
           const unseen = changed.filter(token => !seen.includes(token));
-          if (!unseen.length) return;
-          // Claim before showing, shared across tabs and reloads. Never replay an
-          // uncertain notification; silenced/read events are consumed as well.
-          localStorage.setItem(receipts, JSON.stringify([...seen, ...unseen].slice(-512)));
-          if (!this.enabled() || this.isMuted(notice.scope) || notice.reading) return;
-          const notification = new Notification(notice.title, { body: notice.body, tag: notice.scope });
-          notification.onclick = () => { notification.close(); window.focus(); notice.open(); };
+          const unheard=changed.filter(token=>!heard.includes(token));
+          // Claim visual delivery before IO. A separate audio receipt lets an
+          // armed tab chime even when an unarmed tab won the visual notification.
+          if(unseen.length)localStorage.setItem(receipts,JSON.stringify([...seen,...unseen].slice(-512)));
+          const suppressed=!this.enabled()||this.isMuted(notice.scope)||notice.reading;
+          if(suppressed||!this.sound.enabled()||this.sound.volume()===0){
+            if(unheard.length)localStorage.setItem(soundReceipts,JSON.stringify([...heard,...unheard].slice(-512)));
+          }
+          if(suppressed)return;
+          if(unseen.length){
+            const notification=new Notification(notice.title,{body:notice.body,tag:notice.scope,silent:this.sound.enabled()?true:undefined});
+            notification.onclick=()=>{notification.close();window.focus();notice.open();};
+          }
+          if(unheard.length&&this.sound.canAlert()){
+            localStorage.setItem(soundReceipts,JSON.stringify([...heard,...unheard].slice(-512)));
+            const now=Date.now(),last=Number(localStorage.getItem(lastSound)||0);
+            // Coalesce bursts across agents/tabs; consume suppressed sounds,
+            // never queue them for later playback or retry uncertain delivery.
+            if(!Number.isFinite(last)||last<0||now<last||now-last>=2000){localStorage.setItem(lastSound,String(now));this.sound.alert();}
+          }
         });
       } catch { this.problem = 'Notifications could not be delivered. Check browser permissions and storage.'; }
     }
