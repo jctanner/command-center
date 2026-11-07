@@ -1,3 +1,4 @@
+import {enableFeatures} from './feature-fixture';
 import {test,expect,type Page} from '@playwright/test';
 import {mkdtempSync,writeFileSync,rmSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';
@@ -63,4 +64,15 @@ test('agent Markdown and custom card colors remain readable in dark and light th
  await page.route('**/agents/conversation?*',route=>route.fulfill({json:{provider:'claude',association:'process',selected:'conversation',instance:'theme-instance',context:'',project:'/fixture/project',activity,attention:false,send_available:true,message_token:'not-used',read_state:attention,conversations:[],history_version:'theme-version',messages:[{id:'1',role:'user',text:'Could you check the release?',timestamp:''},{id:'2',role:'assistant',text:message,timestamp:''}],activities:[]}}));
  await page.goto(base+'/#/queue');await page.locator('.queue-card').click();await expect(page.locator('.agent-markdown h2')).toHaveText('Release checklist');
  for(const id of ['tokyo-night','flexoki-light']){await appearance(page);await page.locator('#theme-select').selectOption(id);await page.locator('#show-queue').click();await expect(page.locator('.agent-markdown')).toContainText('Terminal sessions keep running');await expect(page.locator('.queue-card')).toHaveClass(/has-custom-color/);expect(await page.locator('.queue-card').evaluate(el=>el.style.getPropertyValue('--agent-card-color'))).toBe('#d08770');await page.screenshot({path:`../test-results/theme-agent-${id}.png`});}
+});
+
+test('desktop header selector syncs Appearance, fits full navigation and hides on smaller clients',async({page,context})=>{
+ await enableFeatures(base);await page.setViewportSize({width:1920,height:1080});let sockets=0;const traffic:string[]=[];page.on('websocket',ws=>{if(ws.url().includes('/terminal?')){sockets++;ws.on('framesent',event=>traffic.push(typeof event.payload==='string'?event.payload:'binary'));}});
+ await page.goto(base+'/#/terminal');await expect(page.locator('#connection')).toHaveText('Attached');await page.evaluate(()=>new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r()))));const before=panes();traffic.length=0;
+ const header=page.locator('#header-theme-select');await expect(header).toBeVisible();await expect(header.locator('option')).toHaveCount(catalog.length);await header.selectOption('nord');await expect(page.locator('html')).toHaveAttribute('data-theme','nord');await expect(page.locator('#theme-select')).toHaveValue('nord');await expect(page).toHaveURL(/#\/terminal$/);
+ await header.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');expect(sockets).toBe(1);expect(panes()).toBe(before);expect(traffic.filter(value=>value==='binary'||/"type":"(?:resize|input|select_window)"/.test(value))).toEqual([]);
+ await appearance(page);await page.locator('#theme-select').selectOption('gruvbox');await expect(header).toHaveValue('gruvbox');
+ const peer=await context.newPage();await peer.goto(base+'/#/settings');await expect(peer.locator('#header-theme-select')).toHaveValue('gruvbox');await header.selectOption('catppuccin');await expect(peer.locator('#header-theme-select')).toHaveValue('catppuccin');await peer.close();
+ for(const width of [1920,1440]){await page.setViewportSize({width,height:900});await expect(header).toBeVisible();await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);const bounds=await page.locator('header').boundingBox();expect(bounds!.height).toBeLessThanOrEqual(65);const nav=await page.locator('#workspace-nav').boundingBox(),actions=await page.locator('.header-actions').boundingBox();expect(nav!.x+nav!.width).toBeLessThanOrEqual(actions!.x);await page.screenshot({path:`../test-results/theme-header-${width}.png`});}
+ for(const width of [1280,900,393]){await page.setViewportSize({width,height:852});await expect(header).toBeHidden();await expect(page.locator('#theme-select')).toBeVisible();}
 });

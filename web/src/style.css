@@ -938,3 +938,10 @@ button:disabled { opacity: .5; cursor: default; }
 #theme-preview span { width:30px;height:30px;border-radius:50%;border:1px solid var(--cc-border-strong); }
 #settings-appearance a { color:var(--cc-blue); }
 @media(max-width:700px){#settings-appearance{padding:16px;}.settings-tabs{gap:6px;}.settings-tabs button{padding:7px 9px;}}
+
+.header-theme { display:none; }
+@media(min-width:1440px) and (pointer:fine){
+ .header-theme { display:flex;align-items:center; }
+ #header-theme-select { width:146px;max-width:146px;min-height:32px;font-size:11px; }
+ .header-actions { gap:10px; }
+}

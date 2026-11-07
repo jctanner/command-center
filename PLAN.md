@@ -15,9 +15,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 
 
+
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0023: desktop header theme selector](docs/tasks/done/0023-desktop-header-theme-selector.md)
 
 - [Task 0022: Omarchy theme selector](docs/tasks/done/0022-omarchy-theme-selector.md)
 
@@ -98,6 +101,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-06: desktop header theme selector](docs/notes/2026-11-06-desktop-header-theme-selector.md)
 
 - [2026-11-06: Omarchy theme selector](docs/notes/2026-11-06-omarchy-theme-selector.md)
 

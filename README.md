@@ -20,7 +20,7 @@ Run CC on a single-user machine and keep access restricted to trusted clients. L
 
 Phone layouts focus on conversations and workspaces without attaching or resizing tmux. The web client can be installed on an iPhone home screen over trusted HTTPS.
 
-Choose **Settings → Appearance** for Command Center’s default palette or 23 Omarchy color schemes. Themes switch instantly across the interface, editor and terminal ANSI palette, with a preference saved per browser.
+Use the color-scheme dropdown in the wide desktop header, or **Settings → Appearance** on any screen, for Command Center’s default palette or 23 Omarchy color schemes. Themes switch instantly across the interface, editor and terminal ANSI palette, with a preference saved per browser.
 
 ## Quick start
 

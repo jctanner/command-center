@@ -11,7 +11,7 @@ export function onThemeChange(listener:()=>void){window.addEventListener('cc-the
 export function setTheme(id:string,persist=true){
  selected=find(id);document.documentElement.dataset.theme=selected.id;
  document.querySelector('meta[name="theme-color"]')?.setAttribute('content',selected.colors.background);
- const field=document.getElementById('theme-select') as HTMLSelectElement|null;if(field)field.value=selected.id;
+ for(const field of document.querySelectorAll<HTMLSelectElement>('[data-theme-selector]')){field.value=selected.id;field.title=`Color scheme: ${selected.name}`;}
  const preview=document.getElementById('theme-preview');
  if(preview){preview.replaceChildren(...['background','foreground','accent','red','green','yellow','blue','magenta'].map(key=>{const swatch=document.createElement('span');swatch.style.backgroundColor=selected.colors[key]||selected.colors.foreground;swatch.title=key;return swatch;}));}
  const detail=document.getElementById('theme-description');if(detail)detail.textContent=`${selected.name} · ${selected.colors.mode==='light'?'Light':'Dark'} · This browser`;
@@ -19,9 +19,10 @@ export function setTheme(id:string,persist=true){
  window.dispatchEvent(new Event('cc-theme-change'));
 }
 export function initializeThemes(){
- const field=document.getElementById('theme-select') as HTMLSelectElement;
- field.replaceChildren(...themes.map(theme=>new Option(theme.name+(theme.colors.mode==='light'?' · Light':''),theme.id)));
- field.onchange=()=>setTheme(field.value);
+ for(const field of document.querySelectorAll<HTMLSelectElement>('[data-theme-selector]')){
+  field.replaceChildren(...themes.map(theme=>new Option(theme.name+(theme.colors.mode==='light'?' · Light':''),theme.id)));
+  field.onchange=()=>setTheme(field.value);
+ }
  let saved:string|null=null;try{saved=localStorage.getItem(storageKey);}catch{/* Optional browser persistence. */}
  setTheme(find(saved).id,false);
  window.addEventListener('storage',event=>{if(event.key===storageKey||event.key===null)setTheme(find(event.key===null?null:event.newValue).id,false);});
