@@ -1,3 +1,4 @@
+import {initializeThemes} from './themes';
 import {SettingsWorkspace,type FeatureFlags} from './settings';
 import {startHeaderClock} from './header-clock';
 import {JiraWorkspace} from './jira';
@@ -12,6 +13,8 @@ import { AttentionQueue, type QueueTarget } from './queue';
 import { createTerminal, type TerminalView } from './terminal';
 import { initMachines, type Host } from './machines';
 import type { FileWorkspace, FileContext } from './files';
+
+initializeThemes();
 
 type Pane = { id: string; index: number; left: number; top: number; width: number; height: number; active: boolean; command: string; cwd: string };
 type Window = { id: string; index: number; name: string; width: number; height: number; zoomed: boolean; active: boolean; panes: Pane[] };

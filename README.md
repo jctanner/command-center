@@ -20,6 +20,8 @@ Run CC on a single-user machine and keep access restricted to trusted clients. L
 
 Phone layouts focus on conversations and workspaces without attaching or resizing tmux. The web client can be installed on an iPhone home screen over trusted HTTPS.
 
+Choose **Settings → Appearance** for Command Center’s default palette or 23 Omarchy color schemes. Themes switch instantly across the interface, editor and terminal ANSI palette, with a preference saved per browser.
+
 ## Quick start
 
 On Linux, install current stable Rust (the locked dependencies require at least Rust 1.89), Node.js 22.12 or newer with npm, tmux, and Python 3.10 or newer. Remote machines need tmux, Python 3.10+ for file/agent helpers, and SSH access through the backend’s OpenSSH client. SSH uses your normal keys/config and verifies host keys.

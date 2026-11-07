@@ -4,11 +4,21 @@ Maintained implementation and integration details, moved from README during ledg
 
 ## Settings and optional integrations
 
-Open **Settings** in the header (gear on compact screens). **Machines** contains the existing local/SSH/ProxyJump configuration and connection tests. **Features** controls Slack, Email and Jira for the whole backend installation, with explicit Save and revision checks across browsers. Settings has its own `#/settings` route and scrolls on phones without attaching a terminal.
+Open **Settings** in the header (gear on compact screens). **Machines** contains the existing local/SSH/ProxyJump configuration and connection tests. **Appearance** selects the browser-local theme. **Features** controls Slack, Email and Jira for the whole backend installation, with explicit Save and revision checks across browsers. Settings has its own `#/settings` route and scrolls on phones without attaching a terminal.
 
 Fresh configurations start with all three optional workspaces disabled. Their navigation items are hidden and all their backend routes return 403. Enable a workspace, open it, then configure its existing machine/project source. These integrations require the compatible personal-assistant environment and credentials on the source machine; enabling a flag does not grant source write permissions or install anything.
 
 Flags live in the private, atomically saved `config.features.json` sidecar next to `config.toml`. On first startup without that sidecar, integrations with existing configured sources are enabled once to preserve an upgraded installation. Explicitly disabled flags remain disabled on restart. Source settings, local read state and delivery receipts are retained. Disabling waits for already-started guarded requests, then blocks new integration requests. Visible clients refresh flags every ten seconds and when returning to the page; an open disabled workspace moves to Settings. The backend gate takes effect immediately after save. These are runtime availability flags; integration code remains part of the repository and binary.
+
+## Appearance and themes
+
+**Settings → Appearance → Color scheme** offers the Command Center default and the 23 built-in Omarchy palettes pinned in `web/src/theme-palettes.json`, including five light variants. CC adapts the palette to semantic UI roles, including contrast-adjusted text/status colors, rendered Markdown, CodeMirror and xterm. Source color data and commit provenance are recorded with the retained MIT notice under `third-party/`; the built frontend also serves `/licenses/omarchy.txt`. No desktop configs, fonts, wallpapers or executable theme code are imported.
+
+Selection is saved under `cc.theme` in browser storage for this origin/profile, and synchronizes other tabs on the same origin. Devices and HTTP/HTTPS origins keep independent choices. Missing/invalid preferences fall back to Command Center; blocked storage still permits an in-memory choice. A small local script selects the saved palette before styles paint. This is a browser preference, not installation-wide server configuration.
+
+Switching changes colors without terminal reconnects, input or resizing. CodeMirror keeps active/inactive document drafts, undo and language state. Custom agent card colors retain their chosen values. Explicit RGB colors emitted by terminal applications keep their application colors; changing CC's ANSI palette does not rewrite remote tmux configuration or provider settings. Browser chrome uses the current background meta color; installed manifest/icons retain their default branding.
+
+Run `python3 scripts/generate-theme-tokens.py` after intentional palette edits to regenerate semantic CSS and the served license copy. The generator validates IDs/modes/hex values and adjusts UI text contrast. Updating the pinned upstream palette set is an explicit maintenance change; clients do not fetch/install themes at runtime. Browser tests cover every palette, representative text contrast, persistence before main JS, cross-tab updates, denied storage, editor history, mobile layout and simultaneous desktop tmux dimensions/processes.
 
 ## Native pi in AI Queue
 

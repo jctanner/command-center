@@ -4,7 +4,8 @@ import { EditorView, keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { LanguageDescription } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
-import { oneDark } from '@codemirror/theme-one-dark';
+import {editorTheme} from './editor-theme';
+import {onThemeChange} from './themes';
 import type { Host } from './machines';
 
 export type FileContext = { host: string; cwd?: string; folders: { pane: string; path: string }[] };
@@ -59,6 +60,7 @@ export class FileWorkspace {
   private checking = false;
   private openGeneration = 0;
   private view: EditorView;
+  private appearance=new Compartment();
   private previewGeneration = 0;
   private previewKey = '';
   private previewText = '';
@@ -89,7 +91,8 @@ export class FileWorkspace {
         <div id="editor-placeholder">Open a project directory, or browse anywhere.<br>Each file stays attached to its machine.</div>
         <div id="code-editor" hidden></div><div id="markdown-preview" tabindex="0" role="region" aria-label="Rendered Markdown" hidden></div><div id="editor-status" role="status"></div>
       </section>`;
-    this.view = new EditorView({ state: EditorState.create({ extensions: [oneDark] }), parent: el('code-editor') });
+    this.view = new EditorView({ state: EditorState.create({ extensions: [this.appearance.of(editorTheme())] }), parent: el('code-editor') });
+    onThemeChange(()=>{for(const doc of this.documents.values()){if(doc.state&&doc.key!==this.active)doc.state=doc.state.update({effects:this.appearance.reconfigure(editorTheme())}).state;}this.view.dispatch({effects:this.appearance.reconfigure(editorTheme())});});
     el<HTMLSelectElement>('browser-machine').onchange = () => this.chooseMachine(el<HTMLSelectElement>('browser-machine').value);
     el<HTMLInputElement>('browse-path').oninput = () => { this.pathRevision++; };
     el<HTMLFormElement>('browse-path-form').onsubmit = e => { e.preventDefault(); void this.browse(el<HTMLInputElement>('browse-path').value); };
@@ -261,7 +264,7 @@ export class FileWorkspace {
   private makeState(doc: Document, text: string): EditorState {
     const crlf = text.includes('\r\n'), mixed = crlf && text.replaceAll('\r\n', '').includes('\n');
     if (mixed) doc.readonly = 'Mixed line endings are read-only to preserve the source bytes';
-    return EditorState.create({ doc: text, extensions: [basicSetup, oneDark, ...(crlf && !mixed ? [EditorState.lineSeparator.of('\r\n')] : []), doc.language.of([]), EditorState.readOnly.of(!!doc.readonly), EditorView.editable.of(!doc.readonly), keymap.of([{ key: 'Mod-s', run: () => { void this.save(doc); return true; } }, indentWithTab]), EditorView.updateListener.of(update => {
+    return EditorState.create({ doc: text, extensions: [basicSetup, this.appearance.of(editorTheme()), ...(crlf && !mixed ? [EditorState.lineSeparator.of('\r\n')] : []), doc.language.of([]), EditorState.readOnly.of(!!doc.readonly), EditorView.editable.of(!doc.readonly), keymap.of([{ key: 'Mod-s', run: () => { void this.save(doc); return true; } }, indentWithTab]), EditorView.updateListener.of(update => {
       if (this.active === doc.key) { doc.state = update.state; if (update.docChanged) { doc.error = undefined; this.renderTabs(); this.renderEditor(); } }
     })] });
   }

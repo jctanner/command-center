@@ -1,3 +1,4 @@
+import {onThemeChange,terminalTheme} from './themes';
 import { applicationCopyAllowed, copyText, CLIPBOARD_LIMIT } from './clipboard';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -27,11 +28,12 @@ export function createTerminal(
   const terminal = new Terminal({
     cursorBlink: true, fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
     fontSize: 14, lineHeight: 1.18, scrollback: 5000, allowProposedApi: false,
-    theme: { background: '#10151b', foreground: '#d6dee8', cursor: '#70e0b1', selectionBackground: '#335a68', black: '#10151b', brightBlack: '#778596' },
+    theme: terminalTheme(),
   });
   const fit = new FitAddon();
   terminal.loadAddon(fit);
   terminal.open(container);
+  const stopTheme=onThemeChange(()=>{terminal.options.theme=terminalTheme();});
   const encoder = new TextEncoder();
   const data = terminal.onData(text => onInput(encoder.encode(text)));
   const binary = terminal.onBinary(text => onInput(Uint8Array.from(text, c => c.charCodeAt(0))));
@@ -103,6 +105,6 @@ export function createTerminal(
       if (col < 0 || col >= terminal.cols || row < 0 || row >= terminal.rows) return;
       return { col, row };
     },
-    dispose() { disposed = true; container.removeEventListener('mousemove', preserveSelection, true); appCopy.dispose(); observer.disconnect(); cancelAnimationFrame(frame); data.dispose(); binary.dispose(); resize.dispose(); terminal.dispose(); },
+    dispose() { disposed = true; stopTheme(); container.removeEventListener('mousemove', preserveSelection, true); appCopy.dispose(); observer.disconnect(); cancelAnimationFrame(frame); data.dispose(); binary.dispose(); resize.dispose(); terminal.dispose(); },
   };
 }
