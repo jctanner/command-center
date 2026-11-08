@@ -113,7 +113,7 @@ impl Board {
             version <= 2,
             "Board database schema is newer than this backend"
         );
-        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS tickets(id TEXT NOT NULL UNIQUE, version TEXT NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agent_cards(scope TEXT PRIMARY KEY, revision INTEGER NOT NULL, name TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agent_outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, scope TEXT NOT NULL, phase TEXT NOT NULL, revision INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS agent_outbox_scope ON agent_outbox(scope,seq); CREATE TABLE IF NOT EXISTS agent_restarts(id TEXT PRIMARY KEY,data TEXT NOT NULL); UPDATE agent_outbox SET phase='uncertain', revision=revision+1, data=json_set(data,'$.status','uncertain','$.revision',revision+1,'$.note','Backend restarted during submission; delivery is uncertain. No retry was made.') WHERE phase='submitting';")?;
+        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS tickets(id TEXT NOT NULL UNIQUE, version TEXT NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS ticket_deletions(id TEXT PRIMARY KEY, revision TEXT NOT NULL, deleted_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS agent_cards(scope TEXT PRIMARY KEY, revision INTEGER NOT NULL, name TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agent_outbox(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, scope TEXT NOT NULL, phase TEXT NOT NULL, revision INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS agent_outbox_scope ON agent_outbox(scope,seq); CREATE TABLE IF NOT EXISTS agent_restarts(id TEXT PRIMARY KEY,data TEXT NOT NULL); UPDATE agent_outbox SET phase='uncertain', revision=revision+1, data=json_set(data,'$.status','uncertain','$.revision',revision+1,'$.note','Backend restarted during submission; delivery is uncertain. No retry was made.') WHERE phase='submitting';")?;
         if version < 2 {
             db.execute_batch("BEGIN IMMEDIATE; ALTER TABLE agent_cards ADD COLUMN color TEXT NOT NULL DEFAULT ''; ALTER TABLE agent_cards ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0,1)); PRAGMA user_version=2; COMMIT;")?;
         }
@@ -135,6 +135,28 @@ impl Board {
     }
     pub(crate) async fn ticket(&self, id: String) -> Result<Ticket, ApiError> {
         self.with(move |c| load(c, &id)).await
+    }
+    async fn delete(&self, id: String, expected: String) -> Result<(), ApiError> {
+        self.with(move |c| {
+            let tx = c.transaction().map_err(db_error)?;
+            let t = load(&tx, &id)?;
+            check_revision(&t, &expected)?;
+            if t.runs.iter().any(|r| !r.released) {
+                return Err(err(
+                    StatusCode::CONFLICT,
+                    "Check and release the existing launch before deleting this ticket",
+                ));
+            }
+            // Keep the row: its number, UUID and launch receipts must never be recycled.
+            tx.execute(
+                "INSERT INTO ticket_deletions(id,revision,deleted_at) VALUES(?1,?2,?3)",
+                params![id, expected, now()],
+            )
+            .map_err(db_error)?;
+            tx.commit().map_err(db_error)?;
+            Ok(())
+        })
+        .await
     }
     pub(crate) async fn claim(
         &self,
@@ -229,7 +251,7 @@ impl Board {
 }
 fn load(c: &Connection, id: &str) -> Result<Ticket, ApiError> {
     let data: Option<String> = c
-        .query_row("SELECT data FROM tickets WHERE id=?1", [id], |r| r.get(0))
+        .query_row("SELECT data FROM tickets WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM ticket_deletions d WHERE d.id=tickets.id)", [id], |r| r.get(0))
         .optional()
         .map_err(db_error)?;
     serde_json::from_str(&data.ok_or_else(|| err(StatusCode::NOT_FOUND, "Ticket not found"))?)
@@ -330,7 +352,10 @@ pub(crate) fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/board/activity", get(activity))
         .route("/api/v1/board/tickets", get(list).post(save))
-        .route("/api/v1/board/tickets/{id}", get(detail))
+        .route(
+            "/api/v1/board/tickets/{id}",
+            get(detail).delete(delete_ticket),
+        )
         .route("/api/v1/board/tickets/{id}/move", post(move_ticket))
         .route("/api/v1/board/tickets/{id}/prepare", post(prepare))
         .route("/api/v1/board/tickets/{id}/launch", post(start))
@@ -340,7 +365,7 @@ pub(crate) fn routes() -> Router<Arc<AppState>> {
         .layer(axum::extract::DefaultBodyLimit::max(131072))
 }
 async fn list(State(s): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    s.board.with(|c|{let mut q=c.prepare("SELECT data FROM tickets ORDER BY rowid DESC LIMIT 1000").map_err(db_error)?;let rows=q.query_map([],|r|r.get::<_,String>(0)).map_err(db_error)?;let mut out=Vec::new();for r in rows{let t:Ticket=serde_json::from_str(&r.map_err(db_error)?).map_err(db_error)?;out.push(json!({"id":t.id,"number":t.number,"revision":t.revision,"title":t.title,"status":t.status,"priority":t.priority,"context":t.context,"updated_at":t.updated_at,"checks":t.checklist.len(),"checked":t.checklist.iter().filter(|c|c.done).count(),"run":t.runs.last().map(|r|json!({"id":r.id,"released":r.released,"checked_at":r.checked_at,"result":r.result}))}));}Ok(Json(json!({"tickets":out})))}).await
+    s.board.with(|c|{let mut q=c.prepare("SELECT data FROM tickets WHERE NOT EXISTS (SELECT 1 FROM ticket_deletions d WHERE d.id=tickets.id) ORDER BY rowid DESC LIMIT 1000").map_err(db_error)?;let rows=q.query_map([],|r|r.get::<_,String>(0)).map_err(db_error)?;let mut out=Vec::new();for r in rows{let t:Ticket=serde_json::from_str(&r.map_err(db_error)?).map_err(db_error)?;out.push(json!({"id":t.id,"number":t.number,"revision":t.revision,"title":t.title,"status":t.status,"priority":t.priority,"context":t.context,"updated_at":t.updated_at,"checks":t.checklist.len(),"checked":t.checklist.iter().filter(|c|c.done).count(),"run":t.runs.last().map(|r|json!({"id":r.id,"released":r.released,"checked_at":r.checked_at,"result":r.result}))}));}Ok(Json(json!({"tickets":out})))}).await
 }
 async fn detail(
     State(s): State<Arc<AppState>>,
@@ -396,14 +421,14 @@ async fn save(
                 check_revision(&old, expected)?;
                 old
             } else {
-                if old.is_ok() {
+                if tx.query_row("SELECT EXISTS(SELECT 1 FROM tickets WHERE id=?1)", [&b.id], |r| r.get::<_, bool>(0)).map_err(db_error)? {
                     return Err(err(
                         StatusCode::CONFLICT,
                         "Ticket already exists; reload before creating another",
                     ));
                 }
                 let count: i64 = tx
-                    .query_row("SELECT count(*) FROM tickets", [], |r| r.get(0))
+                    .query_row("SELECT count(*) FROM tickets WHERE NOT EXISTS (SELECT 1 FROM ticket_deletions d WHERE d.id=tickets.id)", [], |r| r.get(0))
                     .map_err(db_error)?;
                 if count >= 1000 {
                     return Err(err(StatusCode::CONFLICT, "Board ticket limit reached"));
@@ -569,6 +594,14 @@ async fn start(
 struct Expected {
     revision: String,
 }
+async fn delete_ticket(
+    State(s): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(b): Json<Expected>,
+) -> Result<StatusCode, ApiError> {
+    s.board.delete(id, b.revision).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
 async fn check(
     State(s): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -692,7 +725,7 @@ async fn activity(State(s): State<Arc<AppState>>) -> Result<Json<Value>, ApiErro
         .board
         .with(|c| {
             let mut q = c
-                .prepare("SELECT data FROM tickets ORDER BY rowid DESC LIMIT 1000")
+                .prepare("SELECT data FROM tickets WHERE NOT EXISTS (SELECT 1 FROM ticket_deletions d WHERE d.id=tickets.id) ORDER BY rowid DESC LIMIT 1000")
                 .map_err(db_error)?;
             let values = q
                 .query_map([], |r| r.get::<_, String>(0))
@@ -871,6 +904,66 @@ mod tests {
         assert_eq!(result["identity"], "original");
         assert_eq!(result["conversation"], "known-session");
         assert_eq!(result["replacement"], true);
+    }
+    #[tokio::test]
+    async fn deletion_is_revision_checked_durable_and_retains_receipts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("delete.sqlite3");
+        let b = Board::new(Some(path.clone())).unwrap();
+        let t = fixture(&b).await;
+        assert_eq!(
+            b.delete(t.id.clone(), "stale".into()).await.unwrap_err().0,
+            StatusCode::CONFLICT
+        );
+        assert!(b.ticket(t.id.clone()).await.is_ok());
+        let mut r = run();
+        r.released = true;
+        b.with({
+            let id = t.id.clone();
+            move |c| {
+                let mut t = load(c, &id)?;
+                t.runs.push(r);
+                write(c, &mut t)?;
+                Ok(())
+            }
+        })
+        .await
+        .unwrap();
+        let saved = b.ticket(t.id.clone()).await.unwrap();
+        b.delete(t.id.clone(), saved.revision).await.unwrap();
+        drop(b);
+        let b = Board::new(Some(path)).unwrap();
+        assert_eq!(
+            b.ticket(t.id.clone()).await.err().unwrap().0,
+            StatusCode::NOT_FOUND
+        );
+        assert!(
+            b.claim(t.id.clone(), t.revision.clone(), run())
+                .await
+                .is_err()
+        );
+        b.with(move |c| {
+            let raw: String = c
+                .query_row("SELECT data FROM tickets WHERE id=?1", [t.id], |r| r.get(0))
+                .map_err(db_error)?;
+            let retained: Ticket = serde_json::from_str(&raw).map_err(db_error)?;
+            assert_eq!(retained.number, t.number);
+            assert_eq!(retained.runs.len(), 1);
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+    #[tokio::test]
+    async fn deletion_rejects_unreleased_or_uncertain_launches() {
+        let b = Board::new(None).unwrap();
+        let t = fixture(&b).await;
+        let saved = b.claim(t.id.clone(), t.revision, run()).await.unwrap();
+        assert_eq!(
+            b.delete(t.id.clone(), saved.revision).await.unwrap_err().0,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(b.ticket(t.id).await.unwrap().runs.len(), 1);
     }
     #[tokio::test]
     async fn failed_claims_do_not_insert_a_run() {

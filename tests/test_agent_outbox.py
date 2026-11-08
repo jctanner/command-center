@@ -82,6 +82,26 @@ class AgentOutbox(unittest.TestCase):
             self.assertEqual(same['messages'],[])
             self.assertEqual(page['reply']['version'],old_version)
 
+    def test_codex_harness_records_cannot_confirm_receipts_and_reset_old_pages(self):
+        internal=dict(type='response_item',payload=dict(type='message',role='user',content=[dict(type='input_text',text='NOT_HUMAN')],
+            internal_chat_message_metadata_passthrough=dict(content_item_kinds=['generic.turn_aborted'],content_item_metadata=[dict(provenance=dict(type='harness'))])))
+        self.write([internal,dict(type='response_item',payload=dict(type='message',role='user',content='Human message')),
+                    dict(type='response_item',payload=dict(type='message',role='assistant',content='Real reply'))])
+        _,old_version=agent.transcript_version(self.candidate)
+        old_reply=agent.reply_observation(self.candidate,'codex')
+        with patch.object(agent,'observe',return_value=self.observation),patch.object(agent,'conversations',return_value=[self.candidate]),patch.object(agent,'provider_activity',return_value={'state':'ready'}):
+            page=agent.execute(dict(action='conversation',known_version=old_version))
+            self.assertFalse(page.get('history_unchanged'))
+            self.assertTrue(page.get('history_reset'))
+            self.assertEqual([m['text'] for m in page['messages']],['Human message','Real reply'])
+            self.assertEqual([u['digest'] for u in page['_outbox_observation']['users']],[agent.input_hash('Human message')])
+            observed=agent.execute(dict(action='outbox_status',identity='process'))
+            self.assertEqual([u['digest'] for u in observed['users']],[agent.input_hash('Human message')])
+            same=agent.execute(dict(action='conversation',known_version=page['history_version']))
+            self.assertTrue(same['history_unchanged'])
+            self.assertEqual(page['reply']['version'],old_version)
+            self.assertEqual(page['reply']['cursor'],old_reply['cursor'])
+
     def test_confirmation_hash_is_computed_before_display_shortening(self):
         text='long user input '*700
         records=[dict(type='response_item',payload=dict(type='message',role='assistant',content='x'*16000)) for _ in range(99)]

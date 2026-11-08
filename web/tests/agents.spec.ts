@@ -615,3 +615,82 @@ test('a native color-picker change event saves the selected color instead of the
  await page.getByRole('button',{name:'Edit card',exact:true}).click();await expect(picker).toBeEnabled();await expect(editor).toContainText('press Save card');await picker.evaluate((el:HTMLInputElement)=>{el.value='#2040f0';});await editor.getByRole('button',{name:'Save card',exact:true}).click();await expect(editor).toBeHidden();expect((await(await cardRead(target)).json()).color).toBe('#2040f0');
  await page.getByRole('button',{name:'Edit card',exact:true}).click();await expect(picker).toBeEnabled();await editor.getByRole('button',{name:'Use default color',exact:true}).click();await editor.getByRole('button',{name:'Save card',exact:true}).click();await expect(editor).toBeHidden();expect((await(await cardRead(target)).json()).color).toBe('');await expect(page.locator('.queue-card').filter({hasText:'Native color fixture'})).not.toHaveClass(/has-custom-color/);
 });
+
+test('codex harness interruption and environment context stay out of chat while literal user XML remains',async({page})=>{
+  const path=join(home,'sessions','2026','10','31','rollout-test.jsonl');
+  const original=readFileSync(path,'utf8');
+  const record=(text:string,kind:string,origin:string)=>({type:'response_item',timestamp:'2026-10-31T12:01:00Z',payload:{type:'message',role:'user',content:[{type:'input_text',text}],internal_chat_message_metadata_passthrough:{content_item_kinds:[kind],content_item_metadata:[{provenance:{type:origin}}]}}});
+  const interruption='<turn_aborted>HARNESS_INTERRUPTION_FIXTURE</turn_aborted>';
+  const environment='<environment_context>HARNESS_ENVIRONMENT_FIXTURE</environment_context>';
+  const human='Explain the <turn_aborted> marker without hiding this human message.';
+  try {
+    writeFileSync(path,original+[record(interruption,'generic.turn_aborted','harness'),record(environment,'environments.environment_context','harness'),record(human,'user.text','user')].map(r=>JSON.stringify(r)+'\n').join(''));
+    const filtered=await detail('local',{known_version:'pre-filter-history-version'});
+    expect(filtered.history_reset).toBe(true);expect(filtered.history_version).toMatch(/^codex-visible-v1:/);
+    expect(filtered.messages.map((m:{text:string})=>m.text)).toContain(human);
+    expect(filtered.messages.map((m:{text:string})=>m.text)).not.toContain(interruption);
+    expect(filtered.messages.map((m:{text:string})=>m.text)).not.toContain(environment);
+    let seededOldCache=false,sawReset=false;
+    await page.route('**/agents/conversation?*',async route=>{
+      const response=await route.fetch();const data=await response.json();
+      if(!seededOldCache){
+        seededOldCache=true;data.history_version='pre-filter-history-version';data.history_reset=false;
+        // Simulate an older cached page, below the fresh page's first offset.
+        data.messages.unshift({id:'1',role:'user',text:interruption,timestamp:''});
+      }else if(data.history_reset)sawReset=true;
+      await route.fulfill({response,json:data});
+    });
+    await page.goto(base+'/#/queue');
+    const history=page.getByLabel('Conversation messages');
+    await expect(history).toContainText(human);
+    await expect(history).toContainText('HARNESS_INTERRUPTION_FIXTURE');
+    await expect.poll(()=>sawReset,{timeout:12000}).toBe(true);
+    await expect(history).not.toContainText('HARNESS_INTERRUPTION_FIXTURE');
+    await expect(history).not.toContainText('HARNESS_ENVIRONMENT_FIXTURE');
+    await page.screenshot({path:'../test-results/codex-harness-history.png'});
+  } finally {writeFileSync(path,original);}
+});
+
+test('agent code highlighting follows themes and preserves literal code, fallback and phone isolation',async({page})=>{
+ const host=(await(await fetch(`${base}/api/v1/hosts`)).json())[0];let sockets=0,external=0;
+ page.on('websocket',()=>sockets++);page.on('request',r=>{if(r.url().includes('chat-code.invalid'))external++;});
+ await page.addInitScript(()=>{Object.defineProperty(navigator,'clipboard',{value:{writeText:async(text:string)=>{(window as any).copiedChatCode=text;}}});});
+ const examples=[
+  ['js','// Comment\nconst answer = 42;\nconst literal = "<script>not executable</script>";\n'],
+  ['rust','fn main() { let answer: i32 = 42; println!("hello"); }\n'],
+  ['python','def greet(name):\n    return "hello " + name\n'],
+  ['json','{"enabled": true, "count": 42}\n'],
+  ['bash','if true; then echo "hello"; fi\n'],
+  ['unknown-language','keep <script>literal</script> and λ\n'],
+  ['', 'unlabeled literal code\n'],
+  ['js','x'.repeat(16001)+'\n'],
+ ];
+ const markdown=examples.map(([language,source])=>'```'+language+'\n'+source+'```').join('\n\n');
+ await page.route('**/api/v1/agents/outbox',r=>r.fulfill({json:{entries:[]}}));
+ await page.route('**/api/v1/queue',r=>r.fulfill({json:{checked_at:1,hosts:[{...host,items:[{id:'code-fixture',session:'$0',window:'@0',pane:'%0',session_name:'fixture',window_name:'Pi code fixture',project:'/fixture',agent:'pi',prompt:'Live agent',status:'live',context:''}]}]}}));
+ await page.route('**/agents/conversation?*',r=>r.fulfill({json:{instance:'code-fixture',provider:'pi',project:'/fixture',context:'',selected:'code-history',association:'process',conversations:[{id:'code-history',session:'fixture',timestamp:'',linked:true}],history_version:'code-v1',history_unchanged:new URL(r.request().url()).searchParams.get('known_version')==='code-v1',messages:[{id:'1',role:'assistant',text:markdown,timestamp:''}],send_available:false,attention:false}}));
+ await page.goto(base+'/#/queue');
+ const body=page.locator('.agent-message.assistant .agent-markdown');const codes=body.locator('pre > code');
+ await expect(body.locator('code[data-highlighted]')).toHaveCount(5);
+ for(let i=0;i<examples.length;i++)expect(await codes.nth(i).textContent()).toBe(examples[i][1]);
+ for(const i of [5,6,7])await expect(codes.nth(i)).not.toHaveAttribute('data-highlighted');
+ await expect(codes.first().locator('.chat-token-keyword').first()).toHaveText('const');
+ await expect(codes.first().locator('.chat-token-comment')).toHaveText('// Comment');
+ const keyword=codes.first().locator('.chat-token-keyword').first();const dark=await keyword.evaluate(el=>getComputedStyle(el).color);
+ expect(dark).not.toBe(await codes.first().evaluate(el=>getComputedStyle(el).color));
+ await body.getByRole('button',{name:'Copy code',exact:true}).first().click();expect(await page.evaluate(()=>(window as any).copiedChatCode)).toBe(examples[0][1]);
+ await codes.first().evaluate(el=>{(window as any).originalCodeNode=el;});
+ await page.locator('[data-theme-selector]').first().selectOption('flexoki-light');
+ await expect.poll(()=>keyword.evaluate(el=>getComputedStyle(el).color)).not.toBe(dark);
+ expect(await codes.first().evaluate(el=>el===(window as any).originalCodeNode)).toBe(true);
+ await expect(body.locator('img,script,iframe')).toHaveCount(0);
+ await page.getByLabel('Conversation messages').evaluate(el=>{el.scrollTop=0;});
+ await page.screenshot({path:'../test-results/chat-code-light.png'});
+ await page.setViewportSize({width:393,height:852});
+ await page.locator('.queue-card').click();
+ await page.getByLabel('Conversation messages').evaluate(el=>{el.scrollTop=0;});
+ await expect(keyword).toBeVisible();
+ await page.screenshot({path:'../test-results/chat-code-phone.png'});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ expect(sockets).toBe(0);expect(external).toBe(0);
+});

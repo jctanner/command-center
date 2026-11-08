@@ -79,6 +79,37 @@ class AgentHistory(unittest.TestCase):
         ])
         self.assertEqual([m['text'] for m in agent.history(self.log,'codex')['messages']],['Hello','Reply'])
 
+    def test_codex_harness_context_is_not_human_chat_or_launch_title(self):
+        def message(text, kind, origin='harness'):
+            return dict(type='response_item',payload=dict(type='message',role='user',
+                content=[dict(type='input_text',text=text)],
+                internal_chat_message_metadata_passthrough=dict(content_item_kinds=[kind],
+                    content_item_metadata=[dict(provenance=dict(type=origin))])))
+        internal='<turn_aborted>Injected interruption notice</turn_aborted>'
+        environment='<environment_context>Injected environment</environment_context>'
+        literal='Please explain <turn_aborted> without hiding my message.'
+        self.write([message(internal,'generic.turn_aborted'),
+                    message(environment,'environments.environment_context'),
+                    message(literal,'user.text','user'),
+                    message(internal,'generic.turn_aborted','user')])
+        result=agent.history(self.log,'codex')
+        self.assertEqual([m['text'] for m in result['messages']],[literal,internal])
+        self.assertEqual([m['input_hash'] for m in result['messages']], [agent.input_hash(literal),agent.input_hash(internal)])
+        self.assertEqual(agent.launch_title({'path':str(self.log)},'codex'),literal)
+
+    def test_codex_preserves_ambiguous_metadata_and_human_xml(self):
+        text='<turn_aborted>A human may type this exact wrapper</turn_aborted>'
+        valid=dict(content_item_kinds=['generic.turn_aborted'],content_item_metadata=[dict(provenance=dict(type='harness'))])
+        variants=[None,[],{},dict(valid,content_item_kinds='generic.turn_aborted'),
+                  dict(valid,content_item_metadata=[]),dict(valid,content_item_metadata=[None]),
+                  dict(valid,content_item_kinds=['unknown.future_kind']),
+                  dict(content_item_kinds=['generic.turn_aborted','user.text'],content_item_metadata=[dict(provenance=dict(type='harness')),dict(provenance=dict(type='user'))])]
+        records=[dict(type='response_item',payload=dict(type='message',role='user',content=[dict(type='input_text',text=text)],internal_chat_message_metadata_passthrough=metadata)) for metadata in variants]
+        self.write(records)
+        self.assertEqual(len(agent.history(self.log,'codex')['messages']),len(records))
+        self.write([dict(type='event_msg',payload=dict(type='user_message',message=text))])
+        self.assertEqual(agent.history(self.log,'codex')['messages'][0]['text'],text)
+
     def test_event_only_codex_logs_and_partial_appends(self):
         self.write([{'type':'event_msg','payload':{'type':'user_message','message':'Question'}}, {'type':'event_msg','payload':{'type':'agent_message','message':'Answer'}}])
         with self.log.open('a') as f: f.write('{"type":"response_item"')
@@ -191,6 +222,35 @@ class AgentHistory(unittest.TestCase):
         candidates=agent.conversations(observation)
         self.assertEqual([c['session'] for c in candidates if c['linked']],[ids[0]])
         self.assertEqual(agent.provider_activity(observation,candidates)['state'],'working')
+
+    def test_codex_runtime_registration_overrides_incidental_lock_open_log_and_resume_arg(self):
+        import sqlite3
+        base,start,_=agent.proc(os.getpid())
+        home=self.root/'codex';home.mkdir()
+        ids=['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb']
+        paths=[]
+        with sqlite3.connect(home/'state_5.sqlite') as db:
+            db.execute('CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, archived INTEGER, updated_at INTEGER)')
+            for i,session in enumerate(ids):
+                path=home/f'{session}.jsonl';paths.append(path)
+                path.write_text(json.dumps(dict(type='session_meta',payload=dict(id=session,cwd=str(self.root))))+'\n'+json.dumps(dict(type='event_msg',timestamp=time.time(),payload=dict(type='task_started',turn_id=session)))+'\n')
+                db.execute('INSERT INTO threads VALUES (?,?,?,0,?)',(session,str(path),str(self.root),i))
+        directory=home/'command-center-sessions';directory.mkdir()
+        registration=directory/f'{os.getpid()}.json'
+        record=dict(schema=1,pid=os.getpid(),proc_start=start,boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),tmux_pane='%3',cwd=str(self.root),session_id=ids[0])
+        registration.write_text(json.dumps(record));registration.chmod(0o600)
+        observation=dict(kind='codex',base=base,target='$1:@2.%3',cwd=str(self.root),env={'CODEX_HOME':str(home)},args=['codex','resume',ids[1]],identity='fixture',visible='')
+        locks=home/'thread-writer-locks';locks.mkdir()
+        with (locks/f'{ids[1]}.lock').open('w') as lock, paths[1].open() as opened:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            self.assertEqual(agent.process_sessions(observation,home),{ids[0]})
+            candidates=agent.conversations(observation)
+            self.assertEqual([c['session'] for c in candidates if c['linked']],[ids[0]])
+            self.assertEqual(len(candidates),2)
+            self.assertEqual(agent.provider_activity(observation,candidates)['state'],'working')
+            registration.write_text(json.dumps(dict(record,boot_id='invalid')))
+            self.assertEqual(agent.process_sessions(observation,home),{ids[1]})
+            self.assertEqual([c['session'] for c in agent.conversations(observation) if c['linked']],[ids[1]])
 
     def test_shared_project_logs_require_explicit_session_association(self):
         home=self.root/'home'; logs=home/'sessions/2026/10/31';logs.mkdir(parents=True)

@@ -1,5 +1,7 @@
 # API v1
 
+The [OpenAPI contract](openapi.json) is served at `GET /api/v1/openapi.json` by updated backends. It covers coordinator reads and all Board routes. See the [agent ticket guide](reference/agent-ticket-api.md) for full ticket CRUD, optimistic revisions, machine binding and recovery examples. Other APIs remain documented below and in the feature reference.
+
 All paths begin `/api/v1`. The primary listener is loopback; optional explicit private LAN/tailnet listeners and an exact HTTPS reverse-proxy origin are supported. Host must match a configured authority. Browser Origin, when present, must match its configured scheme and authority; mutations require Origin. This is an origin check, not authentication: private network membership/access rules remain the deployment boundary. See [HTTPS setup](reference/features.md#private-https).
 
 This document covers the original terminal, machine and file interfaces. Additional workspace/agent APIs are described in the [feature reference](reference/features.md) and implemented in `src/lib.rs` and each workspace module; it is not a complete endpoint inventory.
@@ -117,3 +119,13 @@ Explicit continuation edges remain bounded and confined to that resolved file's 
 `GET /api/v1/settings/features` returns `{revision, features: {slack, email, jira}}` with no-store caching. `PUT` accepts the same shape with the observed revision and literal booleans; mutations require the configured same-origin guard. Stale revisions return 409. Saving requires a configuration file; the private `.features.json` sidecar persists flags atomically. Disabled integration routes, including integration settings and send/recovery routes, return 403 before integration handlers run. Already-started requests finish before disable commits. Core APIs remain available. Flags do not override source permissions.
 
 Terminal stream `error` events may include `scope: "connection"` for viewer creation/state-read failures. These are transient connection feedback and may clear on authoritative recovery; errors without this scope retain action-warning behavior. This field never authorizes retrying input or mutations. The shared header presents tmux connection state only in the tmux workspace; other workspaces do not inherit a selected machine's offline status.
+
+## Codex injected context and visible-history revisions
+
+Codex response-item user records can contain harness-generated interruption or environment context. Recognized internal content-item kinds with explicit harness provenance are excluded from displayed messages, launcher titles and outbox user-confirmation evidence. Genuine human XML and ambiguous/mixed metadata remain literal. Native logs and structured interruption lifecycle state are unchanged.
+
+Visible Codex history uses its own version prefix; clients should treat versions as opaque. A pre-filter known_version returns history_reset=true so open clients discard old cached pages. Native reply/receipt version and assistant cursors are unchanged by this presentation filter.
+
+## Codex resumed-session association
+
+A private runtime registration validated against the live PID/start/boot, pane and cwd identifies the current Codex session even when the process retains another startup thread's open rollout or writer lock. In that case only the registered native session is process-linked; other project conversations remain selectable as unverified history. Missing/invalid registration retains the existing lock/open-log/resume evidence and ambiguity checks. This changes no CLI process, native transcript, outbox intent or provider permission settings.

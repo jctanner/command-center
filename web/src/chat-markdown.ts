@@ -1,3 +1,4 @@
+import { highlightChatCode } from './chat-code';
 import { markdownContent } from './markdown';
 
 export function chatMarkdown(text: string): HTMLElement {
@@ -26,5 +27,6 @@ export function chatMarkdown(text: string): HTMLElement {
     };
     pre.replaceWith(wrapper); wrapper.append(copy, pre);
   }
+  highlightChatCode(body);
   return body;
 }

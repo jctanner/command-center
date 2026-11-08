@@ -958,3 +958,12 @@ button:disabled { opacity: .5; cursor: default; }
 .notification-sound-controls input[type=range] { min-width:0;flex:1;accent-color:var(--cc-accent); }
 .notification-sound-controls .notification-volume-value { min-width:4ch;text-align:right;font-variant-numeric:tabular-nums; }
 .notification-sound-controls p { font-size:12px; }
+
+/* Assistant code shares the editor palette; theme changes need no reparsing. */
+.agent-markdown pre .chat-token-keyword { color:var(--cc-magenta); }
+.agent-markdown pre .chat-token-string { color:var(--cc-green); }
+.agent-markdown pre .chat-token-number { color:var(--cc-orange); }
+.agent-markdown pre .chat-token-type { color:var(--cc-yellow); }
+.agent-markdown pre .chat-token-property { color:var(--cc-blue); }
+.agent-markdown pre .chat-token-comment { color:var(--cc-muted);font-style:italic; }
+.agent-markdown pre .chat-token-invalid { color:var(--cc-red); }

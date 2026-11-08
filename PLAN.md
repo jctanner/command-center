@@ -9,18 +9,19 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-
-
-
-
-
-
-
-
-
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0030: agent chat code highlighting](docs/tasks/done/0030-agent-chat-code-highlighting.md)
+
+- [Task 0029: Codex resume identity](docs/tasks/done/0029-codex-resume-session-precedence.md)
+
+- [Task 0028: Codex internal history records](docs/tasks/done/0028-codex-internal-history-records.md)
+
+- [Task 0027: OpenAPI and ticket CRUD](docs/tasks/done/0027-openapi-and-ticket-crud.md)
+
+- [Task 0026: coordinator workspace](docs/tasks/done/0026-coordinator-workspace.md)
 
 - [Task 0025: notification sound](docs/tasks/done/0025-notification-sound.md)
 
@@ -72,11 +73,13 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Open bugs
 
-
-
 - [Bug 0005: Pi first input unconfirmed](docs/bugs/open/0005-pi-first-input-unconfirmed.md)
 
 ## Fixed bugs
+
+- [Bug 0017: Codex resume identity](docs/bugs/fixed/0017-codex-resume-links-incidental-threads.md)
+
+- [Bug 0016: Codex internal records](docs/bugs/fixed/0016-codex-interruption-records-shown-as-human-chat.md)
 
 - [Bug 0015: desktop reload height](docs/bugs/fixed/0015-desktop-reload-button-too-tall.md)
 
@@ -110,6 +113,18 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-08: coordinator and agent-chat commit](docs/notes/2026-11-08-coordinator-agent-chat-commit.md)
+
+- [2026-11-08: agent chat code colors](docs/notes/2026-11-08-agent-chat-code-colors.md)
+
+- [2026-11-08: Codex resumed-session identity](docs/notes/2026-11-08-codex-resume-identity.md)
+
+- [2026-11-08: Codex interruption history](docs/notes/2026-11-08-codex-interruption-history.md)
+
+- [2026-11-07: OpenAPI and ticket CRUD](docs/notes/2026-11-07-openapi-and-ticket-crud.md)
+
+- [2026-11-07: coordinator workspace](docs/notes/2026-11-07-coordinator-workspace.md)
 
 - [2026-11-06: notification sound](docs/notes/2026-11-06-notification-sound.md)
 

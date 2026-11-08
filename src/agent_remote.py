@@ -372,7 +372,8 @@ def process_sessions(observation, home, follow_continuations=True):
     sessions = set()
     if observation['kind'] == 'codex':
         registered = codex_registered_session(observation, home)
-        if registered: sessions.add(registered)
+        # The runtime-provided session supersedes incidental startup/other-thread writers.
+        if registered: return {registered}
     if observation['kind'] == 'claude':
         try:
             path = home / 'sessions' / f'{pid}.json'
@@ -567,6 +568,24 @@ def native_input_hash(text, kind):
         if wrapped and '<pasted_content' not in wrapped[2] and '</pasted_content' not in wrapped[2]:
             return input_hash(wrapped[2])
     return input_hash(text)
+
+
+def codex_internal_user(payload):
+    # Native Codex records explicitly distinguish injected content from user.text.
+    # Never classify XML-looking text alone, or discard ambiguous/mixed records.
+    if not isinstance(payload, dict) or payload.get('type') != 'message' or payload.get('role') != 'user': return False
+    metadata = payload.get('internal_chat_message_metadata_passthrough')
+    if not isinstance(metadata, dict): return False
+    kinds = metadata.get('content_item_kinds')
+    origins = metadata.get('content_item_metadata')
+    content = payload.get('content')
+    if (not isinstance(kinds, list) or not kinds or len(kinds) > 64
+        or not isinstance(origins, list) or len(origins) != len(kinds)
+        or not isinstance(content, list) or len(content) != len(kinds)): return False
+    internal = ('generic.turn_aborted', 'environments.environment_context')
+    return (all(isinstance(kind, str) and kind in internal for kind in kinds)
+            and all(isinstance(origin, dict) and isinstance(origin.get('provenance'), dict)
+                    and origin['provenance'].get('type') == 'harness' for origin in origins))
 
 
 def claude_internal_user(record):
@@ -834,9 +853,10 @@ def conversations(observation):
                     pass
         except OSError:
             pass
-    explicit = process_sessions(observation, home)
+    registered = codex_registered_session(observation, home) if kind == 'codex' else None
+    explicit = {registered} if registered else process_sessions(observation, home)
     args = observation['args']
-    if kind!='claude' or not explicit:
+    if not registered and (kind!='claude' or not explicit):
         for i, arg in enumerate(args[:-1]):
             if arg in ('resume', '--resume', '--session-id', '-r') and re.fullmatch(r'[0-9a-fA-F-]{36}', args[i+1]):
                 session=claude_current_session(home,cwd,args[i+1]) if kind=='claude' else args[i+1]
@@ -876,7 +896,7 @@ def conversations(observation):
             if not log_cwd or (os.path.realpath(log_cwd) != os.path.realpath(cwd) and not (kind=='claude' and session in explicit)):
                 continue
             candidates.append(dict(id=hashlib.sha256(str(path).encode()).hexdigest(), path=str(path),
-                                   session=session, timestamp=timestamp, linked=str(path) in linked or session in explicit))
+                                   session=session, timestamp=timestamp, linked=session == registered if registered else str(path) in linked or session in explicit))
         except OSError:
             continue
     return candidates[:20]
@@ -1071,6 +1091,7 @@ def history(path, kind, before=None, known_branch=None, active_leaf=False, inclu
             payload = record.get('payload', {})
             if not isinstance(payload, dict): continue
             if record.get('type') == 'response_item' and payload.get('type') == 'message':
+                if codex_internal_user(payload): continue
                 role, text = payload.get('role'), message_text(payload.get('content'))
             elif record.get('type') == 'event_msg' and payload.get('type') in ('user_message', 'agent_message'):
                 role = 'user' if payload['type'] == 'user_message' else 'assistant'
@@ -1178,6 +1199,7 @@ def launch_title(candidate, kind):
         if kind=='codex':
             if record.get('type')!='response_item': continue
             message=record.get('payload',{})
+            if codex_internal_user(message): continue
         elif kind=='pi':
             if record.get('type')!='message': continue
             message=record.get('message',{})
@@ -1542,12 +1564,18 @@ def execute(request):
     result['background_tasks']=observed_background_tasks(observation,chosen)
     if chosen:
         info, version = transcript_version(chosen)
-        history_version = 'claude-visible-v3:' + version if observation['kind']=='claude' else version
+        prefix = {'claude':'claude-visible-v3:', 'codex':'codex-visible-v1:'}.get(observation['kind'], '')
+        history_version = prefix + version
         result['history_version'] = history_version
         if request.get('before') is None and request.get('known_version') == history_version:
             result['history_unchanged'] = True
         else:
             result.update(history(chosen['path'], observation['kind'], request.get('before'), request.get('known_branch'), chosen.get('leaf_id',False)))
+        if (observation['kind']=='codex' and isinstance(request.get('known_version'), str)
+            and not request['known_version'].startswith(prefix)):
+            # A filter change must also discard older cached pages in open clients.
+            result['history_reset'] = True
+            result['history_notice'] = 'Conversation display updated to exclude harness-generated context.'
         if request.get('before') is None and chosen.get('linked') and not result.get('history_unchanged'):
             result['_outbox_observation']=dict(log=dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size),users=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in result.get('messages',[]) if message['role']=='user' and message.get('input_hash')])
             if observation['kind']=='pi': result['_outbox_observation']['pi_session']=chosen['session']

@@ -139,6 +139,15 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
         )))
         .merge(board::routes())
         .route(
+            "/api/v1/openapi.json",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "application/json")],
+                    include_str!("../docs/openapi.json"),
+                )
+            }),
+        )
+        .route(
             "/api/v1/settings/features",
             get(features::get).put(features::save),
         )
