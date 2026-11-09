@@ -129,3 +129,15 @@ Visible Codex history uses its own version prefix; clients should treat versions
 ## Codex resumed-session association
 
 A private runtime registration validated against the live PID/start/boot, pane and cwd identifies the current Codex session even when the process retains another startup thread's open rollout or writer lock. In that case only the registered native session is process-linked; other project conversations remain selectable as unverified history. Missing/invalid registration retains the existing lock/open-log/resume evidence and ambiguity checks. This changes no CLI process, native transcript, outbox intent or provider permission settings.
+
+## Claude foreground readiness with background shells
+
+Validated native Claude registry `status: shell` is treated as foreground Ready with a reason indicating reported background shell work. Claude derives this native state from an idle foreground; it is not an unrecognized state or proof of an active foreground turn. Background task observations remain separate, including unavailable/unverified status and completion evidence. Existing PID/start/session/cwd/tmux and timestamp checks apply, and newer verified foreground events override the registry. This change installs no hook and sends no input by itself; pre-existing human outbox intents can dispatch through their normal guards once readiness is verified.
+
+## Codex launch approval policy
+
+Standalone `GET /hosts/{id}/agents/launch-options` and Board ticket prepare accept optional `approval_policy`: omit/null/`default` for harness defaults, or `approve-for-me` for Codex automatic review with the workspace-write sandbox. Other nondefault values/providers are rejected. Preparation returns the normalized policy, checks the installed executable advertises the exact flag, and binds it into the one-use grant. Start cannot override it and rechecks support before creating a tmux target. Launch status and durable ticket run receipts retain the policy; old records read as null. This does not modify provider configuration, restart existing agents, disable sandboxing, or approve native dialogs through CC. Both frontend launchers offer the choice; changing machine/provider resets it and changing policy invalidates preparation.
+
+## Codex guardian conversation association
+
+Codex automatic review may keep an additional guardian thread writer in the same native process. Conversation discovery excludes session metadata explicitly marked source.subagent, source=subagent, or thread_source=guardian_review/subagent. Such histories do not participate in user conversation selection, Ready/Working evidence or outbox delivery confirmation. Main-thread owned writers remain required; two genuine roots stay ambiguous. Existing receipt conversation hashes and UUIDs do not change. This filtering does not approve tools, replay uncertain delivery or transfer queued messages.

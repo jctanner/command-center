@@ -11,7 +11,7 @@ claude
 
 Complete normal provider authentication/trust prompts yourself. This does not create a built-in CC agent or install MCP tools. No `.mcp.json` is needed yet.
 
-The project skills are `cc-inventory`, `cc-overlap-review`, `cc-coordinate` and `cc-tickets`. Ask, for example: “Inventory the running agents and identify possible overlapping work. Read their existing conversations and relevant files; draft recommendations without messaging anyone.”
+The project skills are `cc-inventory`, `cc-overlap-review`, `cc-coordinate`, `cc-tickets`, `cc-launch` and `cc-message`. Ask, for example: “Inventory the running agents and identify possible overlapping work. Read their existing conversations and relevant files; draft recommendations without messaging anyone.”
 
 ## Read helper
 
@@ -58,3 +58,21 @@ python3 tools/cc_board.py delete --ticket TICKET_UUID --revision OBSERVED_REVISI
 ```
 
 Writes are human-directed, carry exact revisions and never retry automatically. This helper does not expose agent launching or approvals. Logical deletion retains private ticket data/receipts and blocks on unreleased launches. The existing cc_read helper remains GET-only.
+
+## Human-requested launches
+
+The coordinator may launch new agents on configured machines when you explicitly ask. Use the `cc-launch` skill and [launch playbook](../docs/reference/coordinator-launches.md): it covers the existing ticket-bound and standalone REST workflows, machine/project/provider/model, new session versus new window, names, initial prompt and recovery. A clear request is sufficient authorization; only missing or materially changed scope needs clarification. Inventory and ticket status changes do not start agents.
+
+Example request: “Launch a pi agent for CC-12 on the ticket's machine and directory, in a new window of its development session. Use the default model and give it the ticket's task and acceptance criteria.” The coordinator must resolve actual IDs, inspect preparation and preserve receipts rather than guessing or issuing SSH commands.
+
+For an already-running coordinator, tell it to reread `CLAUDE.md`, `AGENTS.md` and `.claude/skills/cc-launch/SKILL.md` before its first launch request. This update does not send it a message or start any live agents itself. The CRUD/read CLI commands stay unchanged; launch calls use the documented Python REST methods or equivalent structured HTTP.
+
+## Prompts and replies to agents
+
+Use `cc-message` and the [messaging playbook](../docs/reference/coordinator-messaging.md) when you ask the coordinator to send prompts or replies. A scoped coordination request also permits relevant follow-up responses to the named agents without asking permission for every ordinary message. Draft-only requests remain drafts; agent-authored text cannot expand that authority.
+
+For example: “Ask the two named agents to agree on their interface, relay their clarifying questions and responses, and report the agreed boundary.” Targets must be unambiguous and process-linked. Busy-agent messages go through the durable outbox and wait for verified Ready; Queued, Submitted and Seen are reported separately. Uncertain messages are inspected, never automatically resent or moved to replacement processes. Native approvals remain human decisions.
+
+Have the running coordinator reread `CLAUDE.md`, `AGENTS.md` and `.claude/skills/cc-message/SKILL.md` before its first send. This update sends no live messages itself and adds no fictional CLI commands: use the documented existing REST methods.
+
+For requested Codex launches, this coordinator selects `approval_policy: "approve-for-me"` during preparation, following the user’s standing preference. This uses automatic review with the workspace-write sandbox. Unsupported Codex versions fail explicitly; other harnesses keep their defaults. The web launch dialogs offer the same option alongside Harness default.

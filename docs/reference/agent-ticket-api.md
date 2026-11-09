@@ -61,7 +61,7 @@ After timeout, 5xx or a lost response, delivery may be uncertain. Inspect the sa
 
 The contract also describes `/prepare`, `/launch`, `/check`, `/release`, `/target` and `/board/activity`. They are not ordinary ticket CRUD. Human-reviewed launch preparation binds the ticket revision, machine, canonical directory, CLI identity, optional model/names/destination and literal prompt. Launch consumes a one-use grant and persists a receipt before IO. Never launch work just because a ticket was created/moved, or retry an uncertain launch.
 
-`check` observes an existing launch and updates durable evidence/ticket revision; it can advance backlog/ready to in_progress, never done. Fetch detail afterwards for the new revision. `release` requires an explicitly checked inactive receipt and never stops a process. The coordinator ticket helper and skill expose only ticket CRUD; they do not expose these launch mutations or agent approvals.
+`check` observes an existing launch and updates durable evidence/ticket revision; it can advance backlog/ready to in_progress, never done. Fetch detail afterwards for the new revision. `release` requires an explicitly checked inactive receipt and never stops a process. The coordinator ticket helper and cc-tickets skill expose ticket CRUD. An explicit human launch request can use the separate cc-launch skill and [launch playbook](coordinator-launches.md); inventory or CRUD alone never grants that authority. Agent approvals remain separate.
 
 ## Contract validation
 
@@ -76,3 +76,5 @@ python3 -B -m unittest discover -s coordinator/tests -v
 ```
 
 The schema tests require Python `jsonschema` (install in your development environment if absent). HTTP tests start an isolated backend with an empty host configuration and private temporary database; all ticket data is synthetic. No real agents, tmux sessions or live Board records are changed.
+
+Codex launch preparation accepts optional `approval_policy: "approve-for-me"` for automatic review using the workspace-write sandbox. Omit/null/`default` retains harness defaults. The policy is checked against the target CLI, bound to the grant, and retained in the run receipt. Start accepts no policy override. See [launch policy](coordinator-launches.md#codex-approval-policy).

@@ -76,6 +76,22 @@ class ClaudeContinuation(unittest.TestCase):
     def test_fresh_registry_heartbeat_does_not_expire_a_long_running_root_turn(self):
         self.root_records=self.root_records[:1];self.save();self.registry['updatedAt']=self.now*1000;self.save_registry()
         result=a.provider_activity(self.o);self.assertEqual(result['state'],'working');self.assertEqual(result['source'],'claude_registry')
+    def test_shell_registry_means_ready_foreground_with_separate_background_work(self):
+        self.root_records=self.root_records[:1];self.child_records=[];self.save()
+        self.registry.update(status='shell',statusUpdatedAt=(self.now-7200)*1000,updatedAt=(self.now-7100)*1000);self.save_registry()
+        state=a.provider_activity(self.o)
+        self.assertEqual(state['state'],'ready');self.assertEqual(state['source'],'claude_registry')
+        self.assertIn('background shell',state['reason']);self.assertEqual(state['evidence_at'],self.now-7200)
+        self.registry['status']='future_unrecognized';self.save_registry();self.assertEqual(a.provider_activity(self.o)['state'],'unknown')
+        self.registry.update(status='shell',statusUpdatedAt=(self.now+120)*1000,updatedAt=(self.now+120)*1000);self.save_registry();self.assertEqual(a.provider_activity(self.o)['state'],'unknown')
+        self.registry.update(procStart='0',statusUpdatedAt=self.now*1000,updatedAt=self.now*1000);self.save_registry();self.assertEqual(a.provider_activity(self.o)['state'],'unknown')
+
+    def test_newer_foreground_work_overrides_shell_registry_and_child_completion_does_not(self):
+        self.root_records=self.root_records[:1];self.registry.update(status='shell');self.save_registry()
+        self.root_records.append(dict(type='api-request',sessionId=self.root,querySource='repl_main_thread',timestamp=self.now-2,id='foreground'))
+        self.root_records.append(dict(type='assistant',sessionId=self.root,isSidechain=True,timestamp=self.now-1,message=dict(role='assistant',stop_reason='end_turn')))
+        self.save();self.assertEqual(a.provider_activity(self.o)['state'],'working')
+
     def test_future_turn_evidence_cannot_establish_ready(self):
         self.child_records[-1]['timestamp']=self.now+120;self.save();self.assertEqual(a.provider_activity(self.o)['state'],'unknown')
 

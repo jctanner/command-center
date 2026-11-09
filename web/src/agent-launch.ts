@@ -2,7 +2,7 @@ export type LaunchedAgent = { host: string; connection_revision: string; launch_
 type Host = { id: string; name: string; connection_revision: string };
 type Project = { path: string; name: string; pinned: boolean };
 type Projects = { revision: string; connection_revision: string; projects: Project[]; discovery_error?: string };
-type Prepared = { model: string | null; endpoint: string; token: string; launch_id: string; project: string; provider: string; executable: string; conversations: { id: string; session: string; title: string; timestamp: string; active: boolean }[] };
+type Prepared = { approval_policy?: string | null; model: string | null; endpoint: string; token: string; launch_id: string; project: string; provider: string; executable: string; conversations: { id: string; session: string; title: string; timestamp: string; active: boolean }[] };
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '') => { const n = document.createElement(tag); n.textContent = text; return n; };
 async function request<T>(url: string, body?: unknown): Promise<T> {
   const response = await fetch(url, { ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), signal: AbortSignal.timeout(25000) });
@@ -15,6 +15,7 @@ export class AgentLauncher {
   private path = element('input');
   private provider = element('select');
   private model = element('input');
+  private approvalPolicy = element('select');
   private initialPrompt = element('textarea');
   private promptHelp = element('small');
   private conversation = element('select');
@@ -54,6 +55,10 @@ export class AgentLauncher {
     this.pin.type = 'checkbox'; this.name.placeholder = 'Optional project name'; this.name.setAttribute('aria-label', 'Pinned project name');
     label('Machine', this.machine); label('Project', this.project); label('Directory', this.path); label('Agent', this.provider); label('Model (optional)', this.model);
     fields.append(element('small', 'Enter a model name or alias, or leave blank for no override.'));
+    this.approvalPolicy.setAttribute('aria-label','Codex approval policy');
+    this.approvalPolicy.append(new Option('Harness default',''),new Option('Automatic review (workspace-write)','approve-for-me'));
+    label('Codex approval policy',this.approvalPolicy);
+    fields.append(element('small','Automatic review uses --approve-for-me and keeps the workspace-write sandbox. Requires a supported Codex version.'));
     label('Tmux destination',this.destination);
     label('Conversation', this.conversation);
     this.initialPrompt.setAttribute('aria-label','Initial prompt');this.initialPrompt.rows=5;this.initialPrompt.maxLength=24000;this.initialPrompt.placeholder='What should the agent work on?';this.promptHelp.id='agent-launch-prompt-help';this.initialPrompt.setAttribute('aria-describedby',this.promptHelp.id);
@@ -68,7 +73,8 @@ export class AgentLauncher {
     this.path.oninput = () => { this.invalidate(); this.update(); };
     this.model.oninput = () => { this.invalidate(); this.feedback.textContent = 'Model changed. Check project to continue.'; this.update(); };
     this.model.onchange = () => { if (this.path.value.trim()) void this.prepare(); };
-    this.provider.onchange = () => { this.model.value = ''; this.invalidate(); if (this.path.value.trim()) void this.prepare(); };
+    this.approvalPolicy.onchange = () => { this.invalidate(); this.update(); if (this.path.value.trim()) void this.prepare(); };
+    this.provider.onchange = () => { this.approvalPolicy.value = ''; this.model.value = ''; this.invalidate(); if (this.path.value.trim()) void this.prepare(); };
     this.destination.onchange=()=>{this.invalidate();this.update();if(this.path.value.trim())void this.prepare();};
     this.conversation.onchange = () => this.update(); this.pin.onchange = () => this.update();
     this.check.onclick = () => { void this.prepare(); }; this.start.onclick = () => { void this.launch(); };
@@ -103,7 +109,8 @@ export class AgentLauncher {
   private url(host: string, action: string) { return `/api/v1/hosts/${encodeURIComponent(host)}/agents/${action}`; }
   private update() {
     const locked = this.busy || !!this.receipt;
-    for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.destination, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
+    for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.approvalPolicy, this.destination, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
+    this.approvalPolicy.disabled = locked || !this.projects || this.provider.value !== 'codex';
     this.check.disabled = locked || this.checking || !this.path.value.trim() || !this.projects;
     const resumed=!!this.conversation.value, tooLong=new TextEncoder().encode(this.initialPrompt.value).length>24000;
     this.initialPrompt.disabled=locked||!this.projects||resumed;
@@ -118,7 +125,7 @@ export class AgentLauncher {
     this.start.textContent = `${this.conversation.value ? 'Resume' : 'Start'} ${this.provider.value === 'pi' ? 'pi' : this.provider.value === 'claude' ? 'Claude' : 'Codex'}`;
   }
   private async loadProjects() {
-    this.invalidate(); this.projects = undefined; this.path.value = ''; this.model.value = ''; this.pin.checked = false; this.project.replaceChildren();this.destination.replaceChildren(new Option('New dedicated session','')); this.feedback.textContent = 'Loading projects…'; this.update();
+    this.invalidate(); this.projects = undefined; this.path.value = ''; this.model.value = ''; this.approvalPolicy.value = ''; this.pin.checked = false; this.project.replaceChildren();this.destination.replaceChildren(new Option('New dedicated session','')); this.feedback.textContent = 'Loading projects…'; this.update();
     const host = this.host(), generation = this.generation; if (!host) return;
     try {
       const [data,inventory]=await Promise.all([request<Projects>(`/api/v1/hosts/${encodeURIComponent(host.id)}/projects`),request<{sessions:{id:string;name:string}[]}>(`/api/v1/hosts/${encodeURIComponent(host.id)}/inventory`).catch(()=>({sessions:[]}))]);
@@ -140,13 +147,14 @@ export class AgentLauncher {
     try {
       const query = new URLSearchParams({ connection_revision: host.connection_revision, path: this.path.value, provider: this.provider.value });
       if (this.model.value.trim()) query.set('model', this.model.value.trim());
+      if(this.provider.value==='codex'&&this.approvalPolicy.value)query.set('approval_policy',this.approvalPolicy.value);
       if(this.destination.value)query.set('target_session',this.destination.value);
       const data = await request<Prepared>(this.url(host.id, `launch-options?${query}`));
       if (generation !== this.generation) return;
       this.prepared = data; this.path.value = data.project;
       const fresh = element('option', 'New conversation'); fresh.value = ''; this.conversation.replaceChildren(fresh);
       for (const c of data.conversations) { const o = element('option', `${c.active ? 'Already running' : 'Resume'}: ${c.title} · ${c.timestamp ? new Date(c.timestamp).toLocaleString() : c.session.slice(0, 8)}`); o.value = c.id; o.disabled = c.active; this.conversation.append(o); }
-      this.feedback.textContent = `${data.provider === 'pi' ? 'pi' : data.provider === 'claude' ? 'Claude' : 'Codex'} available · ${data.conversations.length} project conversation${data.conversations.length === 1 ? '' : 's'}. ${this.destination.selectedOptions[0]?.textContent||'New dedicated session'}.`;
+      this.feedback.textContent = `${data.provider === 'pi' ? 'pi' : data.provider === 'claude' ? 'Claude' : 'Codex'} available · ${data.approval_policy==='approve-for-me'?'Automatic review (workspace-write) · ':''}${data.conversations.length} project conversation${data.conversations.length === 1 ? '' : 's'}. ${this.destination.selectedOptions[0]?.textContent||'New dedicated session'}.`;
     } catch (e) { if (generation === this.generation) this.feedback.textContent = String(e); }
     finally { if (generation === this.generation) { this.checking = false; this.update(); } }
   }

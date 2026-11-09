@@ -64,6 +64,8 @@ pub(crate) struct Run {
     pub project: String,
     pub provider: String,
     pub model: Option<String>,
+    #[serde(default)]
+    pub approval_policy: Option<String>,
     pub prompt: String,
     #[serde(default)]
     pub target_session: Option<String>,
@@ -511,6 +513,7 @@ struct Prepare {
     path: String,
     provider: String,
     model: Option<String>,
+    approval_policy: Option<String>,
     prompt: String,
     target_session: Option<String>,
     window_name: Option<String>,
@@ -555,6 +558,7 @@ async fn prepare(
             path: b.path,
             provider: b.provider,
             model: b.model,
+            approval_policy: b.approval_policy,
             target_session: b.target_session,
             window_name: b.window_name,
             card_name: b.card_name,
@@ -813,6 +817,7 @@ mod tests {
             project: "/tmp".into(),
             provider: "pi".into(),
             model: None,
+            approval_policy: None,
             prompt: "Reviewed prompt".into(),
             target_session: None,
             window_name: None,

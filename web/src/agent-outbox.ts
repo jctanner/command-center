@@ -99,8 +99,24 @@ export class AgentOutbox {
   this.update();
  }
  private matches(r:OutboxEntry,target:OutboxTarget){return r.host===target.host&&r.session===target.session&&r.window===target.window&&r.pane===target.pane&&r.instance===target.instance&&r.conversation===target.conversation;}
- inline(target:OutboxTarget){
-  return this.entries().filter(r=>r.host===target.host&&r.session===target.session&&r.window===target.window&&r.pane===target.pane&&r.status!=='archived'&&r.status!=='seen').map(r=>this.row(r,false,r.instance!==target.instance));
+ private inlineScope='';
+ private awaitingNative=new Set<string>();
+ inline(target:OutboxTarget,renderedUserIds:ReadonlySet<string>){
+  const scope=JSON.stringify(target);
+  if(scope!==this.inlineScope){this.inlineScope=scope;this.awaitingNative.clear();}
+  const entries=this.entries(),ids=new Set(entries.map(r=>r.id));
+  for(const id of this.awaitingNative)if(!ids.has(id))this.awaitingNative.delete(id);
+  return entries.filter(r=>{
+   if(r.host!==target.host||r.session!==target.session||r.window!==target.window||r.pane!==target.pane||r.status==='archived'){this.awaitingNative.delete(r.id);return false;}
+   if(r.status!=='seen'){
+    if(this.matches(r,target)&&['queued','submitting','submitted','uncertain'].includes(r.status))this.awaitingNative.add(r.id);
+    return true;
+   }
+   // A Seen receipt can arrive before the independently polled native page.
+   // Bridge only bubbles this view already showed; never resurrect old receipts.
+   if(!this.matches(r,target)||r.seen_message==null||renderedUserIds.has(String(r.seen_message))){this.awaitingNative.delete(r.id);return false;}
+   return this.awaitingNative.has(r.id);
+  }).map(r=>this.row(r,false,r.instance!==target.instance));
  }
  seen(target:OutboxTarget,messageId:string){return this.entries().some(r=>this.matches(r,target)&&r.status==='seen'&&String(r.seen_message)===messageId);}
  private renderDialog(){

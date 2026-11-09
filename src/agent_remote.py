@@ -230,6 +230,15 @@ def metadata(path, kind):
             return None, None, ''
         if kind == 'codex' and record.get('type') == 'session_meta':
             payload = record.get('payload', {})
+            if not isinstance(payload, dict): return None, None, ''
+            source = payload.get('source')
+            # Owned writer locks also include Codex's guardian/subagent threads.
+            # Explicit provider provenance excludes these sidechains; never pick
+            # one by recency, cwd, or a child's inherited session_id.
+            if (isinstance(source, dict) and 'subagent' in source
+                    or source == 'subagent'
+                    or payload.get('thread_source') in ('guardian_review', 'subagent')):
+                return None, None, ''
             return payload.get('cwd'), payload.get('id'), payload.get('timestamp', record.get('timestamp', ''))
         if kind == 'claude' and record.get('cwd') and record.get('sessionId') and not record.get('isSidechain'):
             return record['cwd'], record['sessionId'], record.get('timestamp', '')
@@ -1040,14 +1049,17 @@ def provider_activity(observation, candidates=None):
             if active!=record['sessionId']:
                 return events
             value = record.get('status')
-            state = {'idle':'ready', 'working':'working', 'busy':'working', 'running':'working',
+            # Claude derives shell from idle foreground plus background shell work.
+            # Background liveness/completion stays in the separate task snapshot.
+            state = {'idle':'ready', 'shell':'ready', 'working':'working', 'busy':'working', 'running':'working',
                      'waiting_for_approval':'approval', 'waiting_for_permission':'approval'}.get(value)
             if state is None:
                 return state_result('unknown', 'claude_registry', 'Provider status is not recognized', stamp)
             if state == 'working' and now - max(stamp, updated or stamp) > 900:
                 return state_result('unknown', 'claude_registry', 'Working evidence is older than 15 minutes', stamp)
             evidence=max(stamp,updated or stamp) if state=='working' else stamp
-            return state_result(state, 'claude_registry', f'Claude reports {value}', evidence, hashlib.sha256(f"{record['sessionId']}:{record['statusUpdatedAt']}:{value}".encode()).hexdigest())
+            reason = 'Claude foreground is idle; background shell work reported' if value=='shell' else f'Claude reports {value}'
+            return state_result(state, 'claude_registry', reason, evidence, hashlib.sha256(f"{record['sessionId']}:{record['statusUpdatedAt']}:{value}".encode()).hexdigest())
         except (OSError, ValueError, TypeError, IndexError):
             return state_result('unknown', 'none', 'No valid process-linked status record')
     candidates = conversations(observation) if candidates is None else candidates
@@ -1220,6 +1232,23 @@ def launch_model(value):
         fail(400,'Model must be a name or alias of at most 200 characters, without spaces or CLI flags')
     return value
 
+def launch_approval_policy(kind, value):
+    if value is None or value == '' or value == 'default': return None
+    if kind != 'codex' or value != 'approve-for-me':
+        fail(400, 'Approval policy must be default or approve-for-me for Codex')
+    return value
+
+def codex_launch_flags(executable, approval_policy):
+    # Probe the exact prepared executable; never silently downgrade a requested policy.
+    try:
+        result=subprocess.run([executable,'--help'],cwd=str(Path.home()),stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=2)
+        help_text=result.stdout[:256*1024] if result.returncode==0 else b''
+    except (OSError,subprocess.SubprocessError): help_text=b''
+    supported=lambda flag: re.search(rb'(?<![\w-])'+re.escape(flag)+rb'(?![\w-])',help_text) is not None
+    if approval_policy and not supported(b'--approve-for-me'):
+        fail(400, 'Installed Codex does not advertise --approve-for-me; update Codex or explicitly choose harness default')
+    return (['--no-daemon'] if supported(b'--no-daemon') else []) + (['--approve-for-me'] if approval_policy else [])
+
 def launch_destination(request):
     session=request.get('target_session')
     if session is None or session=='':return None,None
@@ -1247,13 +1276,15 @@ def launch_options(request):
     path,identity=project_directory(request.get('path'))
     kind=request.get('provider')
     executable,executable_identity,_=launch_executable(kind)
+    approval_policy=launch_approval_policy(kind,request.get('approval_policy'))
+    if approval_policy: codex_launch_flags(executable,approval_policy)
     active=active_launch_sessions(request,kind)
     candidates=[]
     for candidate in launch_candidates(path,kind):
         session=candidate.get('session','')
         if not isinstance(session,str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session): continue
         candidates.append(dict(id=candidate['id'],session=session,timestamp=candidate['timestamp'],title=launch_title(candidate,kind),active=session in active))
-    return dict(project=path,directory_identity=identity,provider=kind,model=model,executable=executable,executable_identity=executable_identity,conversations=candidates,target_session=target_session,destination_identity=destination_identity,window_name=window_name,card_name=card_name)
+    return dict(project=path,directory_identity=identity,provider=kind,model=model,approval_policy=approval_policy,executable=executable,executable_identity=executable_identity,conversations=candidates,target_session=target_session,destination_identity=destination_identity,window_name=window_name,card_name=card_name)
 
 def launch_status(request):
     identifier=request.get('launch_id','')
@@ -1291,7 +1322,7 @@ def launch_status(request):
         except (Failure,OSError): pass
     if metadata.get('conversation'):association.setdefault('conversation',metadata['conversation'])
     return dict(found=True,launch_id=identifier,session=row[0],window=row[1],pane=row[2],
-                session_name=fields[5],destination=metadata.get('destination','session'),project=metadata['project'],provider=kind,model=metadata.get('model'),
+                session_name=fields[5],destination=metadata.get('destination','session'),project=metadata['project'],provider=kind,model=metadata.get('model'),approval_policy=metadata.get('approval_policy'),
                 running=row[3]=='0' and kind in row[4].lower(),exited=row[3]=='1',
                 context=tmux(request,'capture-pane','-p','-t',row[2],'-S','0')[-12000:],**association)
 
@@ -1333,11 +1364,8 @@ def launch_agent(request):
     if executable!=request.get('executable') or executable_identity!=request.get('executable_identity'): fail(409,'Agent installation changed; prepare again')
     model=launch_model(request.get('model'))
     command=[executable]
-    if kind=='codex':
-        try:
-            help_result=subprocess.run([executable,'--help'],cwd=str(Path.home()),stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=2)
-            if help_result.returncode==0 and b'--no-daemon' in help_result.stdout[:256*1024]: command += ['--no-daemon']
-        except (OSError,subprocess.SubprocessError): pass
+    approval_policy=launch_approval_policy(kind,request.get('approval_policy'))
+    if kind=='codex': command += codex_launch_flags(executable,approval_policy)
     selected=request.get('conversation')
     if selected:
         allowed=next((c for c in request.get('conversations',[]) if c['id']==selected and not c['active']),None)
@@ -1363,7 +1391,7 @@ def launch_agent(request):
         row=tmux(request,'new-session','-d','-P','-F','#{session_id}\t#{window_id}\t#{pane_id}','-s',name,'-n',kind,'-c',path,'-x','120','-y','36','/bin/sleep','86400').strip().split('\t')
     if len(row)!=3: fail(502,'Launch state uncertain; check the launch before trying again')
     try:
-        metadata=json.dumps(dict(launch_id=identifier,project=path,provider=kind,model=model,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,destination='window' if target_session else 'session'))
+        metadata=json.dumps(dict(launch_id=identifier,project=path,provider=kind,model=model,approval_policy=approval_policy,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,destination='window' if target_session else 'session'))
         tmux(request,'set-option','-w','-t',row[1],'@cc_launch',metadata)
         if not target_session:tmux(request,'set-option','-t',row[0],'@cc_launch',metadata)
         else:tmux(request,'rename-window','-t',row[1],kind+'-'+identifier[:8])

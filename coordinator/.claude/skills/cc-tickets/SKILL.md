@@ -16,3 +16,5 @@ On 409 retain the intended edit, read detail and reconcile concurrent changes; n
 Delete only on an explicit request naming the ticket, with `delete --ticket UUID --revision REV`. Deletion is logical: hides the ticket but retains number, contents and launch history. It is not erasure, agent shutdown or completion. Any unreleased launch blocks deletion; do not automatically check/release/stop an agent just to bypass the guard. Ask the human to resolve a blocking launch through the existing interface. After an uncertain delete, 404 from detail confirms absence.
 
 Launch preparation, launch, check and release are separately documented capabilities. This skill does not authorize them, agent input, approvals, restarts or tmux mutations. A ticket status change never starts an agent. Report the returned UUID, CC-number, status and new revision after a successful write.
+
+For an explicit human request to start an agent for a ticket, use `cc-launch` and the coordinator launch playbook. This is a separate authorized workflow; no ticket CRUD operation implies launch consent.

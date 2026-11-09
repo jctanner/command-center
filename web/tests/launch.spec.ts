@@ -17,12 +17,12 @@ test.beforeAll(async()=>{
  mkdirSync(project);mkdirSync(bin);mkdirSync(home);mkdirSync(join(dir,'calls'));
  const script=join(dir,'fake-agent.py');writeFileSync(script,String.raw`import os, sys, json, time
 if '--help' in sys.argv:
- print('Fixture CLI');sys.exit(0)
+ print('Fixture CLI '+('--approve-for-me' if os.path.exists('FIXTURE_POLICY_SUPPORT') else ''));sys.exit(0)
 with open(os.path.join('FIXTURE_CALLS_DIRECTORY',str(os.getpid())+'.json'),'w') as f:
  json.dump(dict(args=sys.argv[1:],cwd=os.getcwd()),f)
 print('Fixture agent ready',flush=True)
 while True: time.sleep(1)
-`.replace('FIXTURE_CALLS_DIRECTORY',join(dir,'calls')));
+`.replace('FIXTURE_CALLS_DIRECTORY',join(dir,'calls')).replace('FIXTURE_POLICY_SUPPORT',join(dir,'policy-support')));
  for(const kind of ['codex','claude','pi']){const path=join(bin,kind);writeFileSync(path,`#!/bin/bash\nexec -a ${kind} /usr/bin/python3 ${script} "$@"\n`);chmodSync(path,0o755);}
  const codexHome=join(home,'codex'),claudeHome=join(home,'claude');
  const logs=join(codexHome,'sessions/2026/11/01');mkdirSync(logs,{recursive:true});
@@ -330,4 +330,45 @@ test('phone initial prompt preserves drafts across resume selection and sends on
  await page.screenshot({path:'../test-results/launch-initial-prompt-phone.png'});expect(await dialog.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
  await dialog.getByRole('button',{name:'Start Codex',exact:true}).click();await expect(dialog).toBeHidden({timeout:15000});expect(calls().filter(c=>c.args.at(-1)===text)).toHaveLength(1);expect(sockets).toBe(0);
  await page.getByRole('button',{name:'← Agents',exact:true}).click();await page.getByRole('button',{name:'Start agent',exact:true}).click();await expect(prompt).toHaveValue('');
+});
+
+
+test('Codex approval policy is explicit, grant-bound, persisted and rejected when unsupported',async()=>{
+ const hosts=await(await api('/api/v1/hosts')).json(),revision=hosts.find((h:any)=>h.id==='local').connection_revision;
+ const options=(provider:string,policy:string,host='local')=>api(`/api/v1/hosts/${host}/agents/launch-options?`+new URLSearchParams({provider,path:project,connection_revision:hosts.find((h:any)=>h.id===host).connection_revision,approval_policy:policy}));
+ const before=tmux('list-panes','-a','-F','#{pane_id}');
+ expect((await options('codex','approve-for-me')).status).toBe(400);
+ for(const [provider,policy] of [['codex','never'],['codex','--dangerously-bypass-approvals-and-sandbox'],['claude','approve-for-me'],['pi','approve-for-me']])expect((await options(provider,policy)).status).toBe(400);
+ expect(tmux('list-panes','-a','-F','#{pane_id}')).toBe(before);
+ writeFileSync(join(dir,'policy-support'),'yes');
+ try{
+  const p=await(await options('codex','approve-for-me')).json();expect(p.approval_policy).toBe('approve-for-me');
+  // Start cannot override the reviewed policy (or any other grant field).
+  expect((await api('/api/v1/hosts/local/agents/launch',{token:p.token,conversation:null,approval_policy:'default'})).status).toBe(422);
+  const n=calls().length;expect((await launch(p)).status).toBe(200);await expect.poll(()=>calls().length).toBe(n+1);expect(calls().at(-1).args).toEqual(['--approve-for-me']);
+  expect((await status({...p,revision})).approval_policy).toBe('approve-for-me');
+  expect((await launch(p)).status).toBe(410);
+  const ticket=await boardTicket('Approval policy ticket');
+  const r=await api(`/api/v1/board/tickets/${ticket.id}/prepare`,{revision:ticket.revision,host:'local',connection_revision:revision,path:project,provider:'codex',approval_policy:'approve-for-me',prompt:'Policy ticket fixture'});expect(r.status).toBe(200);const prepared=await r.json();
+  expect((await api(`/api/v1/board/tickets/${ticket.id}/launch`,{token:prepared.token})).status).toBe(200);
+  const saved=await(await api(`/api/v1/board/tickets/${ticket.id}`)).json();expect(saved.runs[0].approval_policy).toBe('approve-for-me');
+  await expect.poll(()=>calls().some(c=>JSON.stringify(c.args)===JSON.stringify(['--approve-for-me','--','Policy ticket fixture']))).toBe(true);
+  if(sshd){const remote=await(await options('codex','approve-for-me','remote')).json();expect((await launch(remote,null,'remote')).status).toBe(200);expect((await status({...remote,revision:hosts.find((h:any)=>h.id==='remote').connection_revision},'remote')).approval_policy).toBe('approve-for-me');}
+ }finally{rmSync(join(dir,'policy-support'),{force:true});}
+});
+
+test('phone launchers expose Codex automatic review and reset it for other harnesses',async({page})=>{
+ writeFileSync(join(dir,'policy-support'),'yes');
+ try{
+  await page.setViewportSize({width:393,height:852});await page.goto(base);await page.getByRole('button',{name:'Start agent',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Start an agent'}),policy=dialog.getByLabel('Codex approval policy',{exact:true});
+  await expect(policy).toHaveValue('');await policy.selectOption('approve-for-me');await expect(dialog.getByRole('status')).toContainText('Automatic review (workspace-write)');
+  await dialog.getByLabel('Agent provider',{exact:true}).selectOption('pi');await expect(policy).toHaveValue('');await expect(policy).toBeDisabled();
+  await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+  const t=await boardTicket('Policy UI ticket');await page.getByRole('button',{name:'Board',exact:true}).click();await page.getByRole('button',{name:'Policy UI ticket',exact:true}).click();
+  await page.getByRole('dialog').getByRole('button',{name:'Start agent',exact:true}).click();
+  const ticketDialog=page.getByRole('dialog',{name:'Start ticket agent'});await ticketDialog.getByLabel('Ticket Codex approval policy',{exact:true}).selectOption('approve-for-me');
+  await ticketDialog.getByRole('button',{name:'Check project',exact:true}).click();await expect(ticketDialog.getByRole('status')).toContainText('Automatic review (workspace-write)');
+  await ticketDialog.getByLabel('Ticket agent provider',{exact:true}).selectOption('claude');await expect(ticketDialog.getByLabel('Ticket Codex approval policy',{exact:true})).toBeDisabled();await expect(ticketDialog.getByRole('button',{name:'Start agent',exact:true})).toBeDisabled();
+ }finally{rmSync(join(dir,'policy-support'),{force:true});}
 });

@@ -577,7 +577,8 @@ export class AttentionQueue {
         const note=node('small','Seen in conversation · sent through CC');note.className='outbox-confirmation';article.append(note);
       }
     }
-    const pending=this.outbox.inline(target);
+    const renderedUserIds=new Set([...this.history.querySelectorAll<HTMLElement>('.agent-message.user[data-message-id]')].map(article=>article.dataset.messageId!));
+    const pending=this.outbox.inline(target,renderedUserIds);
     this.outboxMessages.replaceChildren(...pending);
     const empty=this.history.querySelector<HTMLElement>('.agent-history-empty');if(empty)empty.hidden=pending.length>0;
     this.history.append(this.outboxMessages);
@@ -591,7 +592,7 @@ export class AttentionQueue {
     this.submitting = true; this.detailRequest++; this.loadingDetail = false; this.updateSend(); this.sendFeedback.textContent = 'Sending…';
     let uncertain = true;
     try {
-      const entry=await this.outbox.send({host:chosen.h.id,session:chosen.item.session,window:chosen.item.window,pane:chosen.item.pane,instance:this.detailData?.instance||''},token,text);
+      const entry=await this.outbox.send({host:chosen.h.id,session:chosen.item.session,window:chosen.item.window,pane:chosen.item.pane,instance:this.detailData?.instance||'',conversation:this.detailData?.selected},token,text);
       uncertain = false; this.drafts.delete(key);
       if(entry.status!=='queued')this.pendingReplies.set(key, { at: Date.now(), reply: baselineReply, activity: baselineActivity });
       if (this.selected === selected) { this.composer.value = ''; this.fitComposer(); this.sendFeedback.textContent = entry.status==='queued'?'Queued in CC. Your message remains visible until delivery is resolved.':'Submitted to terminal; acceptance is not yet confirmed.'; }

@@ -224,3 +224,53 @@ test('first Pi input confirms after lazy log creation and releases the next queu
  await expect(page.locator('.agent-history .agent-outbox-message')).toHaveCount(0);
  await expect(page.locator('.agent-history .agent-message.user')).toHaveCount(2);
 });
+
+test('launched Codex guardian writer does not block queued input or make a working parent Ready',async()=>{
+ const childId='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',childLog=join(home,'sessions/2026/11/03/guardian.jsonl');
+ mkdirSync(join(home,'thread-writer-locks'));
+ writeFileSync(childLog,JSON.stringify({type:'session_meta',payload:{id:childId,session_id:nativeSession,parent_thread_id:nativeSession,cwd:dir,source:{subagent:{other:'guardian'}},thread_source:'guardian_review'}})+'\n'+JSON.stringify({type:'event_msg',timestamp:new Date().toISOString(),payload:{type:'task_complete',turn_id:'review',root_turn_id:currentTurn}})+'\n');
+ const script=join(dir,'owned-writers.py');writeFileSync(script,`import ctypes,fcntl,sys\nctypes.CDLL(None).prctl(15,b'codex',0,0,0)\nfiles=[]\nfor p in sys.argv[1:3]:\n f=open(p,'w');fcntl.flock(f,fcntl.LOCK_EX);files.append(f)\nfor p in sys.argv[3:]: files.append(open(p))\nprint('fixture ready',flush=True)\nfor line in sys.stdin: print('received:'+line.strip(),flush=True)\n`);
+ await stop();tmux('respawn-pane','-k','-t',pane,'-c',dir,`exec env CODEX_HOME='${home}' CC_LAUNCH_ID=fixture-launch /bin/bash -c 'exec -a codex /usr/bin/python3 "$@"' -- '${script}' '${join(home,'thread-writer-locks',nativeSession+'.lock')}' '${join(home,'thread-writer-locks',childId+'.lock')}' '${log}' '${childLog}'`);
+ await expect.poll(()=>tmux('capture-pane','-p','-t',pane)).toContain('fixture ready');await start();
+ const d=await detail();expect(d.association).toBe('process');expect(d.activity.state).toBe('working');expect(d.conversations).toHaveLength(1);
+ const receipt=await enqueue('GUARDIAN_PARENT_MESSAGE');await expect.poll(async()=>(await entry(receipt.id)).status).toBe('queued');expect(tmux('capture-pane','-p','-t',pane)).not.toContain(receipt.text);
+ phase('ready');await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('submitted');
+ expect(tmux('capture-pane','-p','-t',pane).split('received:'+receipt.text)).toHaveLength(2);
+ user(receipt.text);await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('seen');
+ expect((await entries()).filter(x=>x.id===receipt.id)).toHaveLength(1);
+});
+
+test('Seen receipt keeps its visible bubble until the exact native history message is rendered',async({page})=>{
+ const text='CC_CONTINUOUS_MESSAGE';await page.setViewportSize({width:393,height:844});await page.goto(base+'/#/queue');await page.locator('.queue-card').click();
+ const composer=page.getByRole('textbox',{name:'Message to agent',exact:true});await composer.fill(text);await composer.press('Enter');
+ const bubble=page.locator('.agent-history .agent-outbox-message').filter({hasText:text});await expect(bubble).toContainText('Queued in CC');
+ const frozen=await detail();let delayed=0;
+ await page.route('**/api/v1/hosts/local/agents/conversation?*',route=>{delayed++;return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(frozen)});});
+ await page.evaluate(text=>{
+  const count=()=>[...document.querySelectorAll('.agent-history article.agent-message.user')].filter(n=>n.textContent?.includes(text)).length;
+  (window as any).handoffCounts={min:count(),max:count()};
+  new MutationObserver(()=>{const c=count(),counts=(window as any).handoffCounts;counts.min=Math.min(counts.min,c);counts.max=Math.max(counts.max,c);}).observe(document.querySelector('.agent-history')!,{childList:true,subtree:true});
+ },text);
+ const receipt=(await entries()).find(r=>r.text===text);phase('ready');await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('submitted');user(text);
+ await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('seen');
+ // Outbox polling has confirmation, but every conversation response is still the old page.
+ await expect(bubble).toContainText('Seen in conversation',{timeout:15000});await expect(bubble.locator('.outbox-spinner')).toHaveCount(0);await expect.poll(()=>delayed).toBeGreaterThan(0);
+ await expect(page.locator('.agent-message.user[data-message-id]').filter({hasText:text})).toHaveCount(0);
+ await page.unroute('**/api/v1/hosts/local/agents/conversation?*');
+ const native=page.locator('.agent-message.user[data-message-id]').filter({hasText:text});await expect(native).toHaveCount(1,{timeout:20000});await expect(bubble).toHaveCount(0);await expect(native).toContainText('Seen in conversation');
+ expect(await page.evaluate(()=>(window as any).handoffCounts)).toEqual({min:1,max:1});
+});
+
+test('fast confirmation before enqueue response retains the local bubble until native history arrives',async({page})=>{
+ const text='CC_FAST_CONTINUOUS_MESSAGE';await page.goto(base+'/#/queue');await page.locator('.queue-card').click();const composer=page.getByRole('textbox',{name:'Message to agent',exact:true});await expect(composer).toBeEnabled();
+ const frozen=await detail();await page.route('**/api/v1/hosts/local/agents/conversation?*',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(frozen)}));
+ await page.route('**/api/v1/hosts/local/agents/message',async route=>{
+  const response=await route.fetch(),data=await response.json(),id=data.outbox.id;phase('ready');
+  await expect.poll(async()=>(await entry(id)).status,{timeout:15000}).toBe('submitted');user(text);
+  await expect.poll(async()=>(await entry(id)).status,{timeout:15000}).toBe('seen');await route.fulfill({response,json:{outbox:await entry(id)}});
+ });
+ await composer.fill(text);await composer.press('Enter');const bubble=page.locator('.agent-history .agent-outbox-message').filter({hasText:text});await expect(bubble).toBeVisible();
+ await expect(bubble).toContainText('Seen in conversation',{timeout:20000});await expect(bubble.locator('.outbox-spinner')).toHaveCount(0);await expect(composer).toHaveValue('');
+ await expect(page.locator('.agent-message.user[data-message-id]').filter({hasText:text})).toHaveCount(0);await page.unroute('**/api/v1/hosts/local/agents/conversation?*');
+ await expect(page.locator('.agent-message.user[data-message-id]').filter({hasText:text})).toHaveCount(1,{timeout:20000});await expect(bubble).toHaveCount(0);
+});

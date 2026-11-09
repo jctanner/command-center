@@ -1210,6 +1210,18 @@
                 "type": "null"
               }
             ]
+          },
+          "approval_policy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              null,
+              "default",
+              "approve-for-me"
+            ],
+            "description": "Optional Codex-only automatic review policy. Omit/null/default preserves harness defaults; approve-for-me requires the installed Codex to advertise --approve-for-me. Bound at preparation and rechecked before tmux creation; cannot be overridden at Start."
           }
         },
         "description": "Bounded durable launch observation; missing fields mean unavailable, never successful delivery."
@@ -1305,6 +1317,18 @@
           },
           "released": {
             "type": "boolean"
+          },
+          "approval_policy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              null,
+              "default",
+              "approve-for-me"
+            ],
+            "description": "Optional Codex-only automatic review policy. Omit/null/default preserves harness defaults; approve-for-me requires the installed Codex to advertise --approve-for-me. Bound at preparation and rechecked before tmux creation; cannot be overridden at Start."
           }
         },
         "required": [
@@ -1662,6 +1686,18 @@
                 "type": "null"
               }
             ]
+          },
+          "approval_policy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              null,
+              "default",
+              "approve-for-me"
+            ],
+            "description": "Optional Codex-only automatic review policy. Omit/null/default preserves harness defaults; approve-for-me requires the installed Codex to advertise --approve-for-me. Bound at preparation and rechecked before tmux creation; cannot be overridden at Start."
           }
         },
         "description": "Explicitly reviewed launch input. Dedicated detached session by default, or a new detached window in target_session. Preparation grants expire after 120 seconds. Never invent flags, shell commands or approval bypasses.",

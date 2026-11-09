@@ -33,6 +33,7 @@ pub(crate) struct Prepare {
     pub(crate) path: String,
     pub(crate) provider: String,
     pub(crate) model: Option<String>,
+    pub(crate) approval_policy: Option<String>,
     pub(crate) target_session: Option<String>,
     pub(crate) window_name: Option<String>,
     pub(crate) card_name: Option<String>,
@@ -72,7 +73,7 @@ pub(crate) async fn prepare(
         machine
             .transport
             .agent_request(
-                json!({"action":"launch_options", "path":query.path,"provider":query.provider,"model":query.model,"target_session":query.target_session,"window_name":query.window_name,"card_name":query.card_name}),
+                json!({"action":"launch_options", "path":query.path,"provider":query.provider,"model":query.model,"approval_policy":query.approval_policy,"target_session":query.target_session,"window_name":query.window_name,"card_name":query.card_name}),
             )
             .await?,
     )?;
@@ -217,6 +218,7 @@ pub(crate) async fn start(
                     project: prepared["project"].as_str().unwrap_or("").into(),
                     provider: prepared["provider"].as_str().unwrap_or("").into(),
                     model: prepared["model"].as_str().map(str::to_owned),
+                    approval_policy: prepared["approval_policy"].as_str().map(str::to_owned),
                     prompt: binding.prompt.clone(),
                     target_session: prepared["target_session"].as_str().map(str::to_owned),
                     window_name: prepared["window_name"].as_str().map(str::to_owned),

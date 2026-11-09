@@ -1,0 +1,5 @@
+# Coordinator launch instructions
+
+Added cc-launch skill and exact existing REST playbook, with explicit human-request authorization in role/CLAUDE/root instructions. Clear user scope is sufficient; clarify missing/material changes rather than asking again generically. Covers machine/project/provider/model, dedicated/new-window destination, reviewed prompt/names, one-use grants, private receipts and uncertain-result recovery. Ticket-backed naming/launch history preferred; standalone initial card naming limitation documented. Inventory/CRUD do not imply launch authority, and existing agents/approvals remain outside scope.
+
+Three JSON examples match current OpenAPI, Python example/helper signatures/links/skill header and whitespace checks pass. Documentation/skills only: no code builds, live preparations/launches/messages or provider configuration changes. Running coordinator should reread updated instructions before first requested launch. See [Task 0034](../tasks/done/0034-coordinator-explicit-agent-launches.md). Prior uncommitted work preserved. Next task 0035, bug 0020.

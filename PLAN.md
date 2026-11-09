@@ -13,6 +13,24 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
+- [Task 0039: continuous message bubble handoff](docs/tasks/done/0039-outbox-message-handoff-gap.md)
+
+- [Task 0038: launched-agent queued input](docs/tasks/done/0038-launched-agent-queued-input.md)
+
+- [Task 0037: Codex launch approval policy](docs/tasks/done/0037-codex-launch-approval-policy.md)
+
+- [Task 0036: coordinator Codex approval policy](docs/tasks/done/0036-coordinator-codex-approval-policy.md)
+
+- [Task 0035: coordinator agent messaging](docs/tasks/done/0035-coordinator-agent-messaging.md)
+
+- [Task 0034: coordinator launch instructions](docs/tasks/done/0034-coordinator-explicit-agent-launches.md)
+
+- [Task 0033: Claude shell state](docs/tasks/done/0033-claude-shell-background-ready-state.md)
+
+- [Task 0032: lighter Board cards](docs/tasks/done/0032-lighter-board-cards.md)
+
+- [Task 0031: ticket Board/list/detail layout](docs/tasks/done/0031-ticket-board-list-and-detail-layout.md)
+
 - [Task 0030: agent chat code highlighting](docs/tasks/done/0030-agent-chat-code-highlighting.md)
 
 - [Task 0029: Codex resume identity](docs/tasks/done/0029-codex-resume-session-precedence.md)
@@ -77,6 +95,14 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Fixed bugs
 
+- [Bug 0021: Seen/history bubble gap](docs/bugs/fixed/0021-outbox-seen-before-history-bubble-gap.md)
+
+- [Bug 0020: guardian writer association](docs/bugs/fixed/0020-codex-guardian-writer-confuses-conversation.md)
+
+- [Bug 0019: Claude shell state](docs/bugs/fixed/0019-claude-shell-registry-state-unknown.md)
+
+- [Bug 0018: late Board host labels](docs/bugs/fixed/0018-board-machine-labels-stale-after-host-discovery.md)
+
 - [Bug 0017: Codex resume identity](docs/bugs/fixed/0017-codex-resume-links-incidental-threads.md)
 
 - [Bug 0016: Codex internal records](docs/bugs/fixed/0016-codex-interruption-records-shown-as-human-chat.md)
@@ -113,6 +139,20 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-09: message bubble handoff](docs/notes/2026-11-09-message-bubble-handoff.md)
+
+- [2026-11-08: Codex guardian association](docs/notes/2026-11-08-codex-guardian-association.md)
+
+- [2026-11-08: Codex launch approval policy](docs/notes/2026-11-08-codex-launch-approval-policy.md)
+
+- [2026-11-08: coordinator launch instructions](docs/notes/2026-11-08-coordinator-launch-instructions.md)
+
+- [2026-11-08: Claude shell foreground readiness](docs/notes/2026-11-08-claude-shell-readiness.md)
+
+- [2026-11-08: lighter Board cards](docs/notes/2026-11-08-lighter-board-cards.md)
+
+- [2026-11-08: ticket Board/list/detail layout](docs/notes/2026-11-08-ticket-board-list-detail.md)
 
 - [2026-11-08: coordinator and agent-chat commit](docs/notes/2026-11-08-coordinator-agent-chat-commit.md)
 

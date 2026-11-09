@@ -1,0 +1,5 @@
+# Ticket Board, list and spacious detail
+
+Simplified cards to number/title and compact indicators; long paths and per-card move selectors moved to detail. Added Board/List preference, ticket attribute table, shared filtering/sorting and near-full-window detail with previous/next, rendered/source Markdown, wrapping titles and visible actions. Mobile list/detail scroll and keep terminal isolation. Dirty drafts, optimistic conflicts, async response guards and existing agent-launch constraints retained.
+
+Frontend build and eight focused browser checks pass (20.1s). Synthetic desktop/phone screenshots reviewed; read-only live before/after confirms 26 tickets and a 1400x860 detail versus previous 850x700. No live mutations, terminal sockets or page errors. Final frontend deployed atomically; health/index/assets verified, no backend/agent restarts. See [Task 0031](../tasks/done/0031-ticket-board-list-and-detail-layout.md). Changes uncommitted. Task 0009/prior Board sync unchanged. Next task 0032, bug 0018.
