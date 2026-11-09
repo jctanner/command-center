@@ -497,7 +497,9 @@ export class AttentionQueue {
           ? document.activeElement.closest<HTMLDetailsElement>('.agent-activity')?.dataset.activityId : undefined;
         const entries: {position: number; order: number; element: HTMLElement}[] = data.messages.map(message => {
           const article = node('article'); article.className = `agent-message ${message.role}`; article.dataset.messageId=message.id;
-          article.append(node('small', `${message.role === 'user' ? 'You' : 'Agent'}${message.timestamp ? ` · ${new Date(message.timestamp).toLocaleString()}` : ''}`), message.role === 'assistant' ? chatMarkdown(message.text) : node('div', message.text));
+          const body=message.role === 'assistant' ? chatMarkdown(message.text) : node('div', message.text);
+          if(message.role==='user')body.classList.add('agent-user-text');
+          article.append(node('small', `${message.role === 'user' ? 'You' : 'Agent'}${message.timestamp ? ` · ${new Date(message.timestamp).toLocaleString()}` : ''}`), body);
           if (message.truncated) article.append(node('small', 'Message shortened for this view. Open the CLI for the full text.'));
           return {position: Number(message.id), order: message.order ?? -1, element: article};
         });
@@ -572,7 +574,10 @@ export class AttentionQueue {
     const target={host:chosen.h.id,session:chosen.item.session,window:chosen.item.window,pane:chosen.item.pane,instance:this.detailData.instance||'',conversation:this.detailData.selected};
     const nearBottom=this.history.scrollHeight-this.history.scrollTop-this.history.clientHeight<60;
     const top=this.history.scrollTop;
+    const messages=new Map(this.detailData.messages.map(message=>[message.id,message]));
     for(const article of this.history.querySelectorAll<HTMLElement>('.agent-message.user[data-message-id]')){
+      const message=messages.get(article.dataset.messageId||''),body=article.querySelector<HTMLElement>('.agent-user-text');
+      if(message&&body){const text=this.outbox.visibleUserText(target,message.id,message.text,this.detailData.provider);if(body.textContent!==text)body.textContent=text;}
       if(this.outbox.seen(target,article.dataset.messageId||'')&&!article.querySelector('.outbox-confirmation')){
         const note=node('small','Seen in conversation · sent through CC');note.className='outbox-confirmation';article.append(note);
       }

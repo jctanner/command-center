@@ -282,3 +282,7 @@ Agent cards can detect a unique foreground-terminal Codex/Claude/Pi launched by 
 
 
 Claude session auto-selection also handles resumed conversations whose files remain under an older repository's Claude folder. It follows exact process-proven UUIDs and explicit continuation edges, with bounded path/metadata/ambiguity checks; it does not choose unrelated newer project history.
+
+### Claude pasted input display
+
+Claude can store pasted human messages inside a matching pasted_content envelope. Chat shows the exact original CC-submitted text only when a Seen receipt proves that envelope’s message position, process, conversation and inner text. Receipt arrival can update an already-rendered bubble without changing native history, cursors or delivery. Without that evidence, XML remains literal; malformed/nested wrappers and other providers are unchanged.

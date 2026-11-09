@@ -9,9 +9,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0040: Claude paste-wrapper display](docs/tasks/done/0040-claude-paste-wrapper-display.md)
 
 - [Task 0039: continuous message bubble handoff](docs/tasks/done/0039-outbox-message-handoff-gap.md)
 
@@ -91,9 +94,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Open bugs
 
+
 - [Bug 0005: Pi first input unconfirmed](docs/bugs/open/0005-pi-first-input-unconfirmed.md)
 
 ## Fixed bugs
+
+- [Bug 0022: Claude paste envelope](docs/bugs/fixed/0022-claude-paste-envelope-visible-in-chat.md)
 
 - [Bug 0021: Seen/history bubble gap](docs/bugs/fixed/0021-outbox-seen-before-history-bubble-gap.md)
 
@@ -139,6 +145,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-09: Claude paste display](docs/notes/2026-11-09-claude-paste-display.md)
 
 - [2026-11-09: message bubble handoff](docs/notes/2026-11-09-message-bubble-handoff.md)
 

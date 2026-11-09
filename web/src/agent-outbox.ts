@@ -119,6 +119,16 @@ export class AgentOutbox {
   }).map(r=>this.row(r,false,r.instance!==target.instance));
  }
  seen(target:OutboxTarget,messageId:string){return this.entries().some(r=>this.matches(r,target)&&r.status==='seen'&&String(r.seen_message)===messageId);}
+ // Strip a provider paste envelope only when the original CC receipt proves
+ // which text was submitted. Literal/ambiguous XML and native logs stay intact.
+ visibleUserText(target:OutboxTarget,messageId:string,text:string,provider:string){
+  if(provider!=='claude')return text;
+  const wrapped=/^<pasted_content id="([0-9a-f]{4,64})">\n([\s\S]*)\n<\/pasted_content id="\1">$/.exec(text.replace(/\r\n/g,'\n').trim());
+  if(!wrapped||wrapped[2].includes('<pasted_content')||wrapped[2].includes('</pasted_content'))return text;
+  const normalized=(value:string)=>value.replace(/\r\n/g,'\n').trim();
+  const receipt=this.entries().find(r=>this.matches(r,target)&&r.status==='seen'&&r.seen_message!=null&&String(r.seen_message)===messageId&&normalized(r.text)===normalized(wrapped[2]));
+  return receipt?receipt.text:text;
+ }
  private renderDialog(){
   const entries=this.entries().filter(e=>e.status!=='archived').reverse();
   this.cancelAll.disabled=this.archiveAll.disabled=this.bulkBusy||this.activeActions.size>0;
