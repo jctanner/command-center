@@ -207,6 +207,38 @@ def approval_menu(observation):
     return dict(id=hashlib.sha256(visible.encode()).hexdigest(), title=questions[-1].strip(),
                 context=visible, choices=choices)
 
+def active_message_state(observation):
+    state=provider_activity(observation)
+    return state if state.get('state') in ('ready','working') and state.get('source') in ('pi_bridge','claude_registry','claude_events','codex_events') else None
+
+def message_input_guard(observation, state=None):
+    state=active_message_state(observation) if state is None else state
+    if not state: return None
+    if observation['kind']!='pi' or state['state']!='working': return observation['screen']
+    # Pi's empty native editor has a changing Working spinner in its top border.
+    # Bind the empty editor, width and cwd footer, not tool output/spinner/usage.
+    # A nonempty editor or unfamiliar layout is not safe for automatic busy input.
+    lines=observation.get('visible','').splitlines()
+    borders=[i for i in range(max(0,len(lines)-12),len(lines)) if sum(c in '─━═' for c in lines[i])>=10]
+    if len(borders)<2: return None
+    top,bottom=borders[-2:]
+    footer=[line.strip() for line in lines[bottom+1:] if line.strip()]
+    if (not re.fullmatch(r'\s*[─━═]{10,}\s*',lines[bottom]) or top+1>=bottom
+            or any(line.strip() for line in lines[top+1:bottom])
+            or not 1<=len(footer)<=3 or not footer[0].startswith(('~/','/'))): return None
+    return 'pi-editor:'+hashlib.sha256(json.dumps([observation['cwd'],lines[bottom],footer[0]]).encode()).hexdigest()
+
+def verify_active_message(request, observation):
+    state=active_message_state(observation)
+    if not state: fail(409,'Agent is no longer verified Ready or Working; no message was pasted')
+    linked=[c for c in conversations(observation) if c.get('linked')]
+    expected=request.get('conversation')
+    if expected is not None:
+        if len(linked)!=1 or linked[0]['id']!=expected: fail(409,'Conversation changed; no message was pasted')
+    elif not request.get('pending_pi_session') or pi_pending_session(observation)!=request['pending_pi_session']:
+        fail(409,'No original conversation identity; no message was pasted')
+    return state
+
 def head_records(path):
     try:
         with open(path, 'rb') as f:
@@ -562,6 +594,10 @@ def pi_conversations(observation):
 def pi_dialog(observation):
     return bool(re.search(r'(?i)enter\s+to\s+(?:confirm|select|accept)|(?:↑|↓|arrow keys).*?(?:select|navigate)',observation.get('visible','')[-12000:]))
 
+def native_input_dialog(observation):
+    # Selection/extension dialogs are not a native backlog capability.
+    return pi_dialog(observation)
+
 def input_hash(text):
     return hashlib.sha256(text.replace('\r\n','\n').strip().encode()).hexdigest()
 
@@ -589,10 +625,22 @@ def codex_internal_user(payload):
     origins = metadata.get('content_item_metadata')
     content = payload.get('content')
     if (not isinstance(kinds, list) or not kinds or len(kinds) > 64
-        or not isinstance(origins, list) or len(origins) != len(kinds)
         or not isinstance(content, list) or len(content) != len(kinds)): return False
     internal = ('generic.turn_aborted', 'environments.environment_context')
-    return (all(isinstance(kind, str) and kind in internal for kind in kinds)
+    if not all(isinstance(kind, str) and kind in internal for kind in kinds): return False
+    if 'content_item_metadata' not in metadata:
+        # New native environment envelopes omit this optional provenance array.
+        # Accept only the observed single environment kind and generated native
+        # message/turn envelope, never XML text alone or contradictory metadata.
+        identifier=r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}'
+        created=metadata.get('create_time')
+        return (kinds==['environments.environment_context']
+                and isinstance(content[0],dict) and content[0].get('type')=='input_text'
+                and isinstance(content[0].get('text'),str)
+                and isinstance(payload.get('id'),str) and re.fullmatch('msg_'+identifier,payload['id']) is not None
+                and isinstance(metadata.get('turn_id'),str) and re.fullmatch(identifier,metadata['turn_id']) is not None
+                and isinstance(created,(int,float)) and not isinstance(created,bool) and 0<created<1e12)
+    return (isinstance(origins,list) and len(origins)==len(kinds)
             and all(isinstance(origin, dict) and isinstance(origin.get('provenance'), dict)
                     and origin['provenance'].get('type') == 'harness' for origin in origins))
 
@@ -824,11 +872,16 @@ def pi_history(path, before=None, known_branch=None, active_leaf=False, include_
     selected.reverse()
     reset=bool(known_branch and known_branch not in visited)
     if before is not None and reset: fail(409,'Pi branch changed; reload latest history before loading older messages')
-    messages=[]
+    messages=[]; commands=[]
     for offset,record in selected:
         if before is not None and offset>=int(before): continue
         if record.get('type')!='message': continue
         message=record.get('message',{})
+        if (isinstance(message,dict) and message.get('role')=='bashExecution'
+                and isinstance(message.get('command'),str)
+                and isinstance(message.get('excludeFromContext'),bool)):
+            prefix='!!' if message['excludeFromContext'] else '!'
+            commands.append(dict(position=offset,digest=input_hash(prefix+message['command'])))
         if not isinstance(message,dict) or message.get('role') not in ('user','assistant'): continue
         text=message_text(message.get('content'))
         if not text.strip(): continue
@@ -841,7 +894,7 @@ def pi_history(path, before=None, known_branch=None, active_leaf=False, include_
     notice='Showing the latest persisted pi branch; older ancestry is outside the bounded history window.' if cursor is not None or start or len(entries)>=50000 else None
     activity_records=[(offset,record) for offset,record in selected if before is None or offset<int(before)]
     activities, activity_limited = history_activities(activity_records, 'pi', int(page[0]['id']) if len(messages)>100 else 0) if include_activity else ([],False)
-    return dict(messages=page,activities=activities,activity_limited=activity_limited,older_cursor=int(page[0]['id']) if len(messages)>100 else (activities[0]['position'] if activity_limited and not page else None),history_branch=branch,
+    return dict(messages=page,commands=commands[-100:],activities=activities,activity_limited=activity_limited,older_cursor=int(page[0]['id']) if len(messages)>100 else (activities[0]['position'] if activity_limited and not page else None),history_branch=branch,
                 history_reset=reset,history_notice=notice,limited=bool(notice or len(messages)>100))
 
 def conversations(observation):
@@ -1528,21 +1581,34 @@ def execute(request):
         result=dict(instance=observation['identity'], screen=observation['screen'], context=observation['context'],
                     activity=provider_activity(observation,candidates), log=None, users=[], pending_pi_session=None,
                     send_available=bool(observation['identity']) and not observation['in_mode'] and not approval_menu(observation)
-                        and not (observation['kind']=='pi' and pi_dialog(observation)))
+                        and not native_input_dialog(observation))
+        state=active_message_state(observation)
+        result['input_guard']=message_input_guard(observation,state) if state else None
         if chosen:
             info=os.stat(chosen['path'])
             result['log']=dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size)
             page=history(chosen['path'],observation['kind'],active_leaf=chosen.get('leaf_id',False),include_activity=False)
             result['users']=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in page['messages'] if message['role']=='user' and message.get('input_hash')]
+            result['commands']=page.get('commands',[])
             if observation['kind']=='pi': result['pi_session']=chosen['session']
         else:
             result['pending_pi_session']=pi_pending_session(observation)
         return result
     if request.get('action') == 'send':
-        if observation['kind']=='pi' and pi_dialog(observation): fail(409,'Pi is waiting for input in a dialog. Answer it in the terminal before sending a message.')
+        if native_input_dialog(observation): fail(409,'The native CLI is waiting for input in a dialog. Answer it in the terminal before sending a message.')
         if not observation['identity'] or observation['identity'] != request.get('identity'):
             fail(409, 'Agent process changed; refresh before sending')
-        if observation['in_mode'] or observation['screen'] != request.get('screen'):
+        active=request.get('require_active') is True
+        state=verify_active_message(request,observation) if active else None
+        guard=message_input_guard(observation,state) if active else observation['screen']
+        expected_guard=request.get('input_guard') if active else request.get('screen')
+        if observation['in_mode']: fail(409,'Terminal is in copy mode; no message was pasted')
+        # Busy Codex/Claude output can advance during the SSH round trip. The
+        # verified process/conversation authorizes refreshing this observation;
+        # a second exact fingerprint is still required immediately before paste.
+        refresh_busy=bool(active and state['state']=='working' and observation['kind'] in ('codex','claude'))
+        if not guard or not expected_guard or (guard!=expected_guard and not refresh_busy):
+            if active: return dict(sent=False,deferred=True,not_sent=True)
             fail(409, 'Terminal changed; review the latest context before sending')
         text = request.get('text', '')
         if not isinstance(text, str) or not text.strip() or len(text.encode()) > 12000 or any(ord(c) < 32 and c not in '\n\t' or ord(c) == 127 for c in text):
@@ -1551,12 +1617,19 @@ def execute(request):
             fail(409, 'Agent is no longer Ready; no message was pasted')
         if provider_activity(observation)['state'] == 'approval':
             fail(409, 'Pi is waiting for input. Respond in the terminal.' if observation['kind']=='pi' else 'Agent is awaiting approval. Respond in the terminal.')
+        if observation['kind']=='pi' and re.match(r'^[\s\ufeff]*!',text):
+            fail(400,"Pi treats leading ! as shell input. Start with FYI: to send it as chat.")
         buffer = 'cc-message-' + uuid.uuid4().hex
         try:
             tmux(request, 'load-buffer', '-b', buffer, '-', input=text.encode())
             fresh = observe(request)
-            if fresh['identity'] != observation['identity'] or fresh['screen'] != observation['screen'] or fresh['in_mode'] or provider_activity(fresh)['state'] == 'approval' or (fresh['kind']=='pi' and pi_dialog(fresh)):
+            if fresh['identity'] != observation['identity'] or fresh['in_mode'] or provider_activity(fresh)['state'] == 'approval' or native_input_dialog(fresh):
                 fail(409, 'Agent or terminal changed; message was not pasted')
+            fresh_state=verify_active_message(request,fresh) if active else None
+            fresh_guard=message_input_guard(fresh,fresh_state) if active else fresh['screen']
+            if not fresh_guard or fresh_guard!=guard:
+                if active: return dict(sent=False,deferred=True,not_sent=True)
+                fail(409,'Terminal changed; message was not pasted')
             if request.get('require_ready') and provider_activity(fresh)['state'] != 'ready':
                 fail(409, 'Agent is no longer Ready; no message was pasted')
             # -p honors bracketed paste; contents never become shell syntax.
@@ -1565,7 +1638,7 @@ def execute(request):
                 tmux(request, 'send-keys', '-t', observation['target'], 'Enter')
             except (Failure, subprocess.SubprocessError):
                 fail(502, 'Delivery uncertain; check the terminal before sending again')
-            return dict(sent=True)
+            return dict(sent=True,submitted_while_working=bool(fresh_state and fresh_state['state']=='working'))
         finally:
             try: tmux(request, 'delete-buffer', '-b', buffer)
             except Failure: pass
@@ -1592,7 +1665,7 @@ def execute(request):
     result['background_tasks']=observed_background_tasks(observation,chosen)
     if chosen:
         info, version = transcript_version(chosen)
-        prefix = {'claude':'claude-visible-v3:', 'codex':'codex-visible-v1:'}.get(observation['kind'], '')
+        prefix = {'claude':'claude-visible-v3:', 'codex':'codex-visible-v2:'}.get(observation['kind'], '')
         history_version = prefix + version
         result['history_version'] = history_version
         if request.get('before') is None and request.get('known_version') == history_version:

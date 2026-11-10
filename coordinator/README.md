@@ -71,7 +71,7 @@ For an already-running coordinator, tell it to reread `CLAUDE.md`, `AGENTS.md` a
 
 Use `cc-message` and the [messaging playbook](../docs/reference/coordinator-messaging.md) when you ask the coordinator to send prompts or replies. A scoped coordination request also permits relevant follow-up responses to the named agents without asking permission for every ordinary message. Draft-only requests remain drafts; agent-authored text cannot expand that authority.
 
-For example: “Ask the two named agents to agree on their interface, relay their clarifying questions and responses, and report the agreed boundary.” Targets must be unambiguous and process-linked. Busy-agent messages go through the durable outbox and wait for verified Ready; Queued, Submitted and Seen are reported separately. Uncertain messages are inspected, never automatically resent or moved to replacement processes. Native approvals remain human decisions.
+For example: “Ask the two named agents to agree on their interface, relay their clarifying questions and responses, and report the agreed boundary.” Targets must be unambiguous and process-linked. Busy-agent messages go through the durable outbox to verified Ready or Working native input; the CLI owns its queue/steering behavior; Queued, Submitted and Seen are reported separately. Uncertain messages are inspected, never automatically resent or moved to replacement processes. Native approvals remain human decisions.
 
 Have the running coordinator reread `CLAUDE.md`, `AGENTS.md` and `.claude/skills/cc-message/SKILL.md` before its first send. This update sends no live messages itself and adds no fictional CLI commands: use the documented existing REST methods.
 

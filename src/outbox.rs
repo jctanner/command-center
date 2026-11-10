@@ -58,6 +58,8 @@ struct Record {
     #[serde(default)]
     pending_pi_session: Option<String>,
     seen_message: Option<u64>,
+    #[serde(default)]
+    command_message: Option<u64>,
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -85,6 +87,12 @@ fn unresolved(r: &Record) -> bool {
         r.status.as_str(),
         "queued" | "submitting" | "submitted" | "uncertain" | "blocked"
     )
+}
+// Definite submissions can wait in the native CLI while later intents follow.
+// Uncertain/blocked input and legacy unanchored receipts remain FIFO barriers.
+fn blocks_dispatch(r: &Record) -> bool {
+    unresolved(r)
+        && !(r.status == "submitted" && (r.baseline.is_some() || r.pending_pi_session.is_some()))
 }
 fn stored(c: &Connection, id: &str) -> Result<Option<Record>, ApiError> {
     c.query_row("SELECT data FROM agent_outbox WHERE id=?1", [id], |r| {
@@ -137,7 +145,7 @@ async fn change(
 fn public(r: &Record) -> Value {
     json!({"id":r.id,"host":r.host,"session":r.target.session,"window":r.target.window,"pane":r.target.pane,
         "instance":r.instance,"conversation":r.conversation,"text":r.text,"status":r.status,"note":r.note,
-        "revision":r.revision,"created_at":r.created_at,"updated_at":r.updated_at,"seen_message":r.seen_message})
+        "revision":r.revision,"created_at":r.created_at,"updated_at":r.updated_at,"seen_message":r.seen_message,"command_message":r.command_message})
 }
 pub(crate) fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -303,13 +311,14 @@ pub(crate) async fn enqueue(
         payload_digest: format!("{:x}", Sha256::digest(text.as_bytes())),
         text,
         status: "queued".into(),
-        note: "Queued in CC; waiting for verified Ready status.".into(),
+        note: "Queued in CC; waiting for verified native input (Ready or Working).".into(),
         revision: 1,
         created_at: now(),
         updated_at: now(),
         baseline: None,
         pending_pi_session: None,
         seen_message: None,
+        command_message: None,
     };
     let view = public(&record);
     s.board.with(move|c|{
@@ -386,7 +395,12 @@ async fn confirm_observed(
 ) -> Result<(), ApiError> {
     let mut used: HashSet<_> = entries
         .iter()
-        .filter_map(|r| Some((r.baseline.as_ref()?.conversation.clone(), r.seen_message?)))
+        .filter_map(|r| {
+            Some((
+                r.baseline.as_ref()?.conversation.clone(),
+                r.seen_message.or(r.command_message)?,
+            ))
+        })
         .collect();
     let ambiguous_archived: Vec<_> = entries
         .iter()
@@ -394,6 +408,7 @@ async fn confirm_observed(
             r.status == "archived"
                 && (r.baseline.is_some() || r.pending_pi_session.is_some())
                 && r.seen_message.is_none()
+                && r.command_message.is_none()
         })
         .cloned()
         .collect();
@@ -424,9 +439,21 @@ async fn confirm_observed(
             }
             continue;
         }
-        if let Some(position) = matching_receipt(r, observation, &used) {
+        let chat = matching_receipt(r, observation, &used);
+        let command = if chat.is_none() && r.text.trim_start().starts_with('!') {
+            let mut evidence = observation.clone();
+            evidence["users"] = observation["commands"].clone();
+            matching_receipt(r, &evidence, &used)
+        } else {
+            None
+        };
+        if let Some(position) = chat.or(command) {
             let mut updated = r.clone();
-            updated.seen_message = Some(position);
+            if command.is_some() {
+                updated.command_message = Some(position);
+            } else {
+                updated.seen_message = Some(position);
+            }
             if updated.baseline.is_none() {
                 let mut log: Log = serde_json::from_value(observation["log"].clone())
                     .expect("matching_receipt validated the log");
@@ -437,8 +464,8 @@ async fn confirm_observed(
             if let Some(updated) = change(
                 s,
                 updated,
-                "seen",
-                "Seen in the process-linked conversation.",
+                if command.is_some() { "command" } else { "seen" },
+                if command.is_some() { "Pi interpreted this input as a native shell command, not a user chat message. No resend was made." } else { "Seen in the process-linked conversation." },
             )
             .await?
             {
@@ -536,7 +563,7 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
     if !dispatch {
         return Ok(());
     }
-    let Some(mut next) = entries.iter().find(|r| unresolved(r)).cloned() else {
+    let Some(mut next) = entries.iter().find(|r| blocks_dispatch(r)).cloned() else {
         return Ok(());
     };
     if next.status != "queued" {
@@ -569,14 +596,20 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
         observation["activity"]["source"].as_str(),
         Some("pi_bridge" | "claude_registry" | "claude_events" | "codex_events")
     );
-    if activity.state != AgentState::Ready || !verified || observation["send_available"] != true {
+    if !matches!(activity.state, AgentState::Ready | AgentState::Working)
+        || !verified
+        || observation["send_available"] != true
+        || !observation["input_guard"].is_string()
+    {
         let note = match activity.state {
-            AgentState::Working => "Queued in CC; waiting for the agent's current turn to finish.",
+            AgentState::Working => {
+                "Queued in CC; waiting for a verified native input boundary. The agent need not finish its turn."
+            }
             AgentState::Approval => {
                 "Queued in CC; waiting for the approval or dialog to be resolved."
             }
             _ => {
-                "Queued in CC; waiting for verified Ready status. Submit now is available after checking the terminal."
+                "Queued in CC; waiting for verified native input (Ready or Working). Submit now is available after checking the terminal."
             }
         };
         if next.note != note {
@@ -610,7 +643,10 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
     request["identity"] = json!(claimed.instance);
     request["screen"] = observation["screen"].clone();
     request["text"] = json!(claimed.text);
-    request["require_ready"] = json!(true);
+    request["require_active"] = json!(true);
+    request["input_guard"] = observation["input_guard"].clone();
+    request["conversation"] = json!(claimed.conversation);
+    request["pending_pi_session"] = json!(claimed.pending_pi_session);
     complete(s, claimed, machine.transport.agent_request(request).await).await
 }
 async fn complete(
@@ -618,11 +654,34 @@ async fn complete(
     mut r: Record,
     response: anyhow::Result<Value>,
 ) -> Result<(), ApiError> {
+    if let Ok(v) = &response
+        && v["ok"]["deferred"] == true
+        && v["ok"]["not_sent"] == true
+        && v["ok"]["sent"] == false
+    {
+        r.baseline = None;
+        let _ = change(s, r, "queued", "Native input changed before paste; nothing was sent. Waiting for a fresh input boundary.").await?;
+        return Ok(());
+    }
     let (phase, note) = match response {
+        Ok(v) if v["ok"]["sent"] == true && v["ok"]["submitted_while_working"] == true => (
+            "submitted",
+            "Submitted to terminal while the agent was working. The native CLI may queue or steer this input; awaiting native conversation confirmation.",
+        ),
         Ok(v) if v["ok"]["sent"] == true => (
             "submitted",
             "Submitted to terminal. Waiting for the message to appear in its native conversation.",
         ),
+        Ok(v)
+            if v["status"] == 400
+                && v["error"]
+                    == "Pi treats leading ! as shell input. Start with FYI: to send it as chat." =>
+        {
+            (
+                "blocked",
+                "Pi treats leading ! as shell input. Start with FYI: to send it as chat. Nothing was pasted.",
+            )
+        }
         Ok(v) if matches!(v["status"].as_u64(), Some(400 | 409)) => (
             "blocked",
             "The agent or terminal changed before paste. Message retained for review; no automatic retry.",
@@ -742,7 +801,11 @@ async fn manual(s: &AppState, r: Record, token: &str) -> Result<(), ApiError> {
         ));
     }
     let before = group(s, r.scope.clone()).await?;
-    if before.iter().take_while(|x| x.id != r.id).any(unresolved) {
+    if before
+        .iter()
+        .take_while(|x| x.id != r.id)
+        .any(blocks_dispatch)
+    {
         return Err(conflict(
             "An earlier message needs delivery confirmation or review before this one can be submitted",
         ));
@@ -877,7 +940,60 @@ mod tests {
             }),
             pending_pi_session: None,
             seen_message: None,
+            command_message: None,
         }
+    }
+    #[tokio::test]
+    async fn pi_command_evidence_settles_only_its_own_receipt_without_chat_seen_or_reuse() {
+        let state =
+            AppState::new(serde_json::from_value(json!({"hosts":[]})).unwrap(), 8080).unwrap();
+        let mut first = fixture();
+        first.text = "!12 was merged".into();
+        first.digest = digest(&first.text);
+        let mut second = first.clone();
+        second.id = uuid::Uuid::new_v4().to_string();
+        let mut rows = vec![first, second];
+        let stored_rows = rows.clone();
+        state.board.with(move |c| {
+            for r in stored_rows {
+                c.execute("INSERT INTO agent_outbox(id,scope,phase,revision,data) VALUES(?1,?2,?3,?4,?5)",params![r.id,r.scope,r.status,r.revision,serde_json::to_string(&r).map_err(storage)?]).map_err(storage)?;
+            }
+            Ok(())
+        }).await.unwrap();
+        let mut observation = json!({"log":{"conversation":"conversation","device":1,"inode":2,"size":200},"users":[],"commands":[{"position":110,"digest":digest("!12 was merged")}]});
+        confirm_observed(&state, &mut rows, &observation)
+            .await
+            .unwrap();
+        assert_eq!(rows[0].status, "command");
+        assert_eq!(rows[0].command_message, Some(110));
+        assert_eq!(rows[0].seen_message, None);
+        assert_eq!(rows[1].status, "submitted");
+        observation["commands"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"position":130,"digest":digest("!12 was merged")}));
+        confirm_observed(&state, &mut rows, &observation)
+            .await
+            .unwrap();
+        assert_eq!(rows[1].status, "command");
+        assert_eq!(rows[1].command_message, Some(130));
+        assert_eq!(rows[1].seen_message, None);
+    }
+    #[test]
+    fn definite_native_submissions_allow_followups_but_uncertainty_and_legacy_do_not() {
+        let mut r = fixture();
+        r.status = "submitted".into();
+        assert!(!blocks_dispatch(&r));
+        for phase in ["queued", "submitting", "uncertain", "blocked"] {
+            r.status = phase.into();
+            assert!(blocks_dispatch(&r));
+        }
+        r.status = "submitted".into();
+        r.baseline = None;
+        r.pending_pi_session = None;
+        assert!(blocks_dispatch(&r));
+        r.pending_pi_session = Some("original-pi-session".into());
+        assert!(!blocks_dispatch(&r));
     }
     #[test]
     fn bulk_review_never_cancels_claimed_input_and_binds_action_and_revisions() {

@@ -39,7 +39,7 @@ Generate a client UUID once. Before POSTing, retain a private intent receipt wit
 
 Use an actual new UUID and the human-authorized message, not this generic example. Always include `id`: leaving it out uses the legacy direct-input path instead of the durable queued intent. Text must be nonblank and at most 12,000 UTF-8 bytes, without controls except newline/tab. The JSON envelope also has an HTTP size limit; do not silently split an oversized exact-text instruction into different intents or loosen server limits.
 
-The response is `{"outbox": ...}`. Check its id, host, session/window/pane, instance and conversation against the original intent; do not assume matching text or card title proves the target. UUIDs cannot be reused for changed content or recipients. The backend consumes the grant and durably stores the intent before dispatch. Busy/Working agents can receive a queued intent when their fresh grant is available; the worker waits for verified Ready and preserves FIFO/process/conversation guards. Do not bypass that wait with manual Submit now or simulated keystrokes.
+The response is `{"outbox": ...}`. Check its id, host, session/window/pane, instance and conversation against the original intent; do not assume matching text or card title proves the target. UUIDs cannot be reused for changed content or recipients. The backend consumes the grant and durably stores the intent before dispatch. Busy/Working agents can receive a queued intent when their fresh grant is available; the worker hands off to verified Ready or Working native input and preserves submission order/process/conversation guards. Unknown status, dialogs, nonempty pi editors, unsupported input layouts and uncertain earlier delivery still hold the intent in CC. Do not bypass those guards with manual Submit now or simulated keystrokes.
 
 Links to files are references, not attachments. A recipient on a different host cannot necessarily access the sender's path; make host/path ownership explicit. This messaging permission does not automatically authorize copying files or editing other projects. Include relevant short excerpts only within the task's scope, never credentials or whole private conversation dumps.
 
@@ -49,12 +49,13 @@ Links to files are references, not attachments. A recipient on a different host 
 
 | Status | Meaning and action |
 | --- | --- |
-| `queued` | Persisted intent; may wait for Ready, association or earlier receipts. Report queued, not delivered. |
+| `queued` | Persisted intent; may wait for verified native input, association or earlier blocked/uncertain receipts. Report queued, not delivered. |
 | `submitting` | Delivery attempt in progress; never submit another copy. |
 | `submitted` | Terminal transport attempted/succeeded; awaiting native-history confirmation. This is not yet Seen. |
 | `seen` | Input observed in the original process-linked conversation. It does not mean work is complete or a reply is available. |
 | `blocked` | Original process/conversation/endpoint or earlier receipt needs review. Do not move it to a replacement agent. |
 | `uncertain` | Delivery cannot be established. Retain the UUID and inspect history/receipt; do not resend automatically. |
+| `command` | Pi interpreted prior input as a native shell command, not user chat. Retain the audit receipt; never automatically resend. A corrected message is a separate human-authorized intent. |
 | `cancelled` / `archived` | Retained metadata; neither undoes any earlier input nor authorizes a new send. |
 
 For a `submitted` or `uncertain` receipt, POST `/api/v1/agents/outbox/{UUID}` with its exact observed numeric revision to observe existing delivery:
@@ -90,3 +91,7 @@ client = BoardClient("http://127.0.0.1:8080")  # Or the configured trusted CC UR
 These are Python methods, not newly added `cc_board.py send` CLI commands. The HTTP helper supplies the exact Origin header and never retries mutations. Its generic error text mentions tickets; apply the message-specific UUID/outbox recovery above for this workflow. Keep TLS verification and configured Host/Origin checks. These existing messaging/outbox routes are outside the initial scoped coordinator/Board OpenAPI document; their handlers and this playbook define the current workflow.
 
 No direct SSH/tmux, provider messaging CLI, terminal viewer, automatic approvals, native session restarts or queue force-submit is part of ordinary coordinator messaging.
+
+Verified Working agents receive ordinary paste/Enter input through their CLI’s native queue/steering behavior; CC does not interrupt the running turn. Definite, anchored Submitted receipts no longer hold later messages until history catches up. Uncertain, blocked and legacy unanchored submissions remain barriers. Submitted is transport evidence, not proof the model has read the input; Seen still requires the original process-linked native user record. A strictly pre-paste guard change may defer the same intent with explicit not-sent evidence; no actual or uncertain input is replayed.
+
+Pi leading !/!! text is native shell syntax, not literal chat. CC now rejects such chat before paste; use a faithful conversational prefix such as FYI: when authorized, and preserve exact-text requests by clarifying instead of silently rewriting.

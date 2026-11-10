@@ -593,6 +593,7 @@ export class AttentionQueue {
     const chosen = this.chosen(), token = this.detailData?.message_token;
     if (this.sendButton.disabled || !chosen || !token) return;
     const key = this.draftKey(), selected = this.selected, text = this.composer.value;
+    if(this.detailData?.provider==='pi'&&text.trimStart().startsWith('!')){this.sendFeedback.textContent='Pi treats leading ! as shell input. Start with FYI: to send it as chat. Your draft was kept.';return;}
     const baselineReply = this.latestReply(), baselineActivity = this.activitySignature();
     this.submitting = true; this.detailRequest++; this.loadingDetail = false; this.updateSend(); this.sendFeedback.textContent = 'Sending…';
     let uncertain = true;
@@ -600,7 +601,7 @@ export class AttentionQueue {
       const entry=await this.outbox.send({host:chosen.h.id,session:chosen.item.session,window:chosen.item.window,pane:chosen.item.pane,instance:this.detailData?.instance||'',conversation:this.detailData?.selected},token,text);
       uncertain = false; this.drafts.delete(key);
       if(entry.status!=='queued')this.pendingReplies.set(key, { at: Date.now(), reply: baselineReply, activity: baselineActivity });
-      if (this.selected === selected) { this.composer.value = ''; this.fitComposer(); this.sendFeedback.textContent = entry.status==='queued'?'Queued in CC. Your message remains visible until delivery is resolved.':'Submitted to terminal; acceptance is not yet confirmed.'; }
+      if (this.selected === selected) { this.composer.value = ''; this.fitComposer(); this.sendFeedback.textContent = entry.status==='queued'?'Queued for delivery to the native CLI, including while it is working. Your message stays visible.':'Submitted to the native CLI; it may queue the message while working. Native history has not confirmed it yet.'; }
     } catch (error) {
       if(error instanceof OutboxSendError)uncertain=error.uncertain;
       if (uncertain) this.uncertain.add(key);

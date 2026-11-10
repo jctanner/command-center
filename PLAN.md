@@ -14,6 +14,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
+- [Task 0043: Codex kind-only environment envelope](docs/tasks/done/0043-codex-kind-only-environment-context.md)
+
+- [Task 0042: pi command-mode receipts and approved recovery](docs/tasks/done/0042-pi-command-input-receipts.md)
+
+- [Task 0041: native busy-agent input](docs/tasks/done/0041-native-busy-agent-messages.md)
+
 - [Task 0040: Claude paste-wrapper display](docs/tasks/done/0040-claude-paste-wrapper-display.md)
 
 - [Task 0039: continuous message bubble handoff](docs/tasks/done/0039-outbox-message-handoff-gap.md)
@@ -99,6 +105,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Fixed bugs
 
+- [Bug 0024: environment provenance omission](docs/bugs/fixed/0024-codex-environment-metadata-provenance-omission.md)
+
+- [Bug 0023: pi bang-shell receipt](docs/bugs/fixed/0023-pi-bang-input-stuck-receipt.md)
+
 - [Bug 0022: Claude paste envelope](docs/bugs/fixed/0022-claude-paste-envelope-visible-in-chat.md)
 
 - [Bug 0021: Seen/history bubble gap](docs/bugs/fixed/0021-outbox-seen-before-history-bubble-gap.md)
@@ -145,6 +155,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-10: Codex environment envelope](docs/notes/2026-11-10-codex-environment-envelope.md)
+
+- [2026-11-09: pi command receipts](docs/notes/2026-11-09-pi-command-receipts.md)
+
+- [2026-11-09: native busy input](docs/notes/2026-11-09-native-busy-input.md)
 
 - [2026-11-09: Claude paste display](docs/notes/2026-11-09-claude-paste-display.md)
 

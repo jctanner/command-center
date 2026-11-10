@@ -122,7 +122,7 @@ Terminal stream `error` events may include `scope: "connection"` for viewer crea
 
 ## Codex injected context and visible-history revisions
 
-Codex response-item user records can contain harness-generated interruption or environment context. Recognized internal content-item kinds with explicit harness provenance are excluded from displayed messages, launcher titles and outbox user-confirmation evidence. Genuine human XML and ambiguous/mixed metadata remain literal. Native logs and structured interruption lifecycle state are unchanged.
+Codex response-item user records can contain harness-generated interruption or environment context. Recognized internal content-item kinds with explicit native harness provenance are excluded from displayed messages, launcher titles and outbox user-confirmation evidence. Genuine human XML and ambiguous/mixed metadata remain literal. Native logs and structured interruption lifecycle state are unchanged.
 
 Visible Codex history uses its own version prefix; clients should treat versions as opaque. A pre-filter known_version returns history_reset=true so open clients discard old cached pages. Native reply/receipt version and assistant cursors are unchanged by this presentation filter.
 
@@ -141,3 +141,17 @@ Standalone `GET /hosts/{id}/agents/launch-options` and Board ticket prepare acce
 ## Codex guardian conversation association
 
 Codex automatic review may keep an additional guardian thread writer in the same native process. Conversation discovery excludes session metadata explicitly marked source.subagent, source=subagent, or thread_source=guardian_review/subagent. Such histories do not participate in user conversation selection, Ready/Working evidence or outbox delivery confirmation. Main-thread owned writers remain required; two genuine roots stay ambiguous. Existing receipt conversation hashes and UUIDs do not change. This filtering does not approve tools, replay uncertain delivery or transfer queued messages.
+
+## Busy native agent input
+
+Durable queued messages dispatch to process-linked verified Ready or Working agents through ordinary bracketed paste and Enter. Each native CLI owns its busy queue/steering semantics; CC sends no interrupt. Pi requires a recognized empty editor bound to cwd/width while ignoring its output spinner. Busy Codex/Claude observations can refresh after SSH output advances, but still require a second exact screen fingerprint before paste. All helpers revalidate process, conversation, mode and approvals/dialogs immediately before paste. Changed input guards produce explicit pre-paste not-sent deferral of the same intent; post-paste/Enter or transport uncertainty is never retried.
+
+Definite anchored Submitted receipts no longer wait for native-history Seen before later messages can be submitted in order. Unknown, blocked, uncertain and legacy unanchored receipts still hold the queue. Identical inputs need separate post-baseline, unused native message positions. A busy CLI can delay persisting its user record: Submitted honestly means terminal transport completed; Seen means the exact input appeared in the original native conversation, not that the model acted on it. No new request fields are needed on the public message endpoint.
+
+## Pi native command receipts
+
+Pi treats leading !/!! input as shell mode. Ordinary CC chat rejects this before paste and keeps the browser draft; prefix conversational references with FYI: instead. Historical Submitted/Uncertain receipts can become command only from exact post-baseline active-branch bashExecution metadata in the same process-linked log (conversation/device/inode), with a matching digest and unused position. Provider records must explicitly state context exclusion to distinguish ! from !!. Command output is never returned as receipt evidence.
+
+The command outcome exposes command_message (native byte position), leaves seen_message null, and is not user-chat Seen or permission to replay. It is retained for explicit archival; Submit now and Check delivery cannot resubmit it. Existing uncertain/legacy cases without this proof remain unresolved.
+
+Codex also emits a single environments.environment_context input_text item without optional content_item_metadata. Filtering recognizes only that observed envelope with a generated msg_UUID identifier, turn UUID and positive numeric create_time. Missing/invalid IDs, explicitly supplied contradictory metadata, mixed human content, other kind-only records and literal XML remain visible. The visible-history prefix is codex-visible-v2; old prefixes trigger history_reset without changing native log versions, reply cursors or receipt positions.

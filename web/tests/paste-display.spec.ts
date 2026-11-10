@@ -28,3 +28,15 @@ for(const provider of ['claude','codex','pi'])test(`${provider} paste envelope d
  // API fixture/native records were never rewritten by the presentation cleanup.
  expect(messages[0].text).toBe(wrapped);
 });
+
+test('pi shell input outcome stays distinct from Seen and new bang chat keeps its draft',async({page})=>{
+ await page.setViewportSize({width:393,height:852});const now=Math.floor(Date.now()/1000);let sends=0;
+ const activity={state:'ready',source:'pi_bridge',observed_at:now,evidence_at:now};const receipt={id:'command-receipt',host:'local',session:'$0',window:'@0',pane:'%0',instance:'process',conversation:'conversation',text:'!12 was merged',status:'command',note:'Pi interpreted this input as a native shell command, not a user chat message. No resend was made.',revision:4,created_at:1,updated_at:2,seen_message:null,command_message:10};
+ await page.route('**/api/v1/agents/outbox',r=>r.fulfill({json:{entries:[receipt]}}));
+ await page.route('**/api/v1/queue',r=>r.fulfill({json:{checked_at:now,hosts:[{id:'local',name:'Fixture',connection_revision:'revision',error:null,limited:false,items:[{id:'fixture',session:'$0',session_name:'fixture',window:'@0',window_name:'fixture',pane:'%0',project:'/fixture',agent:'pi',prompt:'Live agent',context:'',status:'live',activity,attention:{instance:'process'}}]}]}}));
+ await page.route('**/agents/conversation?*',r=>r.fulfill({json:{provider:'pi',association:'process',selected:'conversation',instance:'process',context:'',project:'/fixture',activity,attention:false,send_available:true,message_token:'unused',conversations:[],messages:[],activities:[]}}));
+ page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith('/agents/message'))sends++;});
+ await page.goto(base+'/#/queue');await page.locator('.queue-card').click();const bubble=page.locator('.agent-history .agent-outbox-message');await expect(bubble).toContainText('Interpreted as CLI command');await expect(bubble).toContainText('not a user chat message');await expect(bubble.locator('.outbox-spinner')).toHaveCount(0);
+ const composer=page.getByRole('textbox',{name:'Message to agent',exact:true});await composer.fill('!12 was merged');await composer.press('Enter');await expect(page.getByText('Pi treats leading ! as shell input. Start with FYI: to send it as chat. Your draft was kept.',{exact:true})).toBeVisible();await expect(composer).toHaveValue('!12 was merged');expect(sends).toBe(0);
+ await bubble.getByRole('button',{name:'Message details',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Agent outbox'});await expect(dialog.getByRole('button',{name:'Submit now',exact:true})).toHaveCount(0);await expect(dialog.getByRole('button',{name:'Archive receipt',exact:true})).toHaveCount(1);
+});

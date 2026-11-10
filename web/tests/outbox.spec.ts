@@ -38,7 +38,7 @@ test.beforeEach(async()=>{
  dir=mkdtempSync(join(tmpdir(),'cc-outbox-'));socket=join(dir,'tmux.sock');home=join(dir,'codex-home');config=join(dir,'config');
  const server=createServer();const port=await new Promise<number>(resolve=>server.listen(0,'127.0.0.1',()=>resolve((server.address() as {port:number}).port)));await new Promise<void>(resolve=>server.close(()=>resolve()));base=`http://127.0.0.1:${port}`;
  mkdirSync(join(home,'sessions/2026/11/03'),{recursive:true});log=join(home,'sessions/2026/11/03/rollout.jsonl');
- header=JSON.stringify({type:'session_meta',payload:{id:nativeSession,cwd:dir}})+'\n';writeFileSync(log,header);phase('working');
+ header=JSON.stringify({type:'session_meta',payload:{id:nativeSession,cwd:dir}})+'\n';writeFileSync(log,header);phase('working');phase('unknown');
  copyFileSync('/bin/cat',join(dir,'codex'));mkdirSync(join(dir,'bin'));
  writeFileSync(join(dir,'bin/tmux'),`#!/usr/bin/python3\nimport os,sys\nfrom pathlib import Path\nif Path(os.environ['CC_TEST_FAIL_ENTER']).exists() and 'send-keys' in sys.argv and sys.argv[-1]=='Enter': sys.exit(1)\nos.execv('/usr/bin/tmux',['tmux',*sys.argv[1:]])\n`);chmodSync(join(dir,'bin/tmux'),0o700);
  tmux('-f','/dev/null','new-session','-d','-s','fixture','-n','codex','-c',dir,`exec env CODEX_HOME='${home}' '${join(dir,'codex')}'`);
@@ -49,7 +49,7 @@ test.beforeEach(async()=>{
 });
 test.afterEach(async()=>{await stop();if(socket)spawnSync('/usr/bin/tmux',['-S',socket,'kill-server']);if(dir)rmSync(dir,{recursive:true,force:true});});
 
-test('busy messages survive restart, deduplicate IDs, cancel safely and dispatch FIFO only when ready',async()=>{
+test('deferred messages survive restart, deduplicate IDs, cancel safely and submit FIFO when input is verified',async()=>{
  const first=await enqueue('CC_OUTBOX_CANCELLED');
  const repeated=await post('/api/v1/hosts/local/agents/message',{id:first.id,token:first.originalToken,text:first.text});expect(repeated.status).toBe(200);
  expect((await post('/api/v1/hosts/local/agents/message',{id:first.id,token:first.originalToken,text:'different'})).status).toBe(409);
@@ -58,7 +58,7 @@ test('busy messages survive restart, deduplicate IDs, cancel safely and dispatch
  expect((await action(first.id,'cancel')).status).toBe(200);
  const a=await enqueue('CC_OUTBOX_FIRST');const b=await enqueue('CC_OUTBOX_SECOND');phase('ready');
  await expect.poll(async()=>(await entry(a.id)).status,{timeout:15000}).toBe('submitted');
- expect((await entry(b.id)).status).toBe('queued');expect(tmux('capture-pane','-p','-t',pane)).toContain(a.text);expect(tmux('capture-pane','-p','-t',pane)).not.toContain(b.text);expect(tmux('capture-pane','-p','-t',pane)).not.toContain(first.text);
+ await expect.poll(async()=>(await entry(b.id)).status,{timeout:15000}).toBe('submitted');expect(tmux('capture-pane','-p','-t',pane)).toContain(a.text);expect(tmux('capture-pane','-p','-t',pane)).toContain(b.text);expect(tmux('capture-pane','-p','-t',pane)).not.toContain(first.text);
  user(a.text);await expect.poll(async()=>(await entry(a.id)).status,{timeout:15000}).toBe('seen');
  await expect.poll(async()=>(await entry(b.id)).status,{timeout:15000}).toBe('submitted');user(b.text);
  await expect.poll(async()=>(await entry(b.id)).status,{timeout:15000}).toBe('seen');
@@ -89,7 +89,7 @@ test('replacement processes and endpoint edits cannot inherit queued input',asyn
  const r=await enqueue('CC_OUTBOX_WRONG_PROCESS');
  tmux('respawn-pane','-k','-t',pane,'-c',dir,`exec env CODEX_HOME='${home}' '${join(dir,'codex')}'`);await expect.poll(()=>tmux('display-message','-p','-t',pane,'#{pane_current_command}')).toBe('codex');register();phase('ready');
  await expect.poll(async()=>(await entry(r.id)).status,{timeout:15000}).toBe('blocked');expect(tmux('capture-pane','-p','-t',pane)).not.toContain(r.text);
- phase('working');const other=await enqueue('CC_OUTBOX_WRONG_ENDPOINT');const settings=await(await fetch(base+'/api/v1/settings/hosts')).json();const alias=join(dir,'alias.sock');symlinkSync(socket,alias);
+ phase('unknown');const other=await enqueue('CC_OUTBOX_WRONG_ENDPOINT');const settings=await(await fetch(base+'/api/v1/settings/hosts')).json();const alias=join(dir,'alias.sock');symlinkSync(socket,alias);
  const changed=await fetch(base+'/api/v1/hosts/local',{method:'PUT',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({revision:settings.revision,host:{name:'Same physical server, new endpoint',socket:alias,ssh:null,ssh_config:null}})});expect(changed.status).toBe(200);phase('ready');
  await expect.poll(async()=>(await entry(other.id)).status,{timeout:15000}).toBe('blocked');expect(tmux('capture-pane','-p','-t',pane)).not.toContain(other.text);
 });
@@ -162,7 +162,7 @@ async function bulkApply(preview:any){return post('/api/v1/agents/outbox/bulk',{
 function fixtureSql(script:string){return run('python3',['-c',script,config+'.board.sqlite3']);}
 
 test('bulk cancellation rejects a changed set atomically, persists and retains UUID idempotency after archive',async()=>{
- const first=await enqueue('CC_BULK_FIRST'),second=await enqueue('CC_BULK_SECOND');await expect.poll(async()=>(await entry(first.id)).note).toContain('current turn');
+ const first=await enqueue('CC_BULK_FIRST'),second=await enqueue('CC_BULK_SECOND');await expect.poll(async()=>(await entry(first.id)).note).toContain('verified');
  const stale=await bulkPreview('cancel');expect(stale.count).toBe(2);const third=await enqueue('CC_BULK_THIRD');expect((await bulkApply(stale)).status).toBe(409);
  for(const receipt of [first,second,third])expect((await entry(receipt.id)).status).toBe('queued');
  const before=tmux('capture-pane','-p','-t',pane);const fresh=await bulkPreview('cancel');const response=await bulkApply(fresh);expect(response.status).toBe(200);expect((await response.json()).count).toBe(3);
@@ -183,7 +183,7 @@ test('bulk archive includes old receipts across machines beyond the recent page 
 });
 
 test('mobile bulk controls require confirmation and preserve browser-only receipts',async({page})=>{
- const first=await enqueue('CC_BULK_PHONE_ONE');await enqueue('CC_BULK_PHONE_TWO');await expect.poll(async()=>(await entry(first.id)).note).toContain('current turn');
+ const first=await enqueue('CC_BULK_PHONE_ONE');await enqueue('CC_BULK_PHONE_TWO');await expect.poll(async()=>(await entry(first.id)).note).toContain('verified');
  await page.addInitScript(()=>localStorage.setItem('cc-agent-outbox-pending-v1',JSON.stringify([{id:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',host:'local',session:'$0',window:'@0',pane:'%12345',instance:'0'.repeat(64),text:'BROWSER_ONLY_RECEIPT',status:'uncertain',note:'Fixture browser-only uncertainty',revision:0,created_at:Date.now(),updated_at:Date.now()}])));
  await page.setViewportSize({width:393,height:852});await page.goto(base+'/#/queue');await page.locator('.queue-card').click();await page.getByRole('button',{name:'Details',exact:true}).click();await page.locator('.queue-agent-metadata').getByRole('button',{name:'Outbox',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Agent outbox',exact:true});
  let posts=0;page.on('request',r=>{if(r.url().endsWith('/outbox/bulk')&&r.method()==='POST')posts++;});
@@ -200,7 +200,7 @@ test('bulk archive discloses uncertainty and a lost apply response is never retr
 });
 
 
-test('first Pi input confirms after lazy log creation and releases the next queued message',async({page})=>{
+test('Pi sequential submissions before lazy log creation confirm as distinct native inputs',async({page})=>{
  copyFileSync('/bin/cat',join(dir,'pi'));
  log=join(dir,'pi-session.jsonl');
  tmux('respawn-pane','-k','-t',pane,`exec env PI_CODING_AGENT_DIR='${home}' '${join(dir,'pi')}'`);
@@ -213,7 +213,7 @@ test('first Pi input confirms after lazy log creation and releases the next queu
  const first=await enqueue('PI_FIRST_INPUT');
  await expect.poll(async()=>(await entry(first.id)).status).toBe('submitted');
  const second=await enqueue('PI_SECOND_INPUT');
- await expect.poll(async()=>(await entry(second.id)).status).toBe('queued');
+ await expect.poll(async()=>(await entry(second.id)).status,{timeout:15000}).toBe('submitted');
  const header=JSON.stringify({type:'session',version:3,id:nativeSession,cwd:dir})+'\n';
  writeFileSync(log,header+JSON.stringify({type:'message',id:'first',parentId:null,message:{role:'user',content:[{type:'text',text:'PI_FIRST_INPUT'}]}})+'\n');publish('first');
  await expect.poll(async()=>(await entry(first.id)).status,{timeout:15000}).toBe('seen');
@@ -225,7 +225,8 @@ test('first Pi input confirms after lazy log creation and releases the next queu
  await expect(page.locator('.agent-history .agent-message.user')).toHaveCount(2);
 });
 
-test('launched Codex guardian writer does not block queued input or make a working parent Ready',async()=>{
+test('launched Codex guardian writer allows busy input without making a working parent Ready',async()=>{
+ phase('working');
  const childId='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',childLog=join(home,'sessions/2026/11/03/guardian.jsonl');
  mkdirSync(join(home,'thread-writer-locks'));
  writeFileSync(childLog,JSON.stringify({type:'session_meta',payload:{id:childId,session_id:nativeSession,parent_thread_id:nativeSession,cwd:dir,source:{subagent:{other:'guardian'}},thread_source:'guardian_review'}})+'\n'+JSON.stringify({type:'event_msg',timestamp:new Date().toISOString(),payload:{type:'task_complete',turn_id:'review',root_turn_id:currentTurn}})+'\n');
@@ -233,8 +234,7 @@ test('launched Codex guardian writer does not block queued input or make a worki
  await stop();tmux('respawn-pane','-k','-t',pane,'-c',dir,`exec env CODEX_HOME='${home}' CC_LAUNCH_ID=fixture-launch /bin/bash -c 'exec -a codex /usr/bin/python3 "$@"' -- '${script}' '${join(home,'thread-writer-locks',nativeSession+'.lock')}' '${join(home,'thread-writer-locks',childId+'.lock')}' '${log}' '${childLog}'`);
  await expect.poll(()=>tmux('capture-pane','-p','-t',pane)).toContain('fixture ready');await start();
  const d=await detail();expect(d.association).toBe('process');expect(d.activity.state).toBe('working');expect(d.conversations).toHaveLength(1);
- const receipt=await enqueue('GUARDIAN_PARENT_MESSAGE');await expect.poll(async()=>(await entry(receipt.id)).status).toBe('queued');expect(tmux('capture-pane','-p','-t',pane)).not.toContain(receipt.text);
- phase('ready');await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('submitted');
+ const receipt=await enqueue('GUARDIAN_PARENT_MESSAGE');await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('submitted');expect((await detail()).activity.state).toBe('working');
  expect(tmux('capture-pane','-p','-t',pane).split('received:'+receipt.text)).toHaveLength(2);
  user(receipt.text);await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('seen');
  expect((await entries()).filter(x=>x.id===receipt.id)).toHaveLength(1);
@@ -273,4 +273,15 @@ test('fast confirmation before enqueue response retains the local bubble until n
  await expect(bubble).toContainText('Seen in conversation',{timeout:20000});await expect(bubble.locator('.outbox-spinner')).toHaveCount(0);await expect(composer).toHaveValue('');
  await expect(page.locator('.agent-message.user[data-message-id]').filter({hasText:text})).toHaveCount(0);await page.unroute('**/api/v1/hosts/local/agents/conversation?*');
  await expect(page.locator('.agent-message.user[data-message-id]').filter({hasText:text})).toHaveCount(1,{timeout:20000});await expect(bubble).toHaveCount(0);
+});
+
+
+test('busy native agents receive sequential input without waiting for a turn or earlier native history',async()=>{
+ phase('working');const first=await enqueue('NATIVE_BUSY_MESSAGE');await expect.poll(async()=>(await entry(first.id)).status,{timeout:15000}).toBe('submitted');
+ expect((await entry(first.id)).note).toContain('while the agent was working');expect((await detail()).activity.state).toBe('working');
+ const second=await enqueue('NATIVE_BUSY_MESSAGE');await expect.poll(async()=>(await entry(second.id)).status,{timeout:15000}).toBe('submitted');
+ expect((await entry(first.id)).status).toBe('submitted');expect((await detail()).activity.state).toBe('working');
+ // Identical intents each need their own distinct native history position.
+ user(first.text);await expect.poll(async()=>(await entry(first.id)).status,{timeout:15000}).toBe('seen');expect((await entry(second.id)).status).toBe('submitted');
+ user(second.text);await expect.poll(async()=>(await entry(second.id)).status,{timeout:15000}).toBe('seen');expect((await entry(first.id)).seen_message).not.toBe((await entry(second.id)).seen_message);
 });
