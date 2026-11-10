@@ -985,51 +985,61 @@ def event_time(value):
         pass
     return None
 
+def codex_tail_activity(data, now):
+    """Replay a complete bounded window; None means a root anchor is missing."""
+    turn, current, stamp, event = None, None, None, None
+    for line in data.splitlines():
+        try:
+            record = json.loads(line)
+        except (ValueError, UnicodeError):
+            continue
+        if not isinstance(record, dict) or record.get('type') != 'event_msg': continue
+        payload = record.get('payload')
+        if not isinstance(payload, dict): continue
+        kind, ident = payload.get('type'), payload.get('turn_id')
+        # Long-running turns can produce tools for hours. Only progress
+        # explicitly scoped to the already verified root turn refreshes it;
+        # child items, token counts and arbitrary log writes cannot.
+        if kind == 'item_completed' and current == 'working' and ident == turn:
+            progress = event_time(record.get('timestamp'))
+            if progress is not None and stamp is not None and stamp <= progress <= now + 30:
+                stamp, event = progress, 'item_completed'
+            continue
+        if kind not in ('task_started', 'task_complete', 'turn_aborted') or not isinstance(ident, str) or not ident: continue
+        if payload.get('root_turn_id') and payload['root_turn_id'] != ident: continue
+        if kind != 'task_started' and turn is not None and turn != ident: continue
+        turn = ident
+        stamp = event_time(record.get('timestamp'))
+        current = 'working' if kind == 'task_started' else 'ready'
+        event = kind
+    if not current:
+        return None
+    if stamp is None or stamp > now + 30 or stamp < 0:
+        return state_result('unknown', 'codex_events', 'Provider event has an invalid timestamp')
+    if current == 'working' and now - stamp > 900:
+        return state_result('unknown', 'codex_events', 'Working evidence is older than 15 minutes', stamp)
+    return state_result(current, 'codex_events', f'Codex reported {event}', stamp, hashlib.sha256(f'{turn}:{event}:{stamp}'.encode()).hexdigest())
+
 def codex_activity(path, now):
-    """Root turn transitions only; arbitrary output is never evidence of readiness."""
+    """Adaptive bounded root lookup; recent root progress refreshes long turns."""
     try:
         with open(path, 'rb') as source:
-            size = os.fstat(source.fileno()).st_size
-            start = max(0, size - 512 * 1024)
-            source.seek(start)
-            if start: source.readline(512 * 1024)
-            data = source.read(512 * 1024)
-        if data and not data.endswith(b'\n'):
-            return state_result('unknown', 'codex_events', 'Provider update is incomplete')
-        turn, current, stamp, event = None, None, None, None
-        for line in data.splitlines():
-            try:
-                record = json.loads(line)
-            except (ValueError, UnicodeError):
-                continue
-            if not isinstance(record, dict) or record.get('type') != 'event_msg': continue
-            payload = record.get('payload')
-            if not isinstance(payload, dict): continue
-            kind, ident = payload.get('type'), payload.get('turn_id')
-            # Long-running turns can produce tools for hours. Only progress
-            # explicitly scoped to the already verified root turn refreshes it;
-            # child items, token counts and arbitrary log writes cannot.
-            if kind == 'item_completed' and current == 'working' and ident == turn:
-                progress = event_time(record.get('timestamp'))
-                if progress is not None and stamp is not None and stamp <= progress <= now + 30:
-                    stamp, event = progress, 'item_completed'
-                continue
-            if kind not in ('task_started', 'task_complete', 'turn_aborted') or not isinstance(ident, str) or not ident: continue
-            if payload.get('root_turn_id') and payload['root_turn_id'] != ident: continue
-            if kind != 'task_started' and turn is not None and turn != ident: continue
-            turn = ident
-            stamp = event_time(record.get('timestamp'))
-            current = 'working' if kind == 'task_started' else 'ready'
-            event = kind
-        if not current:
-            return state_result('unknown', 'codex_events', 'No root turn transition in the bounded log tail')
-        if stamp is None or stamp > now + 30 or stamp < 0:
-            return state_result('unknown', 'codex_events', 'Provider event has an invalid timestamp')
-        if current == 'working' and now - stamp > 900:
-            return state_result('unknown', 'codex_events', 'Working evidence is older than 15 minutes', stamp)
-        return state_result(current, 'codex_events', f'Codex reported {event}', stamp, hashlib.sha256(f'{turn}:{event}:{stamp}'.encode()).hexdigest())
+            end=os.fstat(source.fileno()).st_size
+            for limit in (512*1024, 2*1024*1024, 8*1024*1024):
+                start=max(0,end-limit);source.seek(start);data=source.read(end-start)
+                if data and not data.endswith(b'\n'):
+                    return state_result('unknown','codex_events','Provider update is incomplete')
+                if start:
+                    # Discard only the initial partial record inside this budget.
+                    _,separator,data=data.partition(b'\n')
+                    if not separator: data=b''
+                result=codex_tail_activity(data,now)
+                if result is not None: return result
+                if start==0: break
+        return state_result('unknown','codex_events','No root turn transition within the bounded 8 MiB status window')
     except (OSError, ValueError):
         return state_result('unknown', 'codex_events', 'Process-linked event log is unavailable')
+
 
 def claude_log_activity(path, session, now):
     try: records=bounded_events(path)

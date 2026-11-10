@@ -10,9 +10,15 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 ## Active work
 
 
+
+
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0045: machine-qualified agent file links](docs/tasks/done/0045-agent-chat-file-links.md)
+
+- [Task 0044: Codex root status look-back](docs/tasks/done/0044-codex-status-root-lookback.md)
 
 - [Task 0043: Codex kind-only environment envelope](docs/tasks/done/0043-codex-kind-only-environment-context.md)
 
@@ -101,9 +107,15 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 ## Open bugs
 
 
+
+
 - [Bug 0005: Pi first input unconfirmed](docs/bugs/open/0005-pi-first-input-unconfirmed.md)
 
 ## Fixed bugs
+
+- [Bug 0026: assistant file links disabled](docs/bugs/fixed/0026-agent-markdown-file-links-disabled.md)
+
+- [Bug 0025: root lifecycle outside status tail](docs/bugs/fixed/0025-codex-root-status-outside-tail.md)
 
 - [Bug 0024: environment provenance omission](docs/bugs/fixed/0024-codex-environment-metadata-provenance-omission.md)
 
@@ -155,6 +167,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-10: agent report file links](docs/notes/2026-11-10-agent-report-file-links.md)
+
+- [2026-11-10: Codex status look-back](docs/notes/2026-11-10-codex-status-lookback.md)
 
 - [2026-11-10: Codex environment envelope](docs/notes/2026-11-10-codex-environment-envelope.md)
 

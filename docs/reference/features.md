@@ -286,3 +286,7 @@ Claude session auto-selection also handles resumed conversations whose files rem
 ### Claude pasted input display
 
 Claude can store pasted human messages inside a matching pasted_content envelope. Chat shows the exact original CC-submitted text only when a Seen receipt proves that envelope’s message position, process, conversation and inner text. Receipt arrival can update an already-rendered bubble without changing native history, cursors or delivery. Without that evidence, XML remains literal; malformed/nested wrappers and other providers are unchanged.
+
+### Agent report file links
+
+Assistant Markdown file links are explicit Files actions scoped to the agent’s machine and connection. Absolute paths open there; relative paths resolve from its project directory. Markdown opens in Preview with the existing TOC, editor and shared unsaved-document bank. File contents are fetched only after a click. External HTTP/HTTPS/mail links retain their safe browser behavior; unsupported schemes, network paths, fragments-only destinations and malformed paths remain non-navigable. File links never become raw browser filesystem or CC API navigation. Stale machine references/responses are rejected, and compact navigation sends no terminal traffic. File line/section fragments are not scrolled to automatically.

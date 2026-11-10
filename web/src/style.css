@@ -1037,3 +1037,7 @@ button:disabled { opacity: .5; cursor: default; }
 .agent-markdown pre .chat-token-property { color:var(--cc-blue); }
 .agent-markdown pre .chat-token-comment { color:var(--cc-muted);font-style:italic; }
 .agent-markdown pre .chat-token-invalid { color:var(--cc-red); }
+
+.agent-message .agent-markdown .chat-file-link { display:inline;padding:0;min-height:0;border:0;background:transparent;color:var(--cc-blue);font:inherit;text-align:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer;overflow-wrap:anywhere; }
+.agent-message .agent-markdown .chat-file-link:focus-visible { outline:2px solid var(--cc-blue);outline-offset:3px; }
+.chat-file-error { display:block;color:var(--cc-red);font-size:.9em; }

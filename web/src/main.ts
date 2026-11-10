@@ -55,7 +55,14 @@ async function openTicketTerminal(target:QueueTarget) {
   if (hostId !== target.host) chooseHost(target.host);
   else { closeTerminal(); await refresh(); }
 }
-const attention = new AttentionQueue(openTicketTerminal);
+const attention = new AttentionQueue(openTicketTerminal,async target=>{
+  const current=()=>hosts.some(h=>h.id===target.host&&h.connection_revision===target.connection);
+  if(!current())throw Error('Machine changed. Refresh the agent before opening its file.');
+  navigateWorkspace('files');await ensureFiles('workspace');
+  if(currentWorkspace()!=='files')return;
+  if(!current()||!files){notice('Machine changed or Files is unavailable. Refresh before opening this file.');return;}
+  try{await files.openDocument(target.host,target.path,target.connection);}catch(error){notice(String(error));}
+});
 const board = new TicketBoard(openTicketTerminal,async(host,path)=>{el('toggle-files').click();await ensureFiles('workspace');files?.openLocation(host,path);},async target=>{el('show-queue').click();await attention.openTarget(target);});
 el('ticket-from-terminal').onclick=()=>{const w=currentWindow(),pane=w?.panes.find(p=>p.active),session=sessions.find(s=>s.id===selection().session);void board.create({host:hostId,session:session?.id||'',session_name:session?.name||'',window:w?.id||'',window_number:w?.index,window_name:w?.name||'',pane:pane?.id||'',path:pane?.cwd||''});};
 document.addEventListener('cc-create-ticket',((event:CustomEvent<Partial<TicketContext>>)=>{void board.create(event.detail);}) as EventListener);

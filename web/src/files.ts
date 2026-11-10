@@ -149,6 +149,18 @@ export class FileWorkspace {
     if(this.restoreBrowser){this.restoreBrowser=false;if(this.mode==='context'&&this.follow&&this.context.cwd)this.setContext(this.context);else void this.browse(this.root||this.locations[this.host]||'~',false);}
     const restore=this.mode==='workspace'&&!this.active&&[...this.documents.values()].at(-1);if(restore)void this.openFile(restore.host,restore.path);void this.checkExternal();
   }
+  async openDocument(host:string,path:string,connection:string){
+    if(this.mode!=='workspace'||!this.visible)return;
+    if(!this.hosts.some(h=>h.id===host&&h.connection_revision===connection))throw Error('Machine changed. Refresh before opening this file.');
+    const existing=this.documents.get(key(host,path));
+    if(existing?.state&&existing.connection!==connection)throw Error('This file has a saved draft from a previous connection. Review it before reopening.');
+    if(this.host!==host)this.chooseMachine(host,false);
+    const generation=++this.openGeneration;
+    await this.browse(path.slice(0,path.lastIndexOf('/'))||'/');
+    if(generation!==this.openGeneration||!this.visible||this.mode!=='workspace')return;
+    if(!this.hosts.some(h=>h.id===host&&h.connection_revision===connection))throw Error('Machine changed. Refresh before opening this file.');
+    await this.openFile(host,path,true);
+  }
   openLocation(host:string,path:string){if(!this.hosts.some(h=>h.id===host))return;this.openGeneration++;if(this.host!==host)this.chooseMachine(host,false);void this.browse(path);}
   setHosts(hosts: Host[]) {
     const old = this.hosts.find(h => h.id === this.host)?.connection_revision;
@@ -281,7 +293,9 @@ export class FileWorkspace {
     try {
       const machine = this.hosts.find(h => h.id === host); if (!machine) throw new Error('This machine is no longer configured.');
       const data = await request<FileData>(this.url(host, 'file', path, machine.connection_revision));
+      if(data.host!==host||data.connection_revision!==machine.connection_revision||this.hosts.find(h=>h.id===host)?.connection_revision!==machine.connection_revision)throw new Error('Machine connection changed while opening the file. Existing drafts were kept.');
       const canonical = this.documents.get(key(host, data.path));
+      if(canonical?.state&&canonical.connection!==data.connection_revision)throw new Error('This file has a saved draft from a previous connection. Review it before reopening.');
       if (canonical?.state) { if (rendered && isMarkdown(data.path)) canonical.rendered = true; if (generation === this.openGeneration) this.activate(canonical); return; }
       const doc = canonical || this.document(host, data.path);
       if (rendered && isMarkdown(data.path)) doc.rendered = true;

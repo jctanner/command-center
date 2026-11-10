@@ -1,15 +1,37 @@
 import { highlightChatCode } from './chat-code';
 import { markdownContent } from './markdown';
 
-export function chatMarkdown(text: string): HTMLElement {
+export type ChatFileContext={project:string;machine:string;openFile:(path:string)=>Promise<void>};
+function filePath(href:string,project:string):string|null{
+  try{
+    const raw=href.trim();
+    if(!raw||raw.startsWith('#')||/^[a-z][a-z0-9+.-]*:/i.test(raw)||raw.startsWith('//'))return null;
+    const path=decodeURIComponent(raw.split(/[?#]/,1)[0]);
+    if(!path||path.startsWith('//')||path.startsWith('~')||/^[a-z][a-z0-9+.-]*:/i.test(path)||/[\\\x00-\x1f\x7f-\x9f]/.test(path))return null;
+    if(!path.startsWith('/')&&!project.startsWith('/'))return null;
+    const parts:string[]=[];
+    for(const part of (path.startsWith('/')?path:project.replace(/\/$/,'')+'/'+path).split('/')){
+      if(!part||part==='.')continue;if(part==='..'){parts.pop();continue;}parts.push(part);
+    }
+    return '/'+parts.join('/');
+  }catch{return null;}
+}
+export function chatMarkdown(text: string,files?:ChatFileContext): HTMLElement {
   const body = document.createElement('div'); body.className = 'agent-markdown';
   body.append(markdownContent(text, ['input', 'select', 'textarea', 'option']));
   for (const link of body.querySelectorAll<HTMLAnchorElement>('a')) {
     const href = link.getAttribute('href') || '';
-    // File paths and fragments have no reliable base in a chat; never let them
-    // become workspace routes or requests against CC's own API.
-    if (!/^(https?:|mailto:)/i.test(href)) { link.removeAttribute('href'); continue; }
-    link.target = '_blank'; link.rel = 'noopener noreferrer';
+    if (/^(https?:|mailto:)/i.test(href)) {link.target='_blank';link.rel='noopener noreferrer';continue;}
+    const path=files&&filePath(href,files.project);
+    if(!files||!path){link.removeAttribute('href');continue;}
+    // A button has no navigable filesystem/HTTP URL or implicit prefetch.
+    const button=document.createElement('button');button.type='button';button.className='chat-file-link';
+    button.append(...link.childNodes);button.title=`${files.machine} › ${path}`;
+    button.setAttribute('aria-label',`Open ${button.textContent||'file'} in Files on ${files.machine}`);
+    button.onclick=()=>{void files.openFile(path).catch(error=>{
+      if(!button.isConnected)return;
+      const note=document.createElement('span');note.className='chat-file-error';note.setAttribute('role','status');note.textContent=String(error);button.after(note);
+    });};link.replaceWith(button);
   }
   for (const table of body.querySelectorAll('table')) {
     const scroll = document.createElement('div'); scroll.className = 'chat-table-scroll';

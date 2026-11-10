@@ -11,6 +11,7 @@ import { compactClient, compactViewport } from './layout';
 type ReadState = { key: string; instance: string; revision: number; finished: boolean; new_approval: boolean; unread_reply: boolean; needs_attention: boolean; conversation?: string; reply_cursor?: string; history_id?: string };
 type AgentState = 'working' | 'ready' | 'approval' | 'unknown' | 'disconnected';
 type Activity = { state: AgentState; source: string; reason: string; evidence_at?: number; observed_at: number; transition?: string };
+export type AgentFileTarget={host:string;connection:string;path:string};
 export type QueueTarget = { instance?:string|null;host: string; connection: string; session: string; window: string; pane: string };
 type Item = { background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
 type Host = { id: string; name: string; connection_revision: string; error?: string; limited: boolean; items: Item[] };
@@ -97,7 +98,7 @@ export class AttentionQueue {
   private approvalPending = new Set<string>();
   private filterPanel = node('details');
   private inboxControls = node('div');
-  constructor(private open: (target: QueueTarget) => Promise<void>) {
+  constructor(private open: (target: QueueTarget) => Promise<void>,private openFile:(target:AgentFileTarget)=>Promise<void>) {
     this.agentRestarter=new AgentRestarter(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
     this.restartAgent.type='button';this.restartAgent.onclick=()=>{const c=this.chosen();if(c)this.openAgentRestart(c.h,c.item);};
     this.agentCloser=new AgentCloser(async()=>{this.body.dataset.detail='false';await this.refresh();});
@@ -497,7 +498,7 @@ export class AttentionQueue {
           ? document.activeElement.closest<HTMLDetailsElement>('.agent-activity')?.dataset.activityId : undefined;
         const entries: {position: number; order: number; element: HTMLElement}[] = data.messages.map(message => {
           const article = node('article'); article.className = `agent-message ${message.role}`; article.dataset.messageId=message.id;
-          const body=message.role === 'assistant' ? chatMarkdown(message.text) : node('div', message.text);
+          const body=message.role === 'assistant' ? chatMarkdown(message.text,{project:data.project||item.project,machine:h.name,openFile:path=>this.openFile({host:h.id,connection:h.connection_revision,path})}) : node('div', message.text);
           if(message.role==='user')body.classList.add('agent-user-text');
           article.append(node('small', `${message.role === 'user' ? 'You' : 'Agent'}${message.timestamp ? ` · ${new Date(message.timestamp).toLocaleString()}` : ''}`), body);
           if (message.truncated) article.append(node('small', 'Message shortened for this view. Open the CLI for the full text.'));
