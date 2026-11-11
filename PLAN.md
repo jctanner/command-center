@@ -9,12 +9,20 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Plan 0002: CC-46 Whiteboard](docs/plans/0002-whiteboard-workspace.md) — lightweight prototype published; shared core deployed; server images/attachments remain later phase.
+
 
 
 
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0051: shared Whiteboard and coordinator drawing](docs/tasks/done/0051-shared-whiteboard.md)
+
+- [Task 0050: lightweight Whiteboard prototype](docs/tasks/done/0050-lightweight-whiteboard-prototype.md)
+
+- [Task 0049: CC-46 Whiteboard design assessment](docs/tasks/done/0049-whiteboard-design-assessment.md)
 
 - [Task 0048: agent message recall](docs/tasks/done/0048-agent-message-recall.md)
 
@@ -172,9 +180,19 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Decisions
 
+- [ADR-0002: Whiteboard editor and state](docs/decisions/0002-whiteboard-engine-and-state.md) — proposed.
+
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-10: shared Whiteboard deployed](docs/notes/2026-11-10-shared-whiteboard-deployed.md)
+
+- [2026-11-10: shared Whiteboard ready](docs/notes/2026-11-10-shared-whiteboard-ready.md)
+
+- [2026-11-10: lightweight Whiteboard prototype](docs/notes/2026-11-10-lightweight-whiteboard-prototype.md)
+
+- [2026-11-10: Whiteboard engine assessment](docs/notes/2026-11-10-whiteboard-engine-assessment.md)
 
 - [2026-11-10: agent message recall](docs/notes/2026-11-10-agent-message-recall.md)
 

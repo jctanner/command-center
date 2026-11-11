@@ -298,3 +298,7 @@ Agents keeps machine failures and scan limits in a collapsed count disclosure, w
 ### Agent message recall
 
 In the agent composer, unmodified Up on the first line recalls earlier sent messages; Down on the last line moves forward and restores the unsent draft. Editing a recalled message makes it the new draft. Recall uses up to 50 complete messages from loaded conversation pages and current pending submissions, scoped to the active machine/process/conversation. It does not fetch older history or send automatically. Modifier arrows, selections, IME and multiline cursor movement remain available.
+
+### Shared Whiteboard
+
+Whiteboard adds named, optionally ticket-linked shared drawing scenes. The lightweight custom editor has a vertical left toolbar, bound arrows, shape/text/freehand editing, browser exports and CC themes. Rust persists element revisions, attribution and compact idempotency receipts in the existing Board SQLite sidecar. Visible clients poll the selected scene; independent edits merge and conflicts keep local drafts. Conditional undo preserves unrelated human/agent work. The coordinator uses the REST API and cc-whiteboard skill to read semantic scenes and draw graphs without pixel coordinates. See [Whiteboard API](whiteboard-api.md) for limits, recovery and supported operations. The old standalone prototype remains local-only; remote attachments/server PNG are later scope.

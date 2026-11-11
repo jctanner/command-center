@@ -62,6 +62,8 @@ class Contract(unittest.TestCase):
         # rustfmt may split route strings onto the next line.
         board |= set(re.findall(r'"(/api/v1/board[^" ]*)"', (ROOT / 'src/board.rs').read_text()))
         self.assertEqual({p.removeprefix('/api/v1') for p in board}, {p for p in SPEC['paths'] if p.startswith('/board')})
+        whiteboard=set(re.findall(r'"(/api/v1/whiteboards[^" ]*)"',(ROOT/'src/whiteboard.rs').read_text()))
+        self.assertEqual({p.removeprefix('/api/v1') for p in whiteboard},{p for p in SPEC['paths'] if p.startswith('/whiteboards')})
         for schema in SPEC['components']['schemas'].values():
             Draft202012Validator.check_schema(schema)
 

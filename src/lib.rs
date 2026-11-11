@@ -20,6 +20,7 @@ mod terminal;
 pub mod tmux;
 mod tmux_management;
 pub mod transport;
+mod whiteboard;
 
 use axum::{
     Json, Router,
@@ -138,6 +139,7 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
             features::gate,
         )))
         .merge(board::routes())
+        .merge(whiteboard::routes())
         .route(
             "/api/v1/openapi.json",
             get(|| async {
@@ -294,6 +296,7 @@ async fn same_host(
             .into_response();
     }
     let api = request.uri().path().starts_with("/api/");
+    let embedded_whiteboard = request.uri().path() == "/whiteboard.html";
     let mut response = next.run(request).await;
     if api {
         response
@@ -303,9 +306,16 @@ async fn same_host(
     response
         .headers_mut()
         .insert("x-content-type-options", "nosniff".parse().unwrap());
-    response
-        .headers_mut()
-        .insert("x-frame-options", "DENY".parse().unwrap());
+    response.headers_mut().insert(
+        "x-frame-options",
+        if embedded_whiteboard {
+            "SAMEORIGIN"
+        } else {
+            "DENY"
+        }
+        .parse()
+        .unwrap(),
+    );
     response
 }
 async fn hosts(State(state): State<Arc<AppState>>) -> Json<Vec<machines::Summary>> {

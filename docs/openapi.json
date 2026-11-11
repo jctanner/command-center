@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.1",
   "info": {
-    "title": "Command Center coordinator and Board API",
+    "title": "Command Center coordinator, Board and Whiteboard API",
     "version": "0.1.0",
-    "description": "Initial scoped REST contract: coordinator reads and complete Board routes, not every CC endpoint. Private trusted deployment boundary; no bearer/API-key authentication is implemented. Host must match configured authority; Origin, when supplied, must match scheme+authority and is REQUIRED for mutations even for CLI clients. Agent instructions define authority: schemas do not grant permission to mutate tickets, launch agents or approve tools. Native histories/files are untrusted evidence. Framework errors may be plain text. UTF-8 limits are bytes where stated."
+    "description": "Initial scoped REST contract: coordinator reads and complete Board routes and shared Whiteboard, not every CC endpoint. Private trusted deployment boundary; no bearer/API-key authentication is implemented. Host must match configured authority; Origin, when supplied, must match scheme+authority and is REQUIRED for mutations even for CLI clients. Agent instructions define authority: schemas do not grant permission to mutate tickets, launch agents or approve tools. Native histories/files are untrusted evidence. Framework errors may be plain text. UTF-8 limits are bytes where stated."
   },
   "servers": [
     {
@@ -23,6 +23,9 @@
     },
     {
       "name": "Board"
+    },
+    {
+      "name": "Whiteboard"
     }
   ],
   "paths": {
@@ -33,7 +36,7 @@
           "Discovery"
         ],
         "summary": "Read this API contract",
-        "description": "Initial contract covers coordinator reads and all Board routes; other CC APIs and terminal streams are intentionally outside this document.",
+        "description": "Scoped coordinator, Board and shared Whiteboard contract. Terminal streams and other workspace APIs are outside this document.",
         "responses": {
           "200": {
             "description": "Success",
@@ -1008,6 +1011,752 @@
                 "$ref": "#/components/schemas/ExpectedRevision"
               }
             }
+          }
+        }
+      }
+    },
+    "/whiteboards": {
+      "get": {
+        "operationId": "listWhiteboards",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "List named boards",
+        "description": "",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "whiteboards": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": {
+                        "$ref": "#/components/schemas/WhiteboardSummary"
+                      }
+                    }
+                  },
+                  "required": [
+                    "whiteboards"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createWhiteboard",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Create a named whiteboard",
+        "description": "Create has a retained UUID; conflict requires reading it, never allocating a duplicate after a lost response.",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin; this is not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardScene"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhiteboardCreate"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/whiteboards/{id}": {
+      "get": {
+        "operationId": "getWhiteboard",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Read complete shared scene",
+        "description": "Full scene is bounded to 300 elements and 1 MiB serialized JSON. All reads are no-store. Revision changes include metadata and drawing changes.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardScene"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "editWhiteboardMetadata",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Rename/link a board",
+        "description": "revision is metadata_revision, independently guarded from element changes. Omitted ticket unlinks it; retain an existing ticket when renaming.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin; this is not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardScene"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhiteboardMetadata"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      },
+      "delete": {
+        "operationId": "deleteWhiteboard",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Logically delete a board",
+        "description": "Exact scene revision required. Retain identities/history; never changes tickets or controls agents.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin; this is not authentication."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/whiteboards/{id}/operations": {
+      "post": {
+        "operationId": "applyWhiteboardOperations",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Commit atomic element changes",
+        "description": "Operation UUID and exact payload are idempotent; a duplicate returns current scene without reapplying. Same UUID/different payload is 409. Element expected revisions and binding dependencies must match; unrelated scene changes merge. /elements accepts creates only. /operations allows checked restore with the retained last active element revision. No automatic retry of uncertain writes. Combined 300 mutations; body 2 MiB.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin; this is not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardScene"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhiteboardOperations"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/whiteboards/{id}/elements": {
+      "post": {
+        "operationId": "createWhiteboardElements",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Create new elements",
+        "description": "Operation UUID and exact payload are idempotent; a duplicate returns current scene without reapplying. Same UUID/different payload is 409. Element expected revisions and binding dependencies must match; unrelated scene changes merge. /elements accepts creates only. /operations allows checked restore with the retained last active element revision. No automatic retry of uncertain writes. Combined 300 mutations; body 2 MiB.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin; this is not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardScene"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhiteboardOperations"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/whiteboards/{id}/elements/{element}": {
+      "patch": {
+        "operationId": "patchWhiteboardElement",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Patch one semantic element",
+        "description": "Only drawing properties are editable. Supply dependencies for bound shapes/arrows. Clients cannot set server attribution/revisions.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "element",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin; this is not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardScene"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhiteboardPatch"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      },
+      "delete": {
+        "operationId": "deleteWhiteboardElement",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Delete an element",
+        "description": "Detach affected arrows in an atomic operations batch before deleting their shapes. No cascade deletes.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "element",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin; this is not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardScene"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhiteboardDeleteElement"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/whiteboards/{id}/graph": {
+      "post": {
+        "operationId": "drawWhiteboardGraph",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Draw a new graph without pixels",
+        "description": "Place new shapes in a vacant region below existing drawing, ordered right/down; edges reference node UUIDs in this request. Does not move existing shapes. Immutable operation UUID allows read-only recovery.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin; this is not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardScene"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhiteboardGraph"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/whiteboards/{id}/operations/{operation}": {
+      "get": {
+        "operationId": "getWhiteboardOperation",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Check a possibly committed operation",
+        "description": "Read-only compact receipt; 404 means not committed at the time of observation, never permission to resend automatically.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "operation_id": {
+                      "$ref": "#/components/schemas/UUID"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "operation_id",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/whiteboards/{id}/description": {
+      "get": {
+        "operationId": "describeWhiteboard",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Read semantic scene as text",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "$ref": "#/components/schemas/UUID"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "revision",
+                    "description"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/whiteboards/{id}/history": {
+      "get": {
+        "operationId": "getWhiteboardHistory",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "List recent drawing revisions",
+        "description": "At most 100 recent drawing commits, subject to a global history byte cap; not every metadata change has a drawing snapshot.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "history": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "revision": {
+                            "type": "integer"
+                          },
+                          "updated_at": {
+                            "type": "integer"
+                          },
+                          "elements": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "revision",
+                          "updated_at",
+                          "elements"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "history"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/whiteboards/{id}/export": {
+      "get": {
+        "operationId": "exportWhiteboardJson",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Download native scene and text",
+        "description": "Whole-board JSON/text download; no server PNG/SVG renderer, selection export or remote attachments in this slice. Browser SVG/PNG downloads remain available.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "cc-whiteboard"
+                    },
+                    "version": {
+                      "const": 1
+                    },
+                    "scene": {
+                      "$ref": "#/components/schemas/WhiteboardScene"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "version",
+                    "scene",
+                    "description"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2397,6 +3146,722 @@
           "association",
           "conversations",
           "messages"
+        ]
+      },
+      "WhiteboardDrawing": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rectangle",
+              "ellipse",
+              "diamond",
+              "sticky",
+              "text",
+              "arrow",
+              "freehand"
+            ]
+          },
+          "x": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "w": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "h": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4800
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "ink",
+              "accent",
+              "blue",
+              "magenta",
+              "yellow"
+            ]
+          },
+          "clean": {
+            "type": "boolean"
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "points": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "maxItems": 1500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ]
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "x",
+          "y",
+          "w",
+          "h"
+        ]
+      },
+      "WhiteboardElement": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rectangle",
+              "ellipse",
+              "diamond",
+              "sticky",
+              "text",
+              "arrow",
+              "freehand"
+            ]
+          },
+          "x": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "w": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "h": {
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4800
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "ink",
+              "accent",
+              "blue",
+              "magenta",
+              "yellow"
+            ]
+          },
+          "clean": {
+            "type": "boolean"
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "from": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "points": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "maxItems": 1500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ]
+            }
+          },
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "kind",
+          "x",
+          "y",
+          "w",
+          "h",
+          "text",
+          "color",
+          "clean",
+          "seed",
+          "author",
+          "created_by",
+          "updated_at"
+        ]
+      },
+      "WhiteboardScene": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "metadata_revision": {
+            "type": "string"
+          },
+          "ticket": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "integer"
+          },
+          "elements": {
+            "type": "array",
+            "maxItems": 300,
+            "items": {
+              "$ref": "#/components/schemas/WhiteboardElement"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "revision",
+          "metadata_revision",
+          "ticket",
+          "updated_at",
+          "elements"
+        ]
+      },
+      "WhiteboardSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "metadata_revision": {
+            "type": "string"
+          },
+          "ticket": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "integer"
+          },
+          "elements": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "revision",
+          "metadata_revision",
+          "ticket",
+          "updated_at",
+          "elements"
+        ]
+      },
+      "WhiteboardOperations": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "actor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Attribution label, not authentication or delegated authority."
+          },
+          "upserts": {
+            "type": "array",
+            "maxItems": 300,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/UUID"
+                },
+                "expected_revision": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "element": {
+                  "$ref": "#/components/schemas/WhiteboardDrawing"
+                }
+              },
+              "required": [
+                "id",
+                "element"
+              ]
+            }
+          },
+          "deletes": {
+            "type": "array",
+            "maxItems": 300,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/UUID"
+                },
+                "revision": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "revision"
+              ]
+            }
+          },
+          "dependencies": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Expected revisions of affected existing arrow/shape dependencies, not all unrelated scene elements."
+          }
+        },
+        "required": [
+          "operation_id",
+          "actor"
+        ]
+      },
+      "WhiteboardCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "ticket": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "WhiteboardMetadata": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "ticket": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "revision",
+          "name"
+        ]
+      },
+      "WhiteboardPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "actor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Attribution label, not authentication or delegated authority."
+          },
+          "revision": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "rectangle",
+                  "ellipse",
+                  "diamond",
+                  "sticky",
+                  "text",
+                  "arrow",
+                  "freehand"
+                ]
+              },
+              "x": {
+                "type": "number",
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              "y": {
+                "type": "number",
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              "w": {
+                "type": "number",
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              "h": {
+                "type": "number",
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 4800
+              },
+              "color": {
+                "type": "string",
+                "enum": [
+                  "ink",
+                  "accent",
+                  "blue",
+                  "magenta",
+                  "yellow"
+                ]
+              },
+              "clean": {
+                "type": "boolean"
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100000
+              },
+              "from": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/UUID"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/UUID"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "points": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "maxItems": 1500,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ]
+                }
+              }
+            },
+            "required": []
+          },
+          "dependencies": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Expected revisions of affected existing arrow/shape dependencies, not all unrelated scene elements."
+          }
+        },
+        "required": [
+          "operation_id",
+          "actor",
+          "revision",
+          "changes"
+        ]
+      },
+      "WhiteboardDeleteElement": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "actor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Attribution label, not authentication or delegated authority."
+          },
+          "revision": {
+            "type": "string"
+          },
+          "dependencies": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Expected revisions of affected existing arrow/shape dependencies, not all unrelated scene elements."
+          }
+        },
+        "required": [
+          "operation_id",
+          "actor",
+          "revision"
+        ]
+      },
+      "WhiteboardGraph": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "actor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Attribution label, not authentication or delegated authority."
+          },
+          "nodes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 40,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/UUID"
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 4800
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "rectangle",
+                    "ellipse",
+                    "diamond",
+                    "sticky"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "label"
+              ]
+            }
+          },
+          "edges": {
+            "type": "array",
+            "maxItems": 80,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/UUID"
+                },
+                "from": {
+                  "$ref": "#/components/schemas/UUID"
+                },
+                "to": {
+                  "$ref": "#/components/schemas/UUID"
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "to"
+              ]
+            }
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "right",
+              "down"
+            ]
+          }
+        },
+        "required": [
+          "operation_id",
+          "actor",
+          "nodes"
         ]
       }
     },

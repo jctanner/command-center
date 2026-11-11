@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 export default defineConfig({
+  build: { rollupOptions: { input: { main: 'index.html', whiteboardPrototype: 'whiteboard-prototype.html', whiteboard: 'whiteboard.html' } } },
   plugins: [{
     name: 'same-origin-terminal',
     configureServer(server) {
