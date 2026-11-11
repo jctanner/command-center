@@ -134,7 +134,7 @@ Email checks: `python3 -m unittest discover -s tests -p test_email.py`, `cargo t
 
 ## Tickets and Board
 
-**Board** is a persistent ticket workspace with **Board** and **List** views. The browser remembers the selected view. Board has Backlog, Ready, In progress, Blocked and Done columns; cards focus on ticket number/title, priority or checklist indicators, and compact machine/harness/attention context. Long paths and per-card status selects are omitted. List exposes ticket number, title, status, priority, machine, harness/model and updated date, with common search/status filters and updated/number/priority sorting. Phones use compact list rows and readable filters.
+**Board** is a persistent ticket workspace with **Board** and **List** views. The browser remembers the selected view. Board has Backlog, Ready, In progress, Review, Blocked and Done columns; cards focus on ticket number/title, priority or checklist indicators, and compact machine/harness/attention context. Long paths and per-card status selects are omitted. List exposes ticket number, title, status, priority, machine, harness/model and updated date, with common search/status filters and updated/number/priority sorting. Phones use compact list rows and readable filters.
 
 Open a ticket for a nearly full-window detail dialog (full-screen on compact clients). Previous/Next browse the same filtered/sorted set and confirm before discarding a dirty draft. Rendered Markdown is the default for existing tickets; **Edit Markdown** switches to source. Titles wrap, full machine/tmux/agent context is in the attribute sidebar, and the scrollable body keeps actions visible. Saving a ticket that leaves the current filter retains its detail and labels it Outside filters. Pending navigation cannot overwrite newer edits. Desktop drag-and-drop and the detail Status field handle moves; status changes never launch agents.
 
@@ -290,3 +290,7 @@ Claude can store pasted human messages inside a matching pasted_content envelope
 ### Agent report file links
 
 Assistant Markdown file links are explicit Files actions scoped to the agent’s machine and connection. Absolute paths open there; relative paths resolve from its project directory. Markdown opens in Preview with the existing TOC, editor and shared unsaved-document bank. File contents are fetched only after a click. External HTTP/HTTPS/mail links retain their safe browser behavior; unsupported schemes, network paths, fragments-only destinations and malformed paths remain non-navigable. File links never become raw browser filesystem or CC API navigation. Stale machine references/responses are rejected, and compact navigation sends no terminal traffic. File line/section fragments are not scrolled to automatically.
+
+### Machine connection diagnostics
+
+Agents keeps machine failures and scan limits in a collapsed count disclosure, with per-machine diagnostics on demand. SSH identity failures can occur when dual-boot operating systems use different host keys; verification stays strict. CC reconnects when the trusted system returns, and recovered issues clear automatically.

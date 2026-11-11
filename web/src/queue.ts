@@ -52,6 +52,9 @@ export class AttentionQueue {
   private detail = node('section');
   private body = node('div');
   private feedback = node('p');
+  private hostIssues = node('details');
+  private hostIssueSummary = node('summary');
+  private hostIssueBody = node('div');
   private hostSelect = node('select');
   private projectSelect = node('select');
   private statusSelect = node('select');
@@ -160,7 +163,8 @@ export class AttentionQueue {
     this.detail.className = 'queue-detail'; this.detail.setAttribute('aria-label', 'Request details');
     this.feedback.setAttribute('role', 'status');
     this.body.className = 'queue-body'; this.body.append(this.list, this.detail);
-    this.root.append(heading, this.inboxControls, this.feedback, this.body);
+    this.hostIssues.className='queue-host-issues';this.hostIssues.hidden=true;this.hostIssues.append(this.hostIssueSummary,this.hostIssueBody);
+    this.root.append(heading, this.inboxControls, this.feedback, this.hostIssues, this.body);
     const back = node('button', '← Agents'); back.className = 'queue-back'; back.setAttribute('aria-label', '← Agents'); back.onclick = () => { delete this.body.dataset.detail; this.syncPresentation(); };
     const openButton = node('button', 'Open terminal'); openButton.className = 'primary queue-terminal-link';
     const updateTerminalLink = () => { openButton.hidden = compactClient(); };
@@ -349,9 +353,18 @@ export class AttentionQueue {
     this.conversationSelect.hidden = !chosen;
     this.updateSend();
     this.markRead.hidden = !unread(this.detailData?.read_state || chosen?.item.attention);
-    const issues = hosts.filter(h => h.error || h.limited).map(h => `${h.name}: ${h.error || 'scan limited to 32 agent panes'}`);
-    this.feedback.dataset.error = String(issues.length > 0);
-    this.feedback.textContent = `${this.snapshot ? `Checked ${new Date(this.snapshot.checked_at * 1000).toLocaleTimeString()}` : 'Checking machines…'}${issues.length ? ` · ${issues.join(' · ')}` : ''}`;
+    const issues = hosts.filter(h => h.error || h.limited);
+    this.feedback.dataset.error = 'false';
+    this.feedback.textContent = this.snapshot ? `Checked ${new Date(this.snapshot.checked_at * 1000).toLocaleTimeString()}` : 'Checking machines…';
+    this.hostIssues.hidden=issues.length===0;
+    this.hostIssueSummary.textContent=`${issues.length} machine${issues.length===1?'':'s'} unavailable or limited`;
+    this.hostIssueBody.replaceChildren(...issues.map(host=>{
+      const section=node('section');const keyChanged=!!host.error&&/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i.test(host.error);
+      section.append(node('strong',`${host.name} · ${keyChanged?'SSH identity not verified':host.error?'Unavailable':'Scan limited'}`));
+      if(keyChanged)section.append(node('p','A different OS on a dual-boot machine can present a different SSH key. CC will reconnect when the trusted OS returns. Verify any new key independently before updating SSH trust.'));
+      const detail=node('pre',host.error||'Scan limited to 32 agent panes');section.append(detail);return section;
+    }));
+    if(!issues.length)this.hostIssues.open=false;
   }
   private updateSend() {
     const data = this.detailData;

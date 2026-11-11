@@ -176,6 +176,27 @@ class HttpTickets(unittest.TestCase):
             retained = json.loads(db.execute('SELECT data FROM tickets WHERE id=?', (t['id'],)).fetchone()[0])
             self.assertEqual(retained['description'], body['description'])
 
+    def test_review_status_create_move_edit_and_restart(self):
+        body = {**self.new_body(), 'status': 'review'}
+        t = self.call('POST', '/board/tickets', body)
+        path = '/board/tickets/' + t['id']
+        contract = '/board/tickets/{id}'
+        self.assertEqual(t['status'], 'review')
+        self.stop()
+        self.start()
+        t = self.call('GET', path, contract_path=contract)
+        self.assertEqual(t['status'], 'review')
+        for status in ('in_progress', 'review', 'done'):
+            previous = t['revision']
+            t = self.call('POST', path + '/move', {'revision': previous, 'status': status}, contract_path=contract + '/move')
+            self.assertEqual(t['status'], status)
+            self.assertEqual(t['runs'], [])
+            self.call('POST', path + '/move', {'revision': previous, 'status': 'review'}, status=409, contract_path=contract + '/move')
+        edited = {k: t[k] for k in ['id', 'revision', 'title', 'description', 'status', 'priority', 'context', 'checklist']}
+        edited['status'] = 'review'
+        self.assertEqual(self.call('POST', '/board/tickets', edited)['status'], 'review')
+        self.assertEqual(next(v for v in self.call('GET', '/board/tickets')['tickets'] if v['id'] == t['id'])['status'], 'review')
+
     def test_schema_rejects_partial_updates_and_server_fields(self):
         body = self.new_body()
         for invalid in ({'id': body['id'], 'title': 'Partial'}, {**body, 'runs': []}, {**body, 'status': 'invented'}):
@@ -200,7 +221,8 @@ class HttpTickets(unittest.TestCase):
         input_path.write_text(json.dumps(changed))
         updated = run('update', '--input', str(input_path))
         self.assertIn('409', run('update', '--input', str(input_path), success=False))
-        moved = run('move', '--ticket', body['id'], '--revision', updated['revision'], '--status', 'blocked')
+        moved = run('move', '--ticket', body['id'], '--revision', updated['revision'], '--status', 'review')
+        self.assertEqual(moved['status'], 'review')
         self.assertTrue(run('delete', '--ticket', body['id'], '--revision', moved['revision'])['deleted'])
         self.assertIn('404', run('get', '--ticket', body['id'], success=False))
         self.assertIn('tickets', run('list'))

@@ -32,7 +32,14 @@ fn now() -> u64 {
 fn revision() -> String {
     uuid::Uuid::new_v4().to_string()
 }
-const STATUSES: [&str; 5] = ["backlog", "ready", "in_progress", "blocked", "done"];
+const STATUSES: [&str; 6] = [
+    "backlog",
+    "ready",
+    "in_progress",
+    "review",
+    "blocked",
+    "done",
+];
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Context {

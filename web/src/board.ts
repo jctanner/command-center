@@ -8,7 +8,7 @@ type Check={id:string;text:string;done:boolean};
 type Ticket={id:string;number:number;revision:string;title:string;description:string;status:string;priority:string;context:TicketContext;checklist:Check[];runs:Run[];updated_at:number};
 type Card=Pick<Ticket,'id'|'number'|'revision'|'title'|'status'|'priority'|'context'|'updated_at'>&{checks:number;checked:number;run?:Run|null};
 type Prepared={approval_policy?:string|null;token:string;launch_id:string;project:string;provider:string;model?:string|null};
-const statuses=[['backlog','Backlog'],['ready','Ready'],['in_progress','In progress'],['blocked','Blocked'],['done','Done']];
+const statuses=[['backlog','Backlog'],['ready','Ready'],['in_progress','In progress'],['review','Review'],['blocked','Blocked'],['done','Done']];
 const e=<K extends keyof HTMLElementTagNameMap>(tag:K,text='')=>{const n=document.createElement(tag);n.textContent=text;return n;};
 const button=(text:string,fn:()=>void)=>{const b=e('button',text);b.type='button';b.onclick=fn;return b;};
 const empty=():TicketContext=>({host:'',session:'',session_name:'',window:'',window_name:'',pane:'',path:'',provider:'',model:'',conversation:''});

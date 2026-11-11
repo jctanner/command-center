@@ -87,7 +87,7 @@ def parser():
         if name != 'get':
             child.add_argument('--revision', required=True)
         if name == 'move':
-            child.add_argument('--status', choices=['backlog', 'ready', 'in_progress', 'blocked', 'done'], required=True)
+            child.add_argument('--status', choices=['backlog', 'ready', 'in_progress', 'review', 'blocked', 'done'], required=True)
     return p
 
 

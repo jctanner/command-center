@@ -62,3 +62,19 @@ test('late machine discovery replaces opaque Board IDs with display names',async
   await page.goto(base+'/#/board');const footer=page.locator('.ticket-card-footer').first();await expect(footer).toContainText('fixture');release();await expect(footer).toContainText('Fixture workstation');
  }finally{release();}
 });
+
+for(const width of [1440,393])test(`Review column, editor and list filter at ${width}px`,async({page})=>{
+ await page.setViewportSize({width,height:850});let sockets=0;page.on('websocket',()=>sockets++);
+ await page.goto(base+'/#/board');await page.getByRole('button',{name:'Board view',exact:true}).click();
+ await expect(page.locator('.board-lane')).toHaveCount(6);
+ const ticket=await api('board/tickets',{id:randomUUID(),title:`Review fixture ${width}`,description:'Awaiting human review',status:'in_progress',priority:'normal',context:{},checklist:[]});
+ await page.getByRole('button',{name:'Refresh board',exact:true}).click();
+ await page.getByRole('button',{name:ticket.title,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Ticket',exact:true});
+ await dialog.getByLabel('Ticket status',{exact:true}).selectOption('review');await dialog.getByRole('button',{name:'Save ticket',exact:true}).click();await expect(dialog).toContainText('Saved');
+ await dialog.getByRole('button',{name:'Close',exact:true}).click();
+ await expect(page.locator('.board-lane[data-status=review]')).toContainText(ticket.title);
+ await page.getByRole('button',{name:'List view',exact:true}).click();await page.getByLabel('Board column',{exact:true}).selectOption('review');
+ await expect(page.locator('.ticket-table tbody')).toContainText(ticket.title);await expect(page.locator('.ticket-status').first()).toHaveText('Review');
+ await page.reload();await page.getByLabel('Board column',{exact:true}).selectOption('review');await expect(page.locator('.ticket-table tbody')).toContainText(ticket.title);
+ expect(sockets).toBe(0);expect((await api('board/tickets/'+ticket.id)).runs).toEqual([]);
+});

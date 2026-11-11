@@ -16,6 +16,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
+- [Task 0047: compact queue host errors](docs/tasks/done/0047-compact-queue-host-errors.md)
+
+- [Task 0046: ticket Review state](docs/tasks/done/0046-ticket-review-state.md)
+
 - [Task 0045: machine-qualified agent file links](docs/tasks/done/0045-agent-chat-file-links.md)
 
 - [Task 0044: Codex root status look-back](docs/tasks/done/0044-codex-status-root-lookback.md)
@@ -113,6 +117,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Fixed bugs
 
+- [Bug 0027: queue raw SSH warnings](docs/bugs/fixed/0027-queue-raw-ssh-warning.md)
+
 - [Bug 0026: assistant file links disabled](docs/bugs/fixed/0026-agent-markdown-file-links-disabled.md)
 
 - [Bug 0025: root lifecycle outside status tail](docs/bugs/fixed/0025-codex-root-status-outside-tail.md)
@@ -167,6 +173,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-10: compact machine errors](docs/notes/2026-11-10-compact-machine-errors.md)
+
+- [2026-11-10: ticket Review state](docs/notes/2026-11-10-ticket-review-state.md)
 
 - [2026-11-10: agent report file links](docs/notes/2026-11-10-agent-report-file-links.md)
 
