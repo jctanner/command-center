@@ -2259,6 +2259,112 @@
         },
         "x-human-intent-required": true
       }
+    },
+    "/hosts/{host}/agents/question": {
+      "post": {
+        "operationId": "answerAgentQuestion",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Answer a recognized native question exactly once",
+        "description": "Human-selected choice or Other text only. Bind new UUID and fresh question token to exact endpoint/tmux/process/conversation/prompt/screen. Commit metadata-only receipt and stable per-prompt claim before keyboard IO. Navigate and inspect inside shared transport; verify exact pasted Other text before one Enter. Ordinary chat/tool-approval routes cannot answer questions. Unknown/multi-select/multi-question/custom layouts stay terminal-only. A response is submitted, uncertain, or rejected with explicit not-sent evidence; never auto-retry uncertain input. Same UUID/same choice/text returns original receipt; changed reuse is 409. Endpoint edits serialize through completion; HTTP disconnect does not cancel a committed answer. Identical repeated prompts without distinguishing evidence remain fail-closed. HTTP 400/409/410/422/429 rejects before input; native failures after any input return an uncertain durable receipt. Receipt storage failure is 5xx and must be inspected, never replayed.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin required; not authentication."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionAnswer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "receipt": {
+                      "$ref": "#/components/schemas/QuestionReceipt"
+                    }
+                  },
+                  "required": [
+                    "receipt"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/agents/questions/{id}": {
+      "get": {
+        "operationId": "getAgentQuestionReceipt",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Inspect an existing question-response receipt without input",
+        "description": "Read-only recovery after lost acknowledgement; no answer replay or new grant. Submitted is native keyboard handoff, not proof of provider acceptance. Validate exact UUID, host, tmux target, instance, conversation and question before applying the result. 404 is not proof of non-delivery. No answer text or native question body is stored in this metadata receipt.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "receipt": {
+                      "$ref": "#/components/schemas/QuestionReceipt"
+                    }
+                  },
+                  "required": [
+                    "receipt"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3010,7 +3116,8 @@
             ]
           },
           "source": {
-            "type": "string"
+            "type": "string",
+            "description": "Evidence source. terminal_question is an inferred native clarification; claude_input is process-verified registry waiting. Both use state approval for attention compatibility, but do not authorize tool approval or message input."
           },
           "reason": {
             "type": "string"
@@ -3573,7 +3680,8 @@
                 },
                 "order": {
                   "type": "integer",
-                  "minimum": 0
+                  "minimum": -1,
+                  "description": "Content-item index; -1 denotes unsplit plain-text content or no indexed text block."
                 },
                 "truncated": {
                   "type": "boolean"
@@ -3635,6 +3743,78 @@
           },
           "send_available": {
             "type": "boolean"
+          },
+          "input_request": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "context": {
+                    "type": "string"
+                  },
+                  "choices": {
+                    "type": "array",
+                    "maxItems": 9,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "description"
+                      ]
+                    }
+                  },
+                  "text_available": {
+                    "type": "boolean"
+                  },
+                  "text_max_bytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 512
+                  },
+                  "token": {
+                    "$ref": "#/components/schemas/UUID"
+                  },
+                  "submitted": {
+                    "type": "boolean"
+                  },
+                  "receipt": {
+                    "$ref": "#/components/schemas/QuestionReceipt"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "context"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native clarification with optional guarded answer capability. Only supported single-question/single-choice layouts with unique process-linked conversation get a 120-second token. No tool permission is implied. Unsupported layouts remain read-only."
           }
         },
         "description": "Native user/assistant history; no reasoning/tool/system/sidechain messages. Preserve association: project history does not prove live process identity. Returned instance must match fresh queue attention.instance. Keep branch/version while paging; on history_reset discard previous page sequence. Do not expose terminal captures or action tokens to passive inventories.",
@@ -5033,6 +5213,95 @@
           "endpoint",
           "attachment",
           "expires_at"
+        ]
+      },
+      "QuestionReceipt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "window": {
+            "type": "string"
+          },
+          "pane": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "submitting",
+              "submitted",
+              "uncertain",
+              "rejected"
+            ]
+          },
+          "created_at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "host",
+          "session",
+          "window",
+          "pane",
+          "instance",
+          "conversation",
+          "question",
+          "status",
+          "note",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "QuestionAnswer": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "token": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "choice": {
+            "type": "string",
+            "pattern": "^(?:[1-9]|other)$"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Other only: exact nonempty single line, no controls/edge whitespace. UTF-8 bytes must fit text_max_bytes and current native pane width minus 12. Never silently shortened."
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "choice"
         ]
       }
     },

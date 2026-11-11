@@ -12,6 +12,7 @@ mod jira;
 mod launch;
 mod machines;
 mod outbox;
+mod questions;
 mod queue;
 mod slack;
 mod slack_inbox;
@@ -52,8 +53,9 @@ pub struct AppState {
     pub lan_address: Option<std::net::SocketAddr>,
     pub terminal_slots: Arc<Semaphore>,
     connection_tests: Semaphore,
-    file_slots: Semaphore,
+    file_slots: Arc<Semaphore>,
     queue: queue::Queue,
+    questions: questions::Questions,
     features: features::Features,
     slack: slack::Slack,
     email: email::Email,
@@ -96,6 +98,7 @@ impl AppState {
             jira,
             board,
             queue: queue::Queue::default(),
+            questions: questions::Questions::default(),
             agents,
             outbox: outbox::Outbox::default(),
             launches: launch::Launches::default(),
@@ -107,7 +110,7 @@ impl AppState {
             lan_address: None,
             terminal_slots: Arc::new(Semaphore::new(16)),
             connection_tests: Semaphore::new(4),
-            file_slots: Semaphore::new(8),
+            file_slots: Arc::new(Semaphore::new(8)),
             runtime,
         }))
     }
@@ -130,6 +133,11 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
     outbox::start(state.clone());
     Router::new()
         .merge(outbox::routes())
+        .route(
+            "/api/v1/hosts/{host}/agents/question",
+            post(questions::answer),
+        )
+        .route("/api/v1/agents/questions/{id}", get(questions::get))
         .route(
             "/api/v1/hosts/{host}/agents/message/attachments/prepare",
             post(attachments::prepare),

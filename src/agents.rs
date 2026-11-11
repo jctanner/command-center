@@ -195,6 +195,7 @@ pub(crate) async fn conversation(
             "Live process verification unavailable or pane is in copy mode. Use Open terminal."
         );
     }
+    crate::questions::enrich(&state, &host, &target, &attention_key, &mut value).await?;
     if !value["approval"].is_null() && target.before.is_none() {
         let mut grants = state.agents.approvals.lock().await;
         grants.retain(|_, g| g.grant.at.elapsed() < Duration::from_secs(120));

@@ -310,6 +310,9 @@ class AgentHistory(unittest.TestCase):
         check({},'ready')  # Idle is a persistent transition, not a heartbeat.
         check({'status':'working','statusUpdatedAt':now,'updatedAt':now},'working')
         check({'status':'waiting_for_approval','statusUpdatedAt':now,'updatedAt':now},'approval')
+        check({'status':'waiting','statusUpdatedAt':now,'updatedAt':now},'approval')
+        self.assertEqual(agent.provider_activity(observation)['source'],'claude_input')
+        self.assertIsNone(agent.approval_menu(observation))
         check({'status':'working'},'unknown')
         check({'statusUpdatedAt':now+60000,'updatedAt':now+60000},'unknown')
         check({'procStart':'0'},'unknown')

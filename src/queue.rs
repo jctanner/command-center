@@ -80,7 +80,11 @@ impl Activity {
     pub(crate) fn from_value(value: &serde_json::Value, context: &str) -> Self {
         let mut activity: Self = serde_json::from_value(value.clone())
             .unwrap_or_else(|_| Self::unknown("Provider status unavailable"));
-        if activity.source != "pi_bridge" && prompt(context).is_some() {
+        if !matches!(
+            activity.source.as_str(),
+            "pi_bridge" | "terminal_question" | "claude_input"
+        ) && prompt(context).is_some()
+        {
             activity = Self {
                 state: AgentState::Approval,
                 source: "terminal_prompt".into(),
@@ -276,13 +280,13 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                                 Ok(view)=>view,
                                 Err(error)=>{result.error=Some(error.1);crate::attention::View::default()},
                             };
-                            let detected = prompt(&context);
+                            let detected = if activity.source=="terminal_question" {Some(activity.reason.chars().take(240).collect())} else {prompt(&context)};
                             result.items.push(Item {
                                 id:format!("{}/{}/{}/{}/{}",host.id,host.connection_revision,session.id,window.id,pane.id),
                                 session:session.id.clone(), session_name:session.name.clone(), window:window.id.clone(), window_name:window.name.clone(),
                                 pane:pane.id, project:pane.cwd, agent:provider,
                                 status:if activity.state == AgentState::Approval {"attention"} else {"live"}.into(),
-                                prompt:detected.unwrap_or_else(|| if activity.state == AgentState::Approval {if activity.source == "pi_bridge" {"Agent is waiting for input"} else {"Agent is awaiting approval"}} else {"Live agent"}.into()),
+                                prompt:detected.unwrap_or_else(|| if activity.state == AgentState::Approval {if matches!(activity.source.as_str(),"pi_bridge"|"claude_input") {"Agent is waiting for input"} else if activity.source=="terminal_question" {&activity.reason} else {"Agent is awaiting approval"}} else {"Live agent"}.into()),
                                 context:context.chars().take(24000).collect(), activity, last_seen:now(), attention,card:Default::default(),background_tasks,
                             });
                         }
@@ -404,6 +408,18 @@ mod tests {
             "Do you want to proceed? (y/n)",
         );
         assert_eq!(activity.state, AgentState::Working);
+    }
+    #[test]
+    fn native_question_sources_are_not_reclassified_as_tool_permissions() {
+        for source in ["terminal_question", "claude_input"] {
+            let activity = Activity::from_value(
+                &json!({"state":"approval","source":source,"reason":"Which fixture?","observed_at":1,"transition":"question"}),
+                "Would you like permission?\n1. Yes\n2. No\nEsc to cancel",
+            );
+            assert_eq!(activity.source, source);
+            assert_eq!(activity.transition.as_deref(), Some("question"));
+            assert_eq!(activity.state, AgentState::Approval);
+        }
     }
     #[test]
     fn requires_choices_and_live_footer() {

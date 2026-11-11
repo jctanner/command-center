@@ -190,6 +190,9 @@ impl Transport {
         mut request: serde_json::Value,
     ) -> Result<serde_json::Value> {
         request["socket"] = serde_json::json!(self.host.socket);
+        if request["action"] == "question_answer" {
+            request["_question_code"] = serde_json::json!(include_str!("agent_questions.py"));
+        }
         self.helper_request(include_str!("agent_remote.py"), request)
             .await
     }

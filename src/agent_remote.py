@@ -207,6 +207,114 @@ def approval_menu(observation):
     return dict(id=hashlib.sha256(visible.encode()).hexdigest(), title=questions[-1].strip(),
                 context=visible, choices=choices)
 
+def input_question(observation):
+    """Claude AskUserQuestion observation; capabilities are issued separately.
+
+    Require its live footer, checked-question heading and actual numbered menu.
+    This must not broaden approval_menu's allow/deny grammar or key mapping.
+    """
+    if observation.get('kind') != 'claude' or not observation.get('identity') or observation.get('in_mode'):
+        return None
+    visible = observation.get('visible', '').rstrip()
+    if not visible or len(visible) > 48000:
+        return None
+    lines = visible.splitlines()
+    if not re.fullmatch(r'\s*Enter to select\s*·\s*↑/↓ to navigate(?:\s*·\s*ctrl\+g to edit in [^\n]{1,100})?\s*·\s*Esc to cancel\s*', lines[-1]):
+        return None
+    headings = [i for i,line in enumerate(lines) if re.match(r'^\s*[☐☑]\s+\S', line)]
+    if not headings:
+        return None
+    start = headings[-1]
+    rows = []
+    for i,line in enumerate(lines[start+1:-1], start+1):
+        match = re.fullmatch(r'\s*([›❯>])?\s*([1-9])[.)]\s+(.+?)\s*', line)
+        if match:
+            rows.append((i, match.group(1), match.group(2), match.group(3)))
+    if (not 2 <= len(rows) <= 9 or sum(bool(r[1]) for r in rows) != 1
+            or [r[2] for r in rows] != [str(i+1) for i in range(len(rows))]
+            or not any(re.fullmatch(r'Type something\.?', r[3]) for r in rows)):
+        return None
+    question = ' '.join(line.strip().lstrip('│┃').strip() for line in lines[start+1:rows[0][0]] if line.strip())
+    if not question or '?' not in question or len(question) > 4000:
+        return None
+    context = '\n'.join(lines[start:])
+    if len(context) > 12000:
+        return None
+    options=[]
+    for index,(line,marker,number,label) in enumerate(rows):
+        end=rows[index+1][0] if index+1<len(rows) else len(lines)-1
+        description=[]
+        for continuation in lines[line+1:end]:
+            if re.fullmatch(r'\s*[─━═]{10,}\s*',continuation): break
+            if continuation.strip():description.append(continuation.strip())
+        options.append(dict(id=number,label=label,description=' '.join(description)))
+    other=[r for r in options if re.fullmatch(r'Type something\.?',r['label'])]
+    selected=next(r[2] for r in rows if r[1])
+    choices=[r for r in options if r['label'] not in ('Type something.','Type something','Chat about this')]
+    supported=(len(headings)==1 and len(other)==1 and other[0]['label']=='Type something.'
+               and len(re.findall(r'[☐☑]',lines[start]))==1 and 'Submit' not in lines[start]
+               and 1<=len(choices)<=6 and selected in [c['id'] for c in choices]+[other[0]['id']])
+    # Cursor navigation must not produce a fresh claim after uncertain input.
+    semantic=json.dumps(dict(title=question,header=lines[start].strip(),options=options),sort_keys=True,ensure_ascii=False)
+    return dict(id=hashlib.sha256(semantic.encode()).hexdigest(),title=question,context=context,
+                choices=choices,text_available=supported, supported=supported,
+                selected=selected,other=other[0]['id'] if len(other)==1 else None)
+
+def question_waiting_id(observation, chosen):
+    """Owned native waiting transition; independent of deferred transcript IO."""
+    try:
+        home=provider_home(observation);base=observation['base']
+        roots=process_sessions(observation,home,follow_continuations=False)
+        current=process_sessions(observation,home)
+        if len(current)!=1 or chosen.get('session') not in current:return None
+        with (home/'sessions'/f'{base.name}.json').open('rb') as source:
+            raw=source.read(65537)
+        if len(raw)>65536:return None
+        record=json.loads(raw)
+        if (record.get('status')!='waiting' or record.get('sessionId') not in roots
+                or record.get('pid')!=int(base.name) or str(record.get('procStart'))!=proc(int(base.name))[1]):return None
+        stamp=event_time(record.get('statusUpdatedAt'));updated=event_time(record.get('updatedAt'));started=event_time(record.get('startedAt'));now=int(time.time())
+        if (stamp is None or stamp<0 or stamp>now+30 or (started is not None and stamp<started)
+                or updated is None or updated<stamp or updated>now+30):return None
+        return hashlib.sha256(json.dumps(['native-waiting',record['sessionId'],record['statusUpdatedAt']],separators=(',',':')).encode()).hexdigest()
+    except (OSError,ValueError,KeyError,TypeError,IndexError):return None
+
+def question_request_id(observation, menu, candidates=None):
+    """Require a verified native waiting transition or pending question call.
+
+    Native request identity distinguishes repeated identical questions. Plain
+    terminal-looking output alone never becomes an answer capability.
+    """
+    if not menu or not menu.get('supported') or observation.get('base') is None:
+        return None
+    candidates=conversations(observation) if candidates is None else candidates
+    linked=[c for c in candidates if c.get('linked')]
+    if len(linked)!=1:
+        return None
+    chosen=linked[0]
+    waiting=question_waiting_id(observation,chosen)
+    if waiting:return waiting
+    try:
+        page=history(chosen['path'],'claude')
+        entries=[e for e in page.get('activities',[]) if e.get('kind')=='tool' and e.get('title')=='AskUserQuestion' and e.get('status')=='pending']
+        if len(entries)!=1:return None
+        entry=entries[0]
+        with open(chosen['path'],'rb') as source:
+            source.seek(entry['position']);raw=source.readline(65537)
+        if len(raw)>65536 or not raw.endswith(b'\n'):return None
+        record=json.loads(raw)
+        if record.get('isMeta') or record.get('isSidechain') or record.get('sessionId')!=chosen.get('session') or record.get('type')!='assistant':return None
+        message=record.get('message',{})
+        if message.get('role')!='assistant':return None
+        block=message['content'][entry['order']]
+        questions=block.get('input',{}).get('questions',[])
+        if block.get('type')!='tool_use' or block.get('name')!='AskUserQuestion' or not isinstance(block.get('id'),str) or not 1<=len(block['id'])<=256 or len(questions)!=1:return None
+        asked=questions[0]
+        if ' '.join(str(asked.get('question','')).split())!=' '.join(menu['title'].split()):return None
+        if asked.get('multiSelect') or [option.get('label') for option in asked.get('options',[])]!=[option['label'] for option in menu['choices']]:return None
+        return hashlib.sha256((chosen['id']+'/'+block['id']).encode()).hexdigest()
+    except (OSError,ValueError,KeyError,TypeError,IndexError):return None
+
 def active_message_state(observation):
     state=provider_activity(observation)
     return state if state.get('state') in ('ready','working') and state.get('source') in ('pi_bridge','claude_registry','claude_events','codex_events') else None
@@ -1072,6 +1180,11 @@ def provider_activity(observation, candidates=None):
     menu = approval_menu(observation)
     if menu:
         return state_result('approval', 'terminal_prompt', 'Recognized live approval menu; explicit human decision required', int(time.time()), menu['id'])
+    question = input_question(observation)
+    if question:
+        anchor=question_request_id(observation,question,candidates)
+        transition=hashlib.sha256((question['id']+'/'+anchor).encode()).hexdigest() if anchor else question['id']
+        return state_result('approval', 'terminal_question', question['title'], int(time.time()), transition)
     if not observation.get('identity') or observation.get('base') is None:
         return state_result('unknown', 'none', 'Live agent process could not be verified')
     if observation['kind'] == 'pi':
@@ -1115,12 +1228,14 @@ def provider_activity(observation, candidates=None):
             # Claude derives shell from idle foreground plus background shell work.
             # Background liveness/completion stays in the separate task snapshot.
             state = {'idle':'ready', 'shell':'ready', 'working':'working', 'busy':'working', 'running':'working',
-                     'waiting_for_approval':'approval', 'waiting_for_permission':'approval'}.get(value)
+                     'waiting_for_approval':'approval', 'waiting_for_permission':'approval', 'waiting':'approval'}.get(value)
             if state is None:
                 return state_result('unknown', 'claude_registry', 'Provider status is not recognized', stamp)
             if state == 'working' and now - max(stamp, updated or stamp) > 900:
                 return state_result('unknown', 'claude_registry', 'Working evidence is older than 15 minutes', stamp)
             evidence=max(stamp,updated or stamp) if state=='working' else stamp
+            if value == 'waiting':
+                return state_result('approval', 'claude_input', 'Claude reports waiting for user input; respond in the terminal', stamp, hashlib.sha256(f"{record['sessionId']}:{record['statusUpdatedAt']}:waiting".encode()).hexdigest())
             reason = 'Claude foreground is idle; background shell work reported' if value=='shell' else f'Claude reports {value}'
             return state_result(state, 'claude_registry', reason, evidence, hashlib.sha256(f"{record['sessionId']}:{record['statusUpdatedAt']}:{value}".encode()).hexdigest())
         except (OSError, ValueError, TypeError, IndexError):
@@ -1554,6 +1669,10 @@ def execute(request):
         except (Failure,subprocess.SubprocessError):
             fail(502,'Close outcome is uncertain. Check agents before taking another action; this close will not be retried')
         return dict(closed=True)
+    if request.get('action') == 'question_answer':
+        namespace=dict(globals())
+        exec(request['_question_code'],namespace)
+        return namespace['answer_question'](request,observation)
     if request.get('action') == 'approval':
         menu = approval_menu(observation)
         if (not menu or observation['identity'] != request.get('identity')
@@ -1663,12 +1782,26 @@ def execute(request):
         fail(409, 'Conversation is no longer available for this project')
     result = dict(instance=observation['identity'], screen=observation['screen'], context=observation['context'],
                   project=observation['cwd'], provider=observation['kind'], selected=selected,
-                  approval=approval_menu(observation),
+                  approval=approval_menu(observation), input_request=input_question(observation),
                   association='process' if chosen and chosen['linked'] else 'project' if chosen else 'none',
                   conversations=[{k:v for k,v in c.items() if k != 'path'} for c in candidates],
                   activity=provider_activity(observation, candidates),
                   messages=[], older_cursor=None,
                   send_available=bool(observation['identity']) and not observation['in_mode'])
+    if result['input_request'] and result['input_request']['supported']:
+        question=result['input_request'];anchor=question_request_id(observation,question,candidates)
+        if anchor:
+            question['request_id']=anchor
+            question['menu_id']=question['id']
+            question['id']=hashlib.sha256((question['id']+'/'+anchor).encode()).hexdigest()
+        else:
+            question['supported']=False
+            question['reason']='The pending native question call could not be verified; answer in the terminal.'
+        try: result['input_request']['text_max_bytes']=min(512,max(0,int(tmux(request,'display-message','-p','-t',observation['target'],'#{pane_width}').strip())-12))
+        except (Failure,ValueError):result['input_request']['text_max_bytes']=0
+    if result['input_request'] or result['activity']['source']=='claude_input':
+        result['send_available']=False
+        result['send_reason']='Claude is waiting for an answer in a native dialog. Respond in the terminal.'
     if observation['kind']=='pi' and (pi_dialog(observation) or result['activity']['state']=='approval'):
         result['send_available']=False
         result['send_reason']='Pi is waiting for input in a dialog. Answer it in the terminal before sending a message.'

@@ -22,6 +22,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
+- [Task 0058: Tickets navigation](docs/tasks/done/0058-tickets-navigation.md) — published and verified.
+
+- [Task 0057: Guarded question responses](docs/tasks/done/0057-guarded-question-responses.md) — deployed; desktop/phone controls verified without answering the live question.
+
+- [Task 0056: Claude question attention](docs/tasks/done/0056-claude-question-attention.md) — deployed; [bug 0028 fixed](docs/bugs/fixed/0028-claude-question-not-surfaced.md).
+
 - [Task 0055: Delete whiteboard control](docs/tasks/done/0055-whiteboard-delete-control.md)
 
 - [Task 0053: guarded message attachments](docs/tasks/done/0053-guarded-message-attachments.md)
