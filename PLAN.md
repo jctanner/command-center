@@ -16,6 +16,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
+- [Task 0048: agent message recall](docs/tasks/done/0048-agent-message-recall.md)
+
 - [Task 0047: compact queue host errors](docs/tasks/done/0047-compact-queue-host-errors.md)
 
 - [Task 0046: ticket Review state](docs/tasks/done/0046-ticket-review-state.md)
@@ -173,6 +175,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-10: agent message recall](docs/notes/2026-11-10-agent-message-recall.md)
 
 - [2026-11-10: compact machine errors](docs/notes/2026-11-10-compact-machine-errors.md)
 

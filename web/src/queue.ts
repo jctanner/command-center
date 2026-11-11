@@ -84,6 +84,7 @@ export class AttentionQueue {
   private detailRequest = 0;
   private loadingDetail = false;
   private drafts = new Map<string, string>();
+  private recall?:{scope:string;key:string;entries:string[];index:number;draft:string};
   private conversations = new Map<string, string>();
   private uncertain = new Set<string>();
   private submitting = false;
@@ -188,7 +189,7 @@ export class AttentionQueue {
     this.older.onclick = () => { if (this.detailData?.older_cursor != null) void this.loadDetail(false, this.detailData.older_cursor); };
     const screen = node('details'); screen.className = 'agent-screen'; screen.append(node('summary', 'Live terminal context'), this.context); this.context.tabIndex = 0;
     this.composer.setAttribute('aria-label', 'Message to agent'); this.composer.placeholder = 'Message this agent…'; this.composer.rows = 3; this.composer.maxLength = 12000;
-    this.composer.oninput = () => { this.drafts.set(this.draftKey(), this.composer.value); this.fitComposer(); this.updateSend(); };
+    this.composer.oninput = () => { this.recall=undefined; this.drafts.set(this.draftKey(), this.composer.value); this.fitComposer(); this.updateSend(); };
     const form = node('form'); form.className = 'agent-composer';
     form.onsubmit = event => { event.preventDefault(); void this.send(); };
     let composing=false;
@@ -197,12 +198,13 @@ export class AttentionQueue {
     this.composer.addEventListener('compositionend',()=>{composing=false;});
     this.composer.addEventListener('blur',()=>{composing=false;});
     this.composer.addEventListener('keydown',event=>{
+      if(!event.shiftKey&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.isComposing&&event.keyCode!==229&&!composing&&this.recallMessage(event))return;
       if(event.key!=='Enter'||event.shiftKey||event.ctrlKey||event.metaKey||event.altKey||event.isComposing||event.keyCode===229||composing)return;
       event.preventDefault();if(!event.repeat)form.requestSubmit();
     });
     this.sendButton.type = 'submit'; this.sendButton.setAttribute('aria-label', 'Send message'); this.sendButton.className = 'primary';
     const inputRow = node('div'); inputRow.className = 'composer-input'; inputRow.append(this.composer, this.sendButton);
-    const composerHelp=node('small','Enter to send or queue · Shift+Enter for a new line. Queued messages wait for verified Ready status. Uncertain terminal input is never retried automatically.');composerHelp.id='agent-composer-help';
+    const composerHelp=node('small','Enter to send or queue · Shift+Enter for a new line · ↑/↓ on the first/last line recalls sent messages. Queued messages wait for verified Ready status. Uncertain terminal input is never retried automatically.');composerHelp.id='agent-composer-help';
     form.append(inputRow, composerHelp, this.sendFeedback);
     this.deliveryReview.type = 'button'; this.deliveryReview.hidden = true;
     this.deliveryReview.onclick = () => { this.uncertain.delete(this.draftKey()); this.deliveryReview.hidden = true; this.sendFeedback.textContent = ''; void this.loadDetail(); };
@@ -276,6 +278,30 @@ export class AttentionQueue {
   }
   private entries() { return (this.snapshot?.hosts || []).flatMap(h => h.items.map(item => ({ h, item }))).filter(({ h, item }) => (!this.host || h.id === this.host) && (!this.project || JSON.stringify([h.id, item.project]) === this.project) && (!this.statusSelect.value || (this.statusSelect.value === 'needs_attention' ? needsAttention(item) : this.statusSelect.value === 'attention' ? waiting(item) : stateOf(item) === this.statusSelect.value))); }
   private chosen() { return (this.snapshot?.hosts || []).flatMap(h => h.items.map(item => ({ h, item }))).find(e => e.item.id === this.selected); }
+  private clearRecall(){if(this.recall)this.drafts.set(this.recall.key,this.recall.draft);this.recall=undefined;}
+  private recallMessage(event:KeyboardEvent){
+    if(!['ArrowUp','ArrowDown'].includes(event.key)||this.composer.readOnly||this.composer.disabled)return false;
+    const data=this.detailData,chosen=this.chosen();if(!data?.instance||!chosen)return false;
+    const input=this.composer,up=event.key==='ArrowUp',cursor=input.selectionStart;
+    if(cursor!==input.selectionEnd||(up?input.value.slice(0,cursor).includes('\n'):input.value.slice(cursor).includes('\n')))return false;
+    const scope=JSON.stringify([chosen.h.id,chosen.h.connection_revision,this.draftKey(),data.selected,data.history_branch]);
+    if(this.recall?.scope!==scope)this.recall=undefined;
+    if(!this.recall){
+      if(!up)return false;
+      const target={host:chosen.h.id,session:chosen.item.session,window:chosen.item.window,pane:chosen.item.pane,instance:data.instance,conversation:data.selected};
+      const entries=[...data.messages.filter(m=>m.role==='user'&&!m.truncated).map(m=>this.outbox.visibleUserText(target,m.id,m.text,data.provider)),...this.outbox.recallPending(target)]
+        .filter(text=>text.trim()&&new TextEncoder().encode(text).length<=12000).slice(-50);
+      if(!entries.length)return false;
+      this.recall={scope,key:this.draftKey(),entries,index:entries.length,draft:input.value};
+    }
+    const state=this.recall;event.preventDefault();
+    state.index=Math.max(0,Math.min(state.entries.length,state.index+(up?-1:1)));
+    input.value=state.index===state.entries.length?state.draft:state.entries[state.index];
+    input.setSelectionRange(up?0:input.value.length,up?0:input.value.length);
+    this.drafts.set(this.draftKey(),input.value);this.fitComposer();this.updateSend();
+    if(state.index===state.entries.length)this.recall=undefined;
+    return true;
+  }
   private draftKey() { return `${this.selected}/${this.detailData?.instance || 'unverified'}`; }
   private render() {
     if (!this.visible) return;
@@ -343,7 +369,7 @@ export class AttentionQueue {
       this.chatNotice.hidden = false; this.chatNotice.textContent = this.detailFeedback.textContent;
     }
     if (this.detailKey !== this.selected) {
-      this.detailRequest++; this.loadingDetail = false; this.readAvailable = false; this.detailKey = this.selected; this.detailData = undefined; this.detailUnavailable = false;
+      this.clearRecall(); this.detailRequest++; this.loadingDetail = false; this.readAvailable = false; this.detailKey = this.selected; this.detailData = undefined; this.detailUnavailable = false;
       this.composer.value = ''; this.history.replaceChildren(); this.conversationSelect.replaceChildren(); this.association.textContent = ''; this.context.textContent = chosen?.item.context || '';
       this.sendFeedback.textContent = ''; this.chatNotice.hidden = true; this.older.hidden = true; this.updateSend();
       if (chosen) void this.loadDetail(true);
@@ -491,6 +517,7 @@ export class AttentionQueue {
         data.older_cursor = previous.older_cursor;
       }
       if(data.card&&data.instance&&data.instance===item.attention?.instance){this.mergeCard(item,data.instance,data.card);this.title.textContent=item.card?.name||(waiting(item)?item.prompt:agentTitle(item));this.cardNotes.textContent=item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;const label=this.list.querySelector('.queue-card.selected strong');if(label)label.textContent=this.title.textContent;}
+      if(previous?.selected!==data.selected||previous?.instance!==data.instance||previous?.history_branch!==data.history_branch||data.history_reset)this.clearRecall();
       this.detailUnavailable = false; this.detailData = data; this.readAvailable = before == null;
       this.composer.value = this.drafts.get(this.draftKey()) || ''; this.fitComposer();
       this.context.textContent = data.context;
@@ -613,7 +640,7 @@ export class AttentionQueue {
     let uncertain = true;
     try {
       const entry=await this.outbox.send({host:chosen.h.id,session:chosen.item.session,window:chosen.item.window,pane:chosen.item.pane,instance:this.detailData?.instance||'',conversation:this.detailData?.selected},token,text);
-      uncertain = false; this.drafts.delete(key);
+      uncertain = false; this.recall=undefined; this.drafts.delete(key);
       if(entry.status!=='queued')this.pendingReplies.set(key, { at: Date.now(), reply: baselineReply, activity: baselineActivity });
       if (this.selected === selected) { this.composer.value = ''; this.fitComposer(); this.sendFeedback.textContent = entry.status==='queued'?'Queued for delivery to the native CLI, including while it is working. Your message stays visible.':'Submitted to the native CLI; it may queue the message while working. Native history has not confirmed it yet.'; }
     } catch (error) {

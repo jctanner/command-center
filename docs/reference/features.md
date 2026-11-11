@@ -294,3 +294,7 @@ Assistant Markdown file links are explicit Files actions scoped to the agent’s
 ### Machine connection diagnostics
 
 Agents keeps machine failures and scan limits in a collapsed count disclosure, with per-machine diagnostics on demand. SSH identity failures can occur when dual-boot operating systems use different host keys; verification stays strict. CC reconnects when the trusted system returns, and recovered issues clear automatically.
+
+### Agent message recall
+
+In the agent composer, unmodified Up on the first line recalls earlier sent messages; Down on the last line moves forward and restores the unsent draft. Editing a recalled message makes it the new draft. Recall uses up to 50 complete messages from loaded conversation pages and current pending submissions, scoped to the active machine/process/conversation. It does not fetch older history or send automatically. Modifier arrows, selections, IME and multiline cursor movement remain available.

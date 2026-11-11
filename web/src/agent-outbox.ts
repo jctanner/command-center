@@ -118,6 +118,7 @@ export class AgentOutbox {
    return this.awaitingNative.has(r.id);
   }).map(r=>this.row(r,false,r.instance!==target.instance));
  }
+ recallPending(target:OutboxTarget){return this.entries().filter(r=>this.matches(r,target)&&['queued','submitting','submitted'].includes(r.status)).slice(-50).map(r=>r.text);}
  seen(target:OutboxTarget,messageId:string){return this.entries().some(r=>this.matches(r,target)&&r.status==='seen'&&String(r.seen_message)===messageId);}
  // Strip a provider paste envelope only when the original CC receipt proves
  // which text was submitted. Literal/ambiguous XML and native logs stay intact.
