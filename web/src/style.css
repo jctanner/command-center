@@ -847,6 +847,7 @@ button:disabled { opacity: .5; cursor: default; }
 .agent-outbox-dialog { width:min(650px,calc(100vw - 32px)); max-height:85dvh; box-sizing:border-box; overflow:auto;padding:16px; }
 .agent-outbox-dialog>button { margin:0 8px 12px 0; }
 .agent-outbox-dialog .agent-message { margin-left:0; }
+.outbox-attachment { overflow-wrap:anywhere; font-size:12px; }
 .agent-outbox-dialog .outbox-text { white-space:pre-wrap; overflow-wrap:anywhere; }
 .agent-outbox-messages:empty { display:none; }
 @media(max-width:760px){.agent-outbox-message { padding:12px; border-radius:12px; } .outbox-actions button { min-height:40px; }}

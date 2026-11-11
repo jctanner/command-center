@@ -1,5 +1,6 @@
 export class OutboxSendError extends Error {constructor(message:string,public uncertain:boolean){super(message);}}
 export type OutboxEntry = {
+ attachment?:{state:string;path:string;copied_at?:number;verified_at?:number;expires_at?:number;error?:string;manifest:{sha256:string;bytes:number}};
  id:string;host:string;session:string;window:string;pane:string;instance:string;conversation?:string;
  text:string;status:string;note:string;revision:number;created_at:number;updated_at:number;seen_message?:number;command_message?:number;local?:boolean;
 };
@@ -145,7 +146,7 @@ export class AgentOutbox {
    const header=element('small');header.className='outbox-inline-status';
    const pending=['queued','submitting','submitted'].includes(r.status)&&!replaced;
    if(pending){const spinner=element('span');spinner.className='outbox-spinner';spinner.setAttribute('aria-hidden','true');header.append(spinner);}
-   header.append(element('span',`You · ${labels[r.status]||r.status}${replaced?' · previous agent process':''}`));row.append(header);
+   header.append(element('span',`You · ${labels[r.status]||r.status}${r.attachment?' · image '+r.attachment.state:''}${replaced?' · previous agent process':''}`));row.append(header);
    const text=element('div',r.text);text.className='outbox-text';row.append(text);
    const details=element('button','Message details');details.type='button';details.className='outbox-inline-details';details.onclick=()=>this.open();row.append(details);
    if(replaced||['uncertain','blocked','cancelled','command'].includes(r.status)){const warning=element('p',r.note);warning.className='outbox-inline-warning';row.append(warning);}
@@ -155,10 +156,11 @@ export class AgentOutbox {
   row.append(element('small',`You · ${labels[r.status]||r.status}${replaced?' · previous agent process':''}`));
   if(global)row.append(element('small',`${r.host} · ${r.session}:${r.window}.${r.pane} · ${new Date(r.created_at).toLocaleString()}`));
   const text=element('div',r.text);text.className='outbox-text';row.append(text,element('p',r.note));
+  if(r.attachment){const a=r.attachment;const detail=element('details');detail.className='outbox-attachment';detail.append(element('summary',`Attachment · ${a.state}`),element('p',a.path),element('p',`SHA-256: ${a.manifest.sha256} · ${a.manifest.bytes} bytes`));if(a.error)detail.append(element('p',a.error));if(a.expires_at)detail.append(element('p',`Cleanup eligible: ${new Date(a.expires_at).toLocaleString()}`));row.append(detail);}
   const actions=element('div');actions.className='outbox-actions';
   const act=(label:string,action:string)=>{const button=element('button',label);button.type='button';button.disabled=this.bulkBusy||this.activeActions.has(r.id);button.onclick=()=>{void this.act(r,action,button);};actions.append(button);};
   if(!r.local){
-   if(r.status==='queued'||r.status==='blocked'){act('Cancel message','cancel');if(!replaced)act('Submit now','submit');}
+   if(r.status==='queued'||r.status==='blocked'){act('Cancel message','cancel');if(!replaced&&(!r.attachment||r.attachment.state==='verified'))act('Submit now','submit');if(r.attachment&&r.attachment.state!=='pending')act('Check attachment','check_attachment');}
    if(r.status==='submitted'||r.status==='uncertain')act('Check delivery','check');
    if(r.status!=='queued'&&r.status!=='submitting')act('Archive receipt','archive');
   }else{

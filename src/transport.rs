@@ -193,6 +193,16 @@ impl Transport {
         self.helper_request(include_str!("agent_remote.py"), request)
             .await
     }
+    pub(crate) async fn attachment_request(
+        &self,
+        mut request: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        request["socket"] = serde_json::json!(self.host.socket);
+        request["_agent_code"] = serde_json::json!(include_str!("agent_remote.py"));
+        request["_attachment_code"] = serde_json::json!(include_str!("attachment_remote.py"));
+        self.helper_request(include_str!("attachment_bootstrap.py"), request)
+            .await
+    }
     pub(crate) async fn slack_request(
         &self,
         project: &str,

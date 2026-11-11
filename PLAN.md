@@ -9,7 +9,11 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Plan 0002: CC-46 Whiteboard](docs/plans/0002-whiteboard-workspace.md) — lightweight prototype published; shared core deployed; server images/attachments remain later phase.
+- [Task 0054: Whiteboard attachment release and harness check](docs/tasks/pending/0054-whiteboard-attachment-release-and-harness-check.md) — deployment complete; real-harness delivery validation awaits separate authorization.
+
+- [Plan 0003: guarded Whiteboard attachments](docs/plans/0003-whiteboard-attachments.md) — approved, implemented and deployed; real-harness validation pending.
+
+- [Plan 0002: CC-46 Whiteboard](docs/plans/0002-whiteboard-workspace.md) — lightweight prototype published; shared core deployed; server exports and guarded attachments deployed; real-harness validation pending.
 
 
 
@@ -17,6 +21,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0055: Delete whiteboard control](docs/tasks/done/0055-whiteboard-delete-control.md)
+
+- [Task 0053: guarded message attachments](docs/tasks/done/0053-guarded-message-attachments.md)
+
+- [Task 0052: Whiteboard server export and audit](docs/tasks/done/0052-whiteboard-server-export.md)
 
 - [Task 0051: shared Whiteboard and coordinator drawing](docs/tasks/done/0051-shared-whiteboard.md)
 
@@ -180,11 +190,15 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Decisions
 
+- [ADR-0003: bounded shared-geometry export renderer](docs/decisions/0003-bounded-whiteboard-export-renderer.md) — implemented; deployment pending.
+
 - [ADR-0002: Whiteboard editor and state](docs/decisions/0002-whiteboard-engine-and-state.md) — proposed.
 
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-10: exports ready and attachment design](docs/notes/2026-11-10-whiteboard-exports-ready.md)
 
 - [2026-11-10: shared Whiteboard deployed](docs/notes/2026-11-10-shared-whiteboard-deployed.md)
 

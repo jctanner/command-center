@@ -1,6 +1,7 @@
 mod agent_cards;
 mod agent_restart;
 mod agents;
+mod attachments;
 mod attention;
 mod board;
 pub mod config;
@@ -21,6 +22,9 @@ pub mod tmux;
 mod tmux_management;
 pub mod transport;
 mod whiteboard;
+mod whiteboard_exports;
+mod whiteboard_render;
+pub use whiteboard_render::worker_main as whiteboard_render_worker;
 
 use axum::{
     Json, Router,
@@ -126,6 +130,10 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
     outbox::start(state.clone());
     Router::new()
         .merge(outbox::routes())
+        .route(
+            "/api/v1/hosts/{host}/agents/message/attachments/prepare",
+            post(attachments::prepare),
+        )
         .merge(slack::routes().layer(middleware::from_fn_with_state(
             (state.clone(), features::Feature::Slack),
             features::gate,
@@ -140,6 +148,7 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
         )))
         .merge(board::routes())
         .merge(whiteboard::routes())
+        .merge(whiteboard_exports::routes())
         .route(
             "/api/v1/openapi.json",
             get(|| async {

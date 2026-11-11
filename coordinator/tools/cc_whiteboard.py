@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 import uuid
 from cc_read import Client, ReadError, MAX_RESPONSE
+from cc_exports import run_export
 
 class WhiteboardClient(Client):
     def write(self, method, route, body):
@@ -30,20 +31,25 @@ class WhiteboardClient(Client):
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--url',default=os.environ.get('CC_URL','http://127.0.0.1:8080'));sub=parser.add_subparsers(dest='command',required=True)
     sub.add_parser('list')
-    for command in ['get','description','history','export','create','rename','draw','apply','patch','delete-element','check']:
+    for command in ['get','description','history','export','create','rename','draw','apply','patch','delete-element','check','regions','region']:
         child=sub.add_parser(command)
         if command!='create':child.add_argument('--board',required=True,help='Whiteboard UUID')
-        if command in ['create','rename','draw','apply','patch','delete-element']:child.add_argument('--input',required=True,type=Path,help='Saved JSON intent; see Whiteboard API reference')
+        if command in ['create','rename','draw','apply','patch','delete-element','region']:child.add_argument('--input',required=True,type=Path,help='Saved JSON intent; see Whiteboard API reference')
         if command in ['patch','delete-element']:child.add_argument('--element',required=True)
         if command=='check':child.add_argument('--operation',required=True)
+    export=sub.choices['export'];export.add_argument('--export-id');export.add_argument('--output-dir',type=Path,required=True);export.add_argument('--scope',choices=['board','selection','frame','group'],default='board');export.add_argument('--elements',nargs='+');export.add_argument('--region');export.add_argument('--region-revision');export.add_argument('--revision',type=int);export.add_argument('--scale',type=float,default=1);export.add_argument('--theme',choices=['light','dark'],default='dark');export.add_argument('--format',choices=['all','png','svg','json','text'],default='all')
+    download=sub.add_parser('download');download.add_argument('--export-id',required=True);download.add_argument('--output-dir',type=Path,required=True);download.add_argument('--format',choices=['all','png','svg','json','text'],default='all')
     args=parser.parse_args()
     try:
         client=WhiteboardClient(args.url)
-        if args.command=='list':result=client.get('whiteboards')
+        if args.command in ['export','download']:
+            if args.command=='export':uuid.UUID(args.board)
+            result=run_export(client,args)
+        elif args.command=='list':result=client.get('whiteboards')
         else:
             if args.command!='create':uuid.UUID(args.board)
             route='whiteboards'+('/'+args.board if args.command!='create'else'')
-            if args.command in ['get','description','history','export','check']:
+            if args.command in ['get','description','history','export','check','regions']:
                 if args.command=='check':uuid.UUID(args.operation);route+='/operations/'+args.operation
                 elif args.command!='get':route+='/'+args.command
                 result=client.get(route)
@@ -55,7 +61,8 @@ def main():
                 if args.command in ['patch','delete-element']:uuid.UUID(args.element);route+='/elements/'+args.element
                 if args.command=='draw':route+='/graph'
                 if args.command=='apply':route+='/operations'
-                if args.command not in ['rename']:uuid.UUID(body['id']if args.command=='create'else body['operation_id'])
+                if args.command=='region':route+='/regions'
+                if args.command not in ['rename']:uuid.UUID(body['id']if args.command in ['create','region']else body['operation_id'])
                 method='PATCH'if args.command in ['rename','patch']else'DELETE'if args.command=='delete-element'else'POST'
                 print('Whiteboard intent: '+str(body.get('operation_id',body.get('id',getattr(args,'board','')))),file=sys.stderr)
                 result=client.write(method,route,body)

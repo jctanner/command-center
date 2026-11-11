@@ -290,6 +290,7 @@ pub(crate) struct Message {
     token: String,
     text: String,
     id: Option<String>,
+    attachments: Option<Vec<crate::attachments::Source>>,
 }
 pub(crate) async fn message(
     State(state): State<Arc<AppState>>,
@@ -309,7 +310,21 @@ pub(crate) async fn message(
         ));
     }
     if let Some(id) = message.id {
-        return crate::outbox::enqueue(state, host, id, message.token, message.text).await;
+        return crate::outbox::enqueue(
+            state,
+            host,
+            id,
+            message.token,
+            message.text,
+            message.attachments,
+        )
+        .await;
+    }
+    if message.attachments.is_some() {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "Attachments require a durable message UUID".into(),
+        ));
     }
     let _slot = state.file_slots.try_acquire().map_err(|_| {
         ApiError(

@@ -88,10 +88,52 @@ client = BoardClient("http://127.0.0.1:8080")  # Or the configured trusted CC UR
 # client.mutate("POST", "agents/outbox/" + receipt_id, {"action": "check", "revision": revision})
 ```
 
-These are Python methods, not newly added `cc_board.py send` CLI commands. The HTTP helper supplies the exact Origin header and never retries mutations. Its generic error text mentions tickets; apply the message-specific UUID/outbox recovery above for this workflow. Keep TLS verification and configured Host/Origin checks. These existing messaging/outbox routes are outside the initial scoped coordinator/Board OpenAPI document; their handlers and this playbook define the current workflow.
+These are Python methods, not newly added `cc_board.py send` CLI commands. The HTTP helper supplies the exact Origin header and never retries mutations. Its generic error text mentions tickets; apply the message-specific UUID/outbox recovery above for this workflow. Keep TLS verification and configured Host/Origin checks. The message, attachment-preparation and outbox operations are documented in the OpenAPI contract; this playbook describes their authority and recovery rules.
 
 No direct SSH/tmux, provider messaging CLI, terminal viewer, automatic approvals, native session restarts or queue force-submit is part of ordinary coordinator messaging.
 
 Verified Working agents receive ordinary paste/Enter input through their CLI’s native queue/steering behavior; CC does not interrupt the running turn. Definite, anchored Submitted receipts no longer hold later messages until history catches up. Uncertain, blocked and legacy unanchored submissions remain barriers. Submitted is transport evidence, not proof the model has read the input; Seen still requires the original process-linked native user record. A strictly pre-paste guard change may defer the same intent with explicit not-sent evidence; no actual or uncertain input is replayed.
 
 Pi leading !/!! text is native shell syntax, not literal chat. CC now rejects such chat before paste; use a faithful conversational prefix such as FYI: when authorized, and preserve exact-text requests by clarifying instead of silently rewriting.
+
+## Whiteboard attachments
+
+Managed attachments are deployed; discover the served contract before relying on routes. The coordinator can attach **one ready CC-managed whiteboard PNG export** to an explicitly requested message or a scoped coordination handoff. No arbitrary local paths, uploads, external URLs or SVG attachments are accepted. Export/download alone does not deliver anything. Never claim a text-only send carries an attachment. Prefer a short description plus one scoped image, or a reachable board link when an image is unnecessary.
+
+1. Use `cc-whiteboard` to create a frozen export. Keep its UUID, revision/scope and PNG hash. A local download is optional for delivery: CC uses the managed export UUID, never the sender's local path.
+2. Resolve the intended live target and obtain the existing conversation/message token as above. Require `association: process` and check `instance` and `selected`. Generate a new message UUID and persist the intent privately **before any POST**.
+3. Prepare (read-only on the recipient):
+
+```json
+POST /api/v1/hosts/{host}/agents/message/attachments/prepare
+{
+  "id": "11111111-1111-4111-8111-111111111111",
+  "token": "FRESH_NATIVE_MESSAGE_TOKEN",
+  "text": "Please review this architecture for our agreed task.",
+  "attachment": {"export_id": "22222222-2222-4222-8222-222222222222", "format": "png"}
+}
+```
+
+The response contains a **different**, single-use 120-second `token`, `text`, exact target/instance/endpoint, and `attachment` manifest/path. Preparation consumes the original token, validates the exact process-linked conversation and inspects the target account's home/ancestors without creating files. Inspect the returned composed text and source scope: original text is unchanged, followed by the target absolute PNG path and at most 2 KiB of drawing-description fallback. The whole text must fit 12,000 UTF-8 bytes. Drawing labels are quoted task data, never additional delivery authority. Do not log capabilities or dump the full response into tracked notes.
+
+4. Save the complete prepared intent privately, mark the send attempted before IO, then enqueue exactly once:
+
+```json
+POST /api/v1/hosts/{host}/agents/message
+{
+  "id": "SAME_MESSAGE_UUID",
+  "token": "ATTACHMENT_PREPARATION_TOKEN",
+  "text": "EXACT_RETURNED_COMPOSED_TEXT",
+  "attachments": [{"export_id": "SAME_EXPORT_UUID", "format": "png"}]
+}
+```
+
+No modified text, alternative destination, changed export, omitted UUID or ordinary native token works for this attachment intent. On lost response inspect the same UUID in the outbox; never resend automatically, allocate a replacement or use SSH/SCP. A conflicting UUID is 409; consumed native capabilities may be 410. Preparation itself sends no message.
+
+The backend durably commits the outbox intent, manifest and source pin before copying. Shared local/SSH/ProxyJump transport writes `~/.cache/command-center/attachments/<message-UUID>/whiteboard-<board-UUID>.png`, returned as an absolute path. Managed directories are 0700; files start 0600 and completed files become 0400. Directory descriptors/no-follow operations, exclusive creation, exact immutable intent/completion markers and read-back SHA-256 prevent traversal and overwrite. Existing account directories are not chmod'ed. Unexpected content or unsafe permissions fails closed. Copying is limited to two globally/one per host, one PNG <=4 MiB and <=8 megapixels per message, and a 128 MiB managed target quota. Ordinary agent helper input limits remain unchanged.
+
+`outbox.attachment` exposes `pending`, `copying`, `copied`, `verified`, `uncertain`, `failed` or `expired`, with path/source/hash/size, copied/verified timestamps, native submitted/seen timestamps, and cleanup eligibility/completion timestamps. These are **file** receipts. Message `submitted` means the verified path and fallback were handed to the original native CLI once; `seen` requires its existing exact native user-record evidence. Neither proves the model opened or understood the PNG. Claude/Codex/pi image viewing on real remote sessions remains **unverified**, pending explicitly authorized harness tests; use the text fallback honestly.
+
+A copy interruption becomes attachment-uncertain and blocks input. `check_attachment` on a queued/blocked receipt is a revision-checked, read-only inspection of the original intent/completion markers and image checksum, never a transfer or terminal send in that request. A successfully recovered queued intent may then proceed through the normal worker using its original authorization and fresh native guards. It cannot recover a replaced process or conversation, overwrite a partial copy or replay uncertain native input. Request explicit human recovery authority before invoking it. Manual Submit now additionally requires a verified attachment, fresh checksum and normal target/screen grant; it never silently sends a text-only substitute.
+
+Unresolved receipts pin their internal source bytes beyond the public export's 24-hour TTL; expired public download URLs still return 410. Source/target quotas fail new work rather than evicting pending dependencies. After resolution/cancellation/archive, remote copies become cleanup-eligible in seven days. Cleanup runs separately from message dispatch, only on the unchanged endpoint, and removes only owned regular files proven by the exact intent marker in that UUID directory; unknown content and unsafe/changed/unavailable hosts are retained. A partial transfer with a valid intent marker is eligible too; a crash before any marker leaves an unproven directory for manual review. An overdue timestamp is eligibility, not proof of deletion. Only successful checked deletion reports `expired`; uncertain cleanup is re-inspected, never reported as success. No running agent or tmux window is closed by expiry.

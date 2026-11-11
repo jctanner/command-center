@@ -49,8 +49,8 @@ pub(crate) fn init(c: &Connection) -> anyhow::Result<()> {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Point {
-    x: f64,
-    y: f64,
+    pub(crate) x: f64,
+    pub(crate) y: f64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -101,7 +101,7 @@ pub(crate) struct Scene {
     pub elements: Vec<Element>,
     pub updated_at: u64,
 }
-fn load(c: &Connection, id: &str) -> Result<Scene, ApiError> {
+pub(crate) fn load(c: &Connection, id: &str) -> Result<Scene, ApiError> {
     let data: Option<String> = c
         .query_row(
             "SELECT data FROM whiteboards WHERE id=?1 AND deleted=0",
@@ -124,7 +124,7 @@ fn write(c: &Connection, s: &Scene) -> Result<(), ApiError> {
 fn actor(s: &str) -> bool {
     !s.trim().is_empty() && s.len() <= 80 && !s.chars().any(char::is_control)
 }
-fn valid(d: &Drawing) -> bool {
+pub(crate) fn valid(d: &Drawing) -> bool {
     [d.x, d.y, d.w, d.h]
         .iter()
         .all(|n| n.is_finite() && n.abs() <= 100_000.)
@@ -728,7 +728,7 @@ async fn operation(
         })
         .await
 }
-fn description(s: &Scene) -> String {
+pub(crate) fn description(s: &Scene) -> String {
     let mut text = format!("{} · revision {}\n", s.name, s.revision);
     for e in &s.elements {
         text.push_str(&format!("{} {} {:?} at ({:.0},{:.0}) size {:.0}×{:.0}; revision {}; created by {}; last edit {}",e.id,e.drawing.kind,e.drawing.text,e.drawing.x,e.drawing.y,e.drawing.w,e.drawing.h,e.revision,e.created_by,e.author));

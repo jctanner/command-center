@@ -18,9 +18,12 @@ Use the served OpenAPI contract and `coordinator/tools/cc_whiteboard.py`. All mu
 | Graph placement without pixels | POST `/whiteboards/{id}/graph` |
 | Read-only write recovery | GET `/whiteboards/{id}/operations/{operation}` |
 | Text readback; recent drawing history | GET `/whiteboards/{id}/description`, `/history` |
-| Native JSON and description download | GET `/whiteboards/{id}/export` |
+| Legacy native JSON and description download | GET `/whiteboards/{id}/export` |
+| Freeze/render a scoped export | POST `/whiteboards/{id}/export` |
+| Export status and immutable bytes | GET `/whiteboard-exports/{id}`, `/{format}` |
+| Named API frame/group scopes | GET/POST `/whiteboards/{id}/regions` |
 
-Create: `{id:UUID,name:"Design",ticket:null}`. Metadata PATCH: `{revision:METADATA_REV,name:"Design",ticket:EXISTING_TICKET_UUID_OR_NULL}`. Always retain ticket when renaming unless unlinking is intended. Delete uses the exact scene `{revision:NUMBER}` and retains stored identity/history; it never controls agents or tickets.
+Create: `{id:UUID,name:"Design",ticket:null}`. Metadata PATCH: `{revision:METADATA_REV,name:"Design",ticket:EXISTING_TICKET_UUID_OR_NULL}`. Always retain ticket when renaming unless unlinking is intended. Delete uses the exact scene `{revision:NUMBER}` and retains stored identity/history; it never controls agents or tickets. In the editor, **Delete whiteboard** beside Rename confirms the selected board name, with Cancel focused. Finish saving/recovering local edits first. A concurrent edit blocks deletion until the server version is reviewed; lost responses are checked read-only and never automatically retried. Successful deletion selects another board or shows the empty state. **Delete selected** remains an object action.
 
 For a new graph save this JSON intent with real UUIDs once, then call `draw --board UUID --input FILE`:
 
@@ -51,4 +54,26 @@ The editor commits completed gestures/text edits after a short debounce. Visible
 
 Starting bounds: 100 boards, 300 elements/board, 1 MiB serialized scene, 2 MiB write bodies, 1,500 freehand points/element and 4,800 UTF-8 bytes of text. Geometry is finite within ±100,000. Total scenes are capped at 16 MiB, recent snapshots at 32 MiB, and retained operation/element identity counts at 100,000 each. At most 100 recent drawing snapshots are listed, subject to global history pruning. Operation receipts retain hashes/revisions, not a second full transcript/scene history. Metadata edits are not drawing snapshots. Capacity failures preserve old state.
 
-SVG/PNG/JSON can be downloaded from the browser; REST export currently provides whole-board native JSON plus text. Server image rendering, selection/frame exports, images/import, richer editing and guarded remote attachments remain later work. Do not claim an agent can receive a local PNG on a different machine through the existing text outbox.
+SVG/PNG/JSON can be downloaded from the browser. Server-rendered scoped exports are described below. Images/import and richer editing remain later work. Managed PNG attachments are implemented separately; see coordinator messaging, and discover the served API before use.
+
+## Frozen server exports
+
+POST `/whiteboards/{id}/export` with `{id:EXPORT_UUID,revision:SCENE_REV,scope:{kind:"board"},scale:1,theme:"dark"}`. Scale is .25–4; theme light/dark uses the corresponding built-in CC palette. Selection scope is `{kind:"selection",elements:[UUID,...]}`. Frame/group scopes are `{kind:"frame"|"group",id:REGION_UUID,revision:REGION_REV}`. Scene and region revisions must match the observations. Exported JSON/text/SVG include only selected members. An arrow referencing excluded shapes gets frozen absolute endpoints with those bindings removed; excluded labels/IDs/ticket references are not embedded. Selection does not implicitly include other connected shapes. Frames clip to their explicit bounds and refuse export if member geometry moved outside the frame.
+
+Named scopes are API-level records for now. POST `/regions` with `{id,scene_revision,name,kind,elements,bounds}`; omit/null revision on create and use current region revision on edits. Frames require positive finite x/y/w/h bounds; groups omit/null bounds. GET `/regions` lists up to 100 scopes. This does not implement GUI group/frame editing or move scene elements.
+
+The returned manifest has state rendering/ready/failed/expired, source revision/scope, included element IDs, bounds, theme/scale, dimensions and per-format URL/size/MIME/SHA-256. Ready `artifacts` contains png, svg, json and text. Download through the returned same-origin `/api/v1/whiteboard-exports/{UUID}/{format}` URLs. Native JSON is type cc-whiteboard-export and includes the scoped scene/description. Legacy GET export remains unchanged. Artifacts are no-store attachments with restrictive SVG CSP; SVG is self-contained with the shared font when labels exist, not hidden full-scene metadata or remote resources. Browser local-draft JSON remains distinct from a frozen committed export.
+
+One resource-limited Rust subprocess embeds the exact pinned roughjs generator and shared browser geometry code; resvg rasterizes its SVG. No Node/Chromium service, JS host filesystem/network bindings, system fonts or external resource resolution. One bundled Liberation Sans font gives consistent supported glyphs and label placement; unsupported glyph coverage is limited to that font. Hand-drawn seeds/clean mode, arrow binding geometry and wrapping are shared with the browser. An HTTP disconnect does not cancel/replay the durable render; GET the same retained ID. On service restart, an in-progress render becomes failed, never silently retried. Same UUID/same request returns retained status; different reuse is 409. A failed export publishes no partial artifacts.
+
+Limits: one render at a time (busy 429 starts none); 12-second worker deadline, 6-second JS interrupt budget/64 MiB JS memory, 8-megapixel PNG and at most 8192 pixels per side, 8 MiB/artifact and 2 MiB worker input. Unix workers additionally have 8 CPU-second/512 MiB address-space limits. No public renderer port or daemon. The 128 KiB HTTP request contains IDs/options, not image data. Artifact BLOB quota is 64 MiB; at most 10,000 export identities retained. Artifacts expire after 24 hours; the next export reclaims expired bytes while retaining UUID/digest evidence. Durable attachment pins preserve internal bytes for unresolved outbox messages; public expired URLs remain unavailable. Quota pressure never evicts a pinned dependency.
+
+From coordinator directory, a local download is:
+
+```sh
+python3 tools/cc_whiteboard.py export --board BOARD_UUID --theme dark --format all --output-dir ../.local/coordinator-whiteboards/exports
+```
+
+The helper creates a UUID-named private directory and saves intent before POST. Its JSON output includes local file paths. Directories are 0700/files 0600, symlinks are rejected, size/type/SHA-256 verified, and existing files are never overwritten. After an uncertain response use `download --export-id EXPORT_UUID --output-dir ...`; it performs GETs only. If the retained job failed/expired, review it before explicitly making a new export with a new UUID. Current `export` requires an output directory; callers needing only legacy native JSON can use the GET API.
+
+Export/download alone is not delivery. The [approved attachment contract](../plans/0003-whiteboard-attachments.md) is implemented through exact-process preparation and the durable outbox; follow [coordinator messaging](coordinator-messaging.md#whiteboard-attachments). It accepts a managed PNG export UUID, never a sender-local file path. Prefer a short description plus one scoped image. Real remote Claude/Codex/pi image-viewing checks remain pending outward-test authorization.

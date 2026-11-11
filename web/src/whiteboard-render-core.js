@@ -1,0 +1,24 @@
+// Shared by the browser and Rust's bounded embedded JS renderer. No DOM or IO.
+export function drawingEnds(item,items){
+ const center=s=>({x:s.x+s.w/2,y:s.y+s.h/2});
+ const boundary=(s,p)=>{const c=center(s),dx=p.x-c.x,dy=p.y-c.y,a=Math.max(1,s.w/2),b=Math.max(1,s.h/2);if(!dx&&!dy)return c;const k=s.kind==='ellipse'?1/Math.sqrt(dx*dx/(a*a)+dy*dy/(b*b)):s.kind==='diamond'?1/(Math.abs(dx)/a+Math.abs(dy)/b):Math.min(dx?a/Math.abs(dx):Infinity,dy?b/Math.abs(dy):Infinity);return{x:c.x+dx*k,y:c.y+dy*k};};
+ const a=items.find(s=>s.id===item.from),b=items.find(s=>s.id===item.to),ca=a?center(a):{x:item.x,y:item.y},cb=b?center(b):{x:item.x+item.w,y:item.y+item.h};return[a?boundary(a,cb):ca,b?boundary(b,ca):cb];
+}
+export function drawingGeometry(generator,item,items,palette){
+ const s=item,stroke=palette[s.color==='ink'?'foreground':s.color]||palette.accent;
+ const options={stroke,strokeWidth:1.8,roughness:s.clean?0:1.05,seed:Math.max(1,s.seed),fillStyle:'solid',fill:s.kind==='sticky'?(palette.mode==='light'?'#fff0ad':'#403923'):'none'};
+ let drawings=[];if(s.kind==='rectangle'||s.kind==='sticky')drawings=[generator.rectangle(s.x,s.y,s.w,s.h,options)];
+ if(s.kind==='ellipse')drawings=[generator.ellipse(s.x+s.w/2,s.y+s.h/2,s.w,s.h,options)];
+ if(s.kind==='diamond')drawings=[generator.polygon([[s.x+s.w/2,s.y],[s.x+s.w,s.y+s.h/2],[s.x+s.w/2,s.y+s.h],[s.x,s.y+s.h/2]],options)];
+ if(s.kind==='arrow'){const[a,b]=drawingEnds(s,items),angle=Math.atan2(b.y-a.y,b.x-a.x),n=12;drawings=[generator.line(a.x,a.y,b.x,b.y,options),generator.linearPath([[b.x-n*Math.cos(angle-.45),b.y-n*Math.sin(angle-.45)],[b.x,b.y],[b.x-n*Math.cos(angle+.45),b.y-n*Math.sin(angle+.45)]],options)];}
+ const paths=drawings.flatMap(d=>generator.toPaths(d));if(s.kind==='freehand'&&s.points?.length)paths.push({d:s.points.map((p,i)=>`${i?'L':'M'}${s.x+p.x},${s.y+p.y}`).join(' '),fill:'none',stroke,strokeWidth:2.5,round:true});
+ let label=null;if(s.text&&!['arrow','freehand'].includes(s.kind)){const lines=[],limit=Math.max(4,Math.floor((s.w-20)/8));for(const row of s.text.split('\n')){let rest=row;while(rest.length>limit){let split=rest.lastIndexOf(' ',limit);if(split<limit/2)split=limit;lines.push(rest.slice(0,split));rest=rest.slice(split).trimStart();}lines.push(rest);}label={lines:lines.slice(0,18),x:s.kind==='sticky'?s.x+16:s.x+s.w/2,y:s.kind==='sticky'?s.y+30:s.y+s.h/2-(lines.length-1)*10+5,fontSize:s.kind==='text'?19:15,anchor:s.kind==='sticky'?'start':'middle',fill:stroke};}
+ return{paths,label};
+}
+export function drawingBounds(items){let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;const add=p=>{minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);};for(const s of items){if(s.kind==='arrow')drawingEnds(s,items).forEach(add);else if(s.kind==='freehand'){for(const p of s.points||[])add({x:s.x+p.x,y:s.y+p.y});}else{add({x:s.x,y:s.y});add({x:s.x+s.w,y:s.y+s.h});if(s.text){const limit=Math.max(4,Math.floor((s.w-20)/8)),size=s.kind==='text'?19:15,rows=s.text.split('\n');let count=0,longest=0;for(const row of rows){count+=Math.max(1,Math.ceil(row.length/limit));longest=Math.max(longest,Math.min(row.length,limit));}const y=s.kind==='sticky'?s.y+30:s.y+s.h/2-(count-1)*10+5,x=s.kind==='sticky'?s.x+16:s.x+s.w/2;add({x:s.kind==='sticky'?x:x-longest*size/2,y:y-size});add({x:s.kind==='sticky'?x+longest*size:x+longest*size/2,y:y+Math.min(17,count-1)*21+size});}}}return minX===Infinity?{x:0,y:0,w:200,h:120}:{x:minX-24,y:minY-24,w:maxX-minX+48,h:maxY-minY+48};}
+export function sceneSVG(generator,items,palette,bounds,scale,font){
+ const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+ const b=bounds||drawingBounds(items);let content='';for(const s of items){const render=drawingGeometry(generator,s,items,palette);content+=`<g data-element-id="${esc(s.id)}">`;for(const p of render.paths)content+=`<path d="${esc(p.d)}" fill="${esc(p.fill)}" stroke="${esc(p.stroke)}" stroke-width="${p.strokeWidth}"${p.round?' stroke-linecap="round" stroke-linejoin="round"':''}/>`;if(render.label){const l=render.label;content+=`<text font-family="Liberation Sans" font-size="${l.fontSize}" fill="${esc(l.fill)}" text-anchor="${l.anchor}">`+l.lines.map((line,i)=>`<tspan x="${l.x}" y="${l.y+i*21}">${esc(line)}</tspan>`).join('')+'</text>';}content+='</g>';}
+ const style=font?`<style>@font-face{font-family:'Liberation Sans';src:url(data:font/ttf;base64,${font}) format('truetype')}</style>`:'';
+ return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${b.x} ${b.y} ${b.w} ${b.h}" width="${Math.ceil(b.w*scale)}" height="${Math.ceil(b.h*scale)}">${style}<defs><clipPath id="scope"><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}"/></clipPath></defs><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="${esc(palette.background)}"/><g clip-path="url(#scope)">${content}</g></svg>`;
+}

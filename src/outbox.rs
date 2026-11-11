@@ -60,6 +60,8 @@ struct Record {
     seen_message: Option<u64>,
     #[serde(default)]
     command_message: Option<u64>,
+    #[serde(default)]
+    attachment: Option<crate::attachments::Attachment>,
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -132,6 +134,17 @@ async fn change(
     r.updated_at = now();
     r.status = status.into();
     r.note = note.into();
+    if let Some(a) = r.attachment.as_mut() {
+        if status == "submitted" && a.submitted_at.is_none() {
+            a.submitted_at = Some(r.updated_at);
+        }
+        if status == "seen" && a.seen_at.is_none() {
+            a.seen_at = Some(r.updated_at);
+        }
+        if a.state == "expired" && a.expired_at.is_none() {
+            a.expired_at = Some(r.updated_at);
+        }
+    }
     s.board
         .with(move |c| {
             Ok(if write(c, &r, expected)? {
@@ -145,7 +158,7 @@ async fn change(
 fn public(r: &Record) -> Value {
     json!({"id":r.id,"host":r.host,"session":r.target.session,"window":r.target.window,"pane":r.target.pane,
         "instance":r.instance,"conversation":r.conversation,"text":r.text,"status":r.status,"note":r.note,
-        "revision":r.revision,"created_at":r.created_at,"updated_at":r.updated_at,"seen_message":r.seen_message,"command_message":r.command_message})
+        "revision":r.revision,"created_at":r.created_at,"updated_at":r.updated_at,"seen_message":r.seen_message,"command_message":r.command_message,"attachment":r.attachment})
 }
 pub(crate) fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -276,6 +289,7 @@ pub(crate) async fn enqueue(
     id: String,
     token: String,
     text: String,
+    attachments: Option<Vec<crate::attachments::Source>>,
 ) -> Result<Json<Value>, ApiError> {
     if uuid::Uuid::parse_str(&id).is_err() || id.len() != 36 {
         return Err(ApiError(
@@ -286,27 +300,62 @@ pub(crate) async fn enqueue(
     let _enqueue = s.outbox.enqueue.lock().await;
     if let Some(existing) = lookup(&s, id.clone()).await? {
         duplicate(&existing, &host, &text)?;
+        let stored_sources: Vec<_> = existing
+            .attachment
+            .iter()
+            .map(|a| a.source.clone())
+            .collect();
+        if attachments.as_deref().unwrap_or(&[]) != stored_sources
+            || (attachments.is_some() && attachments.as_ref().is_some_and(Vec::is_empty))
+        {
+            return Err(conflict(
+                "Message UUID belongs to a different attachment intent",
+            ));
+        }
         return Ok(Json(json!({"outbox":public(&existing)})));
     }
-    let grant = agents::claim_message(&s, &host, &token).await?;
+    let prepared = if attachments.is_some() {
+        let token = token.clone();
+        Some(
+            s.board
+                .with(move |c| crate::attachments::peek(c, &token))
+                .await?,
+        )
+    } else {
+        None
+    };
+    let (target, identity, attachment) = if let Some(g) = &prepared {
+        (
+            g.target.clone(),
+            g.identity.clone(),
+            Some(g.attachment.clone()),
+        )
+    } else {
+        let g = agents::claim_message(&s, &host, &token).await?;
+        (g.target, g.identity, None)
+    };
     let machine = s.registry.get(&host).await?;
-    if machine.connection_revision != grant.target.connection_revision {
+    if machine.connection_revision != target.connection_revision
+        || prepared
+            .as_ref()
+            .is_some_and(|g| g.endpoint != crate::attention::scope(&machine.config, "", "", "").0)
+    {
         return Err(conflict("Machine changed; message was not queued"));
     }
     let (endpoint, scope) = crate::attention::scope(
         &machine.config,
-        &grant.target.session,
-        &grant.target.window,
-        &grant.target.pane,
+        &target.session,
+        &target.window,
+        &target.pane,
     );
     let record = Record {
         id,
         host,
         endpoint,
-        scope: format!("{scope}/{}", grant.identity),
-        conversation: grant.target.conversation.clone(),
-        target: grant.target,
-        instance: grant.identity,
+        scope: format!("{scope}/{}", identity),
+        conversation: target.conversation.clone(),
+        target,
+        instance: identity,
         digest: digest(&text),
         payload_digest: format!("{:x}", Sha256::digest(text.as_bytes())),
         text,
@@ -319,12 +368,19 @@ pub(crate) async fn enqueue(
         pending_pi_session: None,
         seen_message: None,
         command_message: None,
+        attachment,
     };
     let view = public(&record);
     s.board.with(move|c|{
+        let tx=c.transaction().map_err(storage)?;let c=&tx;
         let (count,active,bytes):(u64,u64,u64)=c.query_row("SELECT count(*),coalesce(sum(phase IN ('queued','submitting','submitted','uncertain','blocked')),0),coalesce(sum(length(json_extract(data,'$.text'))),0) FROM agent_outbox",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(storage)?;
         if count>=4096||active>=256||bytes+record.text.len() as u64>4*1024*1024 {return Err(conflict("Outbox capacity reached. Review and archive settled messages; your draft was not sent."));}
+        if let Some(refs)=attachments {
+            let g=crate::attachments::claim(c,&token,&record.host,&record.id,&record.text,&refs)?;
+            if g.endpoint!=record.endpoint || g.identity!=record.instance {return Err(conflict("Attachment target changed"));}
+        }
         c.execute("INSERT INTO agent_outbox(id,scope,phase,revision,data) VALUES (?1,?2,?3,?4,?5)",params![record.id,record.scope,record.status,record.revision,serde_json::to_string(&record).map_err(storage)?]).map_err(storage)?;
+        tx.commit().map_err(storage)?;
         Ok(())
     }).await?;
     s.outbox.wake.notify_one();
@@ -499,6 +555,222 @@ pub(crate) async fn history_receipts(
         .map(public)
         .collect())
 }
+// Caller owns the target and endpoint locks. File IO never means native input.
+async fn attachment_ready(
+    s: &AppState,
+    r: Record,
+    transport: &crate::transport::Transport,
+    allow_copy: bool,
+) -> Result<Option<Record>, ApiError> {
+    let Some(a) = r.attachment.as_ref() else {
+        return Ok(Some(r));
+    };
+    let state = a.state.clone();
+    if state == "pending" && !allow_copy {
+        return Err(conflict(
+            "No copy exists to inspect; the queued worker has not copied it",
+        ));
+    }
+    if matches!(state.as_str(), "uncertain" | "failed" | "expired") && allow_copy {
+        return Ok(None);
+    }
+    if state == "copying" && allow_copy {
+        let mut changed = r;
+        let a = changed.attachment.as_mut().unwrap();
+        a.state = "uncertain".into();
+        a.error = Some(
+            "Copy interrupted; explicitly check the attachment. It will not be copied again."
+                .into(),
+        );
+        let _=change(s,changed,"blocked","Attachment copy is uncertain; no message was sent. Check attachment before proceeding.").await?;
+        return Ok(None);
+    }
+    let mut current = r;
+    if state == "pending" {
+        current.attachment.as_mut().unwrap().state = "copying".into();
+        let Some(claimed) = change(
+            s,
+            current,
+            "queued",
+            "Copying managed PNG; no terminal input has been sent.",
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        match crate::attachments::transfer(
+            s,
+            transport,
+            &claimed.target,
+            &claimed.instance,
+            claimed.attachment.as_ref().unwrap(),
+            "copy",
+        )
+        .await
+        {
+            Ok(v) if v["state"] == "copied" => {
+                let mut next = claimed;
+                let a = next.attachment.as_mut().unwrap();
+                a.state = "copied".into();
+                a.copied_at = Some(now());
+                let Some(saved) = change(
+                    s,
+                    next,
+                    "queued",
+                    "PNG copied; checking the target checksum before input.",
+                )
+                .await?
+                else {
+                    return Ok(None);
+                };
+                current = saved;
+            }
+            _ => {
+                let mut next = claimed;
+                let a = next.attachment.as_mut().unwrap();
+                a.state = "uncertain".into();
+                a.error = Some("Copy could not be confirmed. No automatic transfer retry.".into());
+                let _=change(s,next,"blocked","Attachment transfer uncertain; inspect the attachment receipt. No terminal message was sent.").await?;
+                return Ok(None);
+            }
+        }
+    }
+    match crate::attachments::transfer(
+        s,
+        transport,
+        &current.target,
+        &current.instance,
+        current.attachment.as_ref().unwrap(),
+        "verify",
+    )
+    .await
+    {
+        Ok(v) if v["state"] == "verified" => {
+            let a = current.attachment.as_mut().unwrap();
+            if a.state == "verified" && allow_copy {
+                return Ok(Some(current));
+            }
+            a.state = "verified".into();
+            a.verified_at = Some(now());
+            a.error = None;
+            let phase = if current.status == "blocked" {
+                "queued"
+            } else {
+                current.status.as_str()
+            }
+            .to_string();
+            change(s,current,&phase,"Attachment checksum verified on the original target; awaiting guarded native input.").await
+        }
+        _ => {
+            let mut next = current;
+            let a = next.attachment.as_mut().unwrap();
+            a.state = "uncertain".into();
+            a.error=Some("Target read-back verification failed; no retransmission or terminal input was attempted.".into());
+            let _=change(s,next,"blocked","Attachment unavailable or changed; no message was sent. Check attachment explicitly.").await?;
+            Ok(None)
+        }
+    }
+}
+async fn check_attachment(s: &AppState, r: Record) -> Result<(), ApiError> {
+    let _target = target_lock(s, &r).await;
+    let current = lookup(s, r.id.clone())
+        .await?
+        .ok_or_else(|| conflict("Message disappeared"))?;
+    if current.revision != r.revision || current.attachment.is_none() {
+        return Err(conflict("Attachment receipt changed; refresh first"));
+    }
+    let machine = s.registry.get(&r.host).await?;
+    let _endpoint = machine.file_writes.lock().await;
+    if crate::attention::scope(&machine.config, "", "", "").0 != r.endpoint
+        || s.registry.get(&r.host).await?.connection_revision != machine.connection_revision
+    {
+        return Err(conflict("Original machine endpoint changed"));
+    }
+    attachment_ready(s, current, &machine.transport, false).await?;
+    Ok(())
+}
+async fn cleanup_attachments(s: &AppState) -> Result<(), ApiError> {
+    let entries = s.board.with(|c| {
+        c.execute("DELETE FROM export_attachment_pins WHERE id IN (SELECT id FROM agent_outbox WHERE json_extract(data,'$.attachment.state')='expired')",[]).map_err(storage)?;
+        records(c,None)
+    }).await?;
+    for r in entries
+        .into_iter()
+        .filter(|r| {
+            !unresolved(r)
+                && r.attachment.as_ref().is_some_and(|a| {
+                    a.state != "expired" && a.expires_at.is_none_or(|t| t <= now())
+                })
+        })
+        .take(32)
+    {
+        let _target = target_lock(s, &r).await;
+        let Some(mut current) = lookup(s, r.id.clone()).await? else {
+            continue;
+        };
+        if unresolved(&current) {
+            continue;
+        }
+        let a = current.attachment.as_mut().unwrap();
+        if a.state == "expired" {
+            continue;
+        }
+        if a.expires_at.is_none() {
+            a.expires_at = Some(now() + crate::attachments::RETENTION);
+            let phase = current.status.clone();
+            let note = current.note.clone();
+            let _ = change(s, current, &phase, &note).await?;
+            continue;
+        }
+        if a.expires_at.unwrap() > now() {
+            continue;
+        }
+        // Pending means no transfer was ever claimed: only the source pin expires.
+        if a.state != "pending" {
+            let Ok(machine) = s.registry.get(&current.host).await else {
+                continue;
+            };
+            let Ok(_slot) = s.file_slots.try_acquire() else {
+                continue;
+            };
+            let Ok(_endpoint) = machine.file_writes.try_lock() else {
+                continue;
+            };
+            if crate::attention::scope(&machine.config, "", "", "").0 != current.endpoint
+                || s.registry.get(&current.host).await?.connection_revision
+                    != machine.connection_revision
+            {
+                continue;
+            }
+            if crate::attachments::transfer(
+                s,
+                &machine.transport,
+                &current.target,
+                &current.instance,
+                a,
+                "cleanup",
+            )
+            .await
+            .is_err()
+            {
+                continue;
+            }
+        }
+        current.attachment.as_mut().unwrap().state = "expired".into();
+        let phase = current.status.clone();
+        let note = current.note.clone();
+        if let Some(saved) = change(s, current, &phase, &note).await? {
+            s.board
+                .with(move |c| {
+                    c.execute("DELETE FROM export_attachment_pins WHERE id=?1", [saved.id])
+                        .map_err(storage)?;
+                    Ok(())
+                })
+                .await?;
+        }
+    }
+    Ok(())
+}
 async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiError> {
     let initial = group(s, scope.clone()).await?;
     let Some(first) = initial.iter().find(|r| unresolved(r)) else {
@@ -534,10 +806,25 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
     if s.registry.get(&first.host).await?.connection_revision != machine.connection_revision {
         return Ok(());
     }
+    if dispatch
+        && let Some(head) = entries.iter().find(|r| blocks_dispatch(r)).cloned()
+        && head.status == "queued"
+        && head
+            .attachment
+            .as_ref()
+            .is_some_and(|a| a.state != "verified")
+    {
+        let Some(updated) = attachment_ready(s, head, &machine.transport, true).await? else {
+            return Ok(());
+        };
+        if let Some(entry) = entries.iter_mut().find(|r| r.id == updated.id) {
+            *entry = updated;
+        }
+    }
     let mut request = first.target.request();
     request["action"] = json!("outbox_status");
     request["identity"] = json!(first.instance);
-    let observation = match machine
+    let mut observation = match machine
         .transport
         .agent_request(request)
         .await
@@ -558,7 +845,7 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
         )
         .await;
     }
-    let log: Option<Log> = serde_json::from_value(observation["log"].clone()).ok();
+    let mut log: Option<Log> = serde_json::from_value(observation["log"].clone()).ok();
     confirm_observed(s, &mut entries, &observation).await?;
     if !dispatch {
         return Ok(());
@@ -616,6 +903,35 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
             let _ = change(s, next, "queued", note).await?;
         }
         return Ok(());
+    }
+    if next.attachment.is_some() {
+        let Some(updated) = attachment_ready(s, next, &machine.transport, true).await? else {
+            return Ok(());
+        };
+        next = updated;
+        // Verification can take a network round trip. Refresh native evidence
+        // after it; never paste using the screen/status captured before disk IO.
+        let mut request = next.target.request();
+        request["action"] = json!("outbox_status");
+        request["identity"] = json!(next.instance);
+        observation = agents::result(machine.transport.agent_request(request).await?)?;
+        log = serde_json::from_value(observation["log"].clone()).ok();
+        let activity = crate::queue::Activity::from_value(
+            &observation["activity"],
+            observation["context"].as_str().unwrap_or(""),
+        );
+        if observation["instance"].as_str() != Some(next.instance.as_str())
+            || log.as_ref().map(|l| &l.conversation) != next.conversation.as_ref()
+            || !matches!(activity.state, AgentState::Ready | AgentState::Working)
+            || !matches!(
+                observation["activity"]["source"].as_str(),
+                Some("pi_bridge" | "claude_registry" | "claude_events" | "codex_events")
+            )
+            || observation["send_available"] != true
+            || !observation["input_guard"].is_string()
+        {
+            return Ok(());
+        }
     }
     if next.conversation.is_none() {
         next.conversation = log.as_ref().map(|l| l.conversation.clone());
@@ -751,6 +1067,11 @@ async fn action(
             }
             s.outbox.wake.notify_one();
         }
+        "check_attachment"
+            if r.attachment.is_some() && matches!(r.status.as_str(), "queued" | "blocked") =>
+        {
+            check_attachment(&s, r).await?;
+        }
         "check" if matches!(r.status.as_str(), "submitted" | "uncertain") => {
             process(&s, r.scope, false).await?;
         }
@@ -799,6 +1120,15 @@ async fn manual(s: &AppState, r: Record, token: &str) -> Result<(), ApiError> {
         return Err(conflict(
             "Machine endpoint changed; no message was submitted",
         ));
+    }
+    if let Some(a) = &r.attachment {
+        if a.state != "verified" {
+            return Err(conflict(
+                "Attachment must be verified before submitting. Use Check attachment; no text-only fallback was sent.",
+            ));
+        }
+        crate::attachments::transfer(s, &machine.transport, &r.target, &r.instance, a, "verify")
+            .await?;
     }
     let before = group(s, r.scope.clone()).await?;
     if before
@@ -859,6 +1189,17 @@ pub(crate) fn start(s: Arc<AppState>) {
     if s.outbox.started.swap(true, Ordering::SeqCst) {
         return;
     }
+    let cleanup_state = s.clone();
+    tokio::spawn(async move {
+        let mut stop = cleanup_state.shutdown.subscribe();
+        loop {
+            if *stop.borrow() {
+                break;
+            }
+            let _ = cleanup_attachments(&cleanup_state).await;
+            tokio::select! {_=tokio::time::sleep(Duration::from_secs(60))=>{},_=stop.changed()=>{break;}}
+        }
+    });
     tokio::spawn(async move {
         let mut stop = s.shutdown.subscribe();
         let mut checked: HashMap<String, Instant> = HashMap::new();
@@ -941,6 +1282,7 @@ mod tests {
             pending_pi_session: None,
             seen_message: None,
             command_message: None,
+            attachment: None,
         }
     }
     #[tokio::test]

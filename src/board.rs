@@ -127,6 +127,7 @@ impl Board {
             db.execute_batch("BEGIN IMMEDIATE; ALTER TABLE agent_cards ADD COLUMN color TEXT NOT NULL DEFAULT ''; ALTER TABLE agent_cards ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0,1)); PRAGMA user_version=2; COMMIT;")?;
         }
         crate::whiteboard::init(&db)?;
+        crate::whiteboard_exports::init(&db)?;
         Ok(Self {
             db: Arc::new(Mutex::new(db)),
         })

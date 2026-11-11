@@ -1712,7 +1712,7 @@
           "Whiteboard"
         ],
         "summary": "Download native scene and text",
-        "description": "Whole-board JSON/text download; no server PNG/SVG renderer, selection export or remote attachments in this slice. Browser SVG/PNG downloads remain available.",
+        "description": "Legacy whole-board native JSON plus text download. POST on this route creates rendered scoped PNG/SVG/JSON/text artifacts. Remote message attachments remain unimplemented.",
         "parameters": [
           {
             "name": "id",
@@ -1759,6 +1759,505 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "post": {
+        "operationId": "renderWhiteboardExport",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Freeze and render an immutable drawing export",
+        "description": "Exact scene revision and named-region revision required. Selection includes exactly requested members; external arrow bindings become frozen free endpoints. Creates CC-managed PNG/SVG/native JSON/text, not a message attachment. Same UUID/same request returns retained status; changed reuse is 409. One bounded worker; busy 429 starts no job. HTTP disconnect does not replay/cancel the durable job. Failed rendering is a failed manifest with no download artifacts. Defaults: 24-hour retention, 8 megapixels, 8192 px per side, scale .25\u20134, 8 MiB/artifact, 64 MiB store, 10,000 retained export UUIDs. Render process hard timeout 12 seconds; native QuickJS budget 6s/64 MiB and Unix 8s CPU/512 MiB address space. HTTP body 128 KiB. No deployment or outward delivery is implied.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin required; not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardExportManifest"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhiteboardExportRequest"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/whiteboard-exports/{id}": {
+      "get": {
+        "operationId": "getWhiteboardExport",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Read retained export status and checksums",
+        "description": "Read-only recovery by UUID. Expired manifests keep identity but expose no artifacts. No automatic rendering retry. Creating a later export reclaims expired BLOBs; retired UUIDs cannot be reused.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardExportManifest"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/whiteboard-exports/{id}/{format}": {
+      "get": {
+        "operationId": "downloadWhiteboardArtifact",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Download a frozen artifact",
+        "description": "Ready artifacts only; 409 while failed/rendering, 410 when expired. Actual Content-Type is image/png, image/svg+xml, application/json or text/plain; charset=utf-8. Content-Disposition attachment, no-store, restrictive SVG CSP. No URLs or files supplied by callers are loaded. JSON/text contain only the frozen scoped scene, not hidden elements.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "png",
+                "svg",
+                "json",
+                "text"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/whiteboards/{id}/regions": {
+      "get": {
+        "operationId": "listWhiteboardRegions",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "List named export frame/group scopes",
+        "description": "API-level scopes; GUI frame/group editing is later work.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "regions": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": {
+                        "$ref": "#/components/schemas/WhiteboardRegion"
+                      }
+                    }
+                  },
+                  "required": [
+                    "regions"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "saveWhiteboardRegion",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Create or revise a named frame/group scope",
+        "description": "Requires exact observed scene_revision and existing region revision on edits. New scope omits/nulls revision. Frames require finite positive bounds; groups omit/null bounds. Membership must exist on this board. Export rechecks membership and rejects a frame if member geometry moved outside it. No scene movement, messages or permission changes. At most 100 regions per board.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin required; not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardRegion"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhiteboardRegion"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/hosts/{host}/agents/message/attachments/prepare": {
+      "post": {
+        "operationId": "prepareAgentAttachment",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Prepare an exact process-bound managed PNG message",
+        "description": "Consumes a fresh native message token, requires a process-linked conversation, reads account home/ancestors without creating files. Returns the exact composed text, absolute target path, source scope/hash/size and 120-second one-use attachment token. No transfer or terminal input. One managed ready PNG <=4 MiB, <=8 megapixels. Complete text <=12000 UTF-8 bytes. No local paths, URLs, uploads or client destinations.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin required; not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAttachmentPrepared"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentAttachmentPrepare"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/hosts/{host}/agents/message": {
+      "post": {
+        "operationId": "enqueueAgentMessage",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Enqueue a durable explicit native message",
+        "description": "Always provide a new UUID. For attachments use the attachment preparation token and unchanged returned composed text, plus the exact one-item source list. Intent, manifest and source pin commit before transport. Duplicate UUIDs with changed text/host/artifact refs return 409. Text-only messages use a fresh conversation token. Worker exclusively copies through shared local/SSH/ProxyJump and independently verifies target SHA-256 before fresh native dispatch. Uncertain copies or input never retry automatically. Submitted is not provider acceptance; Seen does not prove image viewing. Endpoint edits/process/conversation replacement fail closed.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin required; not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "outbox": {
+                      "$ref": "#/components/schemas/AgentOutboxEntry"
+                    }
+                  },
+                  "required": [
+                    "outbox"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentMessage"
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
+      }
+    },
+    "/agents/outbox": {
+      "get": {
+        "operationId": "listAgentOutbox",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Read durable message and attachment receipts",
+        "description": "Unresolved plus bounded recent settled receipts; no dispatch or acknowledgement. Attachment state and copied/verified timestamps are independent of message state. Resolved copies become cleanup-eligible after seven days; unchanged endpoint only. Unresolved source pins never expire. Expired public export URLs stay unavailable even when internally pinned.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentOutboxEntry"
+                      }
+                    }
+                  },
+                  "required": [
+                    "entries"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/agents/outbox/{id}": {
+      "post": {
+        "operationId": "actOnAgentOutbox",
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Act on an exact observed receipt revision",
+        "description": "check observes Submitted/Uncertain native delivery without replay. check_attachment verifies the original copy read-only (no retransfer/input in this action); confirmed queued delivery may proceed later through the worker. submit requires its own explicit human request and fresh exact target grant, and cannot bypass attachment checksum verification. cancel applies only before submission; archive does not undo delivered input. Never automatically invoke recovery actions under ordinary send authorization.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin required; not authentication."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "outbox": {
+                      "$ref": "#/components/schemas/AgentOutboxEntry"
+                    }
+                  },
+                  "required": [
+                    "outbox"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "check",
+                      "check_attachment",
+                      "cancel",
+                      "archive",
+                      "submit"
+                    ]
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "action",
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "x-human-intent-required": true
       }
     }
   },
@@ -3862,6 +4361,678 @@
           "operation_id",
           "actor",
           "nodes"
+        ]
+      },
+      "WhiteboardBounds": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": -200000,
+            "maximum": 200000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -200000,
+            "maximum": 200000
+          },
+          "w": {
+            "type": "number",
+            "minimum": -200000,
+            "maximum": 200000,
+            "exclusiveMinimum": 0
+          },
+          "h": {
+            "type": "number",
+            "minimum": -200000,
+            "maximum": 200000,
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ]
+      },
+      "WhiteboardExportScope": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "board"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "selection"
+              },
+              "elements": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 300,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/UUID"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "elements"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "frame"
+              },
+              "id": {
+                "$ref": "#/components/schemas/UUID"
+              },
+              "revision": {
+                "$ref": "#/components/schemas/UUID"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "revision"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "group"
+              },
+              "id": {
+                "$ref": "#/components/schemas/UUID"
+              },
+              "revision": {
+                "$ref": "#/components/schemas/UUID"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "revision"
+            ]
+          }
+        ]
+      },
+      "WhiteboardExportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "scope": {
+            "$ref": "#/components/schemas/WhiteboardExportScope"
+          },
+          "scale": {
+            "type": "number",
+            "minimum": 0.25,
+            "maximum": 4,
+            "default": 1
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark"
+            ],
+            "default": "dark"
+          }
+        },
+        "required": [
+          "id",
+          "revision"
+        ]
+      },
+      "WhiteboardArtifact": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string",
+            "pattern": "^/api/v1/whiteboard-exports/[0-9a-fA-F-]{36}/(png|svg|json|text)$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8388608
+          },
+          "content_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "sha256",
+          "bytes",
+          "content_type"
+        ]
+      },
+      "WhiteboardExportManifest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "board": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/WhiteboardExportScope"
+          },
+          "bounds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WhiteboardBounds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scale": {
+            "type": "number"
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "expires_at": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "rendering",
+              "ready",
+              "failed",
+              "expired"
+            ]
+          },
+          "element_ids": {
+            "type": "array",
+            "maxItems": 300,
+            "items": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          "artifacts": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "png": {
+                "$ref": "#/components/schemas/WhiteboardArtifact"
+              },
+              "svg": {
+                "$ref": "#/components/schemas/WhiteboardArtifact"
+              },
+              "json": {
+                "$ref": "#/components/schemas/WhiteboardArtifact"
+              },
+              "text": {
+                "$ref": "#/components/schemas/WhiteboardArtifact"
+              }
+            },
+            "required": []
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "font": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "board",
+          "revision",
+          "scope",
+          "bounds",
+          "scale",
+          "theme",
+          "created_at",
+          "expires_at",
+          "state",
+          "element_ids",
+          "artifacts"
+        ]
+      },
+      "WhiteboardRegion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UUID"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "frame",
+              "group"
+            ]
+          },
+          "elements": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 300,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          "bounds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WhiteboardBounds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "scene_revision",
+          "name",
+          "kind",
+          "elements"
+        ]
+      },
+      "AgentAttachmentSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "export_id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "format": {
+            "const": "png"
+          }
+        },
+        "required": [
+          "export_id",
+          "format"
+        ]
+      },
+      "AgentAttachment": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/AgentAttachmentSource"
+          },
+          "manifest": {
+            "type": "object"
+          },
+          "path": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "copying",
+              "copied",
+              "verified",
+              "uncertain",
+              "failed",
+              "expired"
+            ]
+          },
+          "copied_at": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seen_at": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expired_at": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "source",
+          "manifest",
+          "path",
+          "state",
+          "copied_at",
+          "verified_at",
+          "expires_at",
+          "error",
+          "submitted_at",
+          "seen_at",
+          "expired_at"
+        ]
+      },
+      "AgentAttachmentPrepare": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "token": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000
+          },
+          "attachment": {
+            "$ref": "#/components/schemas/AgentAttachmentSource"
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "text",
+          "attachment"
+        ]
+      },
+      "AgentMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "token": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000
+          },
+          "attachments": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/AgentAttachmentSource"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "text"
+        ]
+      },
+      "AgentOutboxEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "window": {
+            "type": "string"
+          },
+          "pane": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "conversation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "seen_message": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "command_message": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attachment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentAttachment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "host",
+          "session",
+          "window",
+          "pane",
+          "instance",
+          "text",
+          "status",
+          "note",
+          "revision",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "AgentAttachmentPrepared": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "text": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "target": {
+            "type": "object"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "attachment": {
+            "$ref": "#/components/schemas/AgentAttachment"
+          },
+          "expires_at": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "token",
+          "id",
+          "text",
+          "host",
+          "target",
+          "instance",
+          "endpoint",
+          "attachment",
+          "expires_at"
         ]
       }
     },

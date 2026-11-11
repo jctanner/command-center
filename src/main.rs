@@ -11,6 +11,8 @@ use std::{
 #[derive(Parser)]
 #[command(version, about = "Command Center — focused tmux control")]
 struct Args {
+    #[arg(long, hide = true)]
+    whiteboard_render_worker: bool,
     #[arg(long)]
     config: Option<PathBuf>,
     #[arg(long, default_value = "127.0.0.1:8080")]
@@ -27,15 +29,23 @@ struct Args {
     #[arg(long, default_value = "web/dist")]
     web_dir: PathBuf,
 }
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    let args = Args::parse();
+    if args.whiteboard_render_worker {
+        return command_center::whiteboard_render_worker();
+    }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run(args))
+}
+async fn run(args: Args) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "command_center=info".into()),
         )
         .init();
-    let args = Args::parse();
     ensure!(
         args.listen.ip() == IpAddr::V4(Ipv4Addr::LOCALHOST),
         "the primary listener must use 127.0.0.1; use --tailnet-listen or --lan-listen for additional direct access"

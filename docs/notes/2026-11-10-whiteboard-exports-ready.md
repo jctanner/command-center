@@ -1,0 +1,7 @@
+# Whiteboard exports ready; attachment design pending
+
+Task [0052](../tasks/done/0052-whiteboard-server-export.md) implements bounded Rust-owned PNG/SVG/native JSON/text export, checked board/selection/API frame/group scopes, immutable hashes/expiry, same roughjs geometry and shared font, and private coordinator downloads. Legacy GET JSON preserved. [ADR-0003](../decisions/0003-bounded-whiteboard-export-renderer.md) records the renderer tradeoff and measurements. [Gap audit](2026-11-10-whiteboard-gap-audit.md) distinguishes existing canvas tools from missing GUI features.
+
+Validation: 58 Rust library tests, 11 export/API/helper tests, six existing contract/ticket tests and eight browser tests pass; formatting/Clippy/builds/three skill validators/diff check pass. Browser/server path/text geometry matches in light/dark, PNG within raster tolerance, selection privacy and HTTP disconnect recovery covered. Real remote providers have NOT been tested with image delivery.
+
+[Plan 0003](../plans/0003-whiteboard-attachments.md) is a proposal only. Wait for human approval before attachment implementation. Export deployment also needs requested service-interruption approval; nothing deployed or sent, no live boards/tickets modified and no commit/push. On deployment include fonts/ and notices along with assets/HTML; preserve live argv/env/listeners/config/pane process identities. Current source/dependencies/release/staged frontend are prepared. Next task 0053, plan/decision 0004, bug 0028.
