@@ -76,6 +76,8 @@ Treat connection revisions as opaque and retain the one from the original read u
 
 ## Explicit agent restart
 
+Coordinator permission and post-package-update sequence: see [coordinator restarts](reference/coordinator-restarts.md). Update first, then prepare against the current installed CLI; no automatic replay after uncertain restart.
+
 - `GET /hosts/{id}/agents/restart?connection_revision=...&session=...&window=...&pane=...&instance=...` prepares a 120-second confirmation. Requires a unique process-linked native conversation and supported CLI installation. Returns an opaque `id`, provider, native session, directory and literal resume argument array.
 - `POST /hosts/{id}/agents/restart` takes `{id}`. Durably claims that receipt once before replacing the selected pane process with the harness resume command. Other panes/windows remain. A repeated/expired start is rejected. The response is `checking`; no client or status read repeats the action after uncertainty.
 - `GET /hosts/{id}/agents/restart-status?id=...` verifies the pane marker, new foreground-process identity and exact native conversation, then transfers original card preferences without overwriting newer edits. Status uses the recorded endpoint fingerprint so unchanged-host recovery survives a backend restart. Failed verification never transfers metadata. A browser retains only the opaque outstanding operation ID for recovery on reload.

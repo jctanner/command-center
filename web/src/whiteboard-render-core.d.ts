@@ -6,3 +6,6 @@ export function drawingEnds(item:Drawing,items:Drawing[]):{x:number;y:number}[];
 export function drawingGeometry(generator:RoughGenerator,item:Drawing,items:Drawing[],palette:Palette):{paths:{d:string;fill:string;stroke:string;strokeWidth:number;round?:boolean}[];label:null|{lines:string[];x:number;y:number;fontSize:number;anchor:string;fill:string}};
 export function drawingBounds(items:Drawing[]):Bounds;
 export function sceneSVG(generator:RoughGenerator,items:Drawing[],palette:Palette,bounds:Bounds|null,scale:number,font?:string,images?:Record<string,string>):string;
+
+export function drawingColor(palette:Partial<Palette>|null|undefined,name:string):string;
+export function drawingSoft(palette:Partial<Palette>|null|undefined,name:string):string;

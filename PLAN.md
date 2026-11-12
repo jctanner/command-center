@@ -9,6 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task 0065: Whiteboard red/browser fallback](docs/tasks/current/0065-whiteboard-browser-color-fallback.md) — CC dev; browser fix published/verified; backend cache-header restart pending approval.
+
+
 
 - [Task 0054: Whiteboard attachment release and harness check](docs/tasks/pending/0054-whiteboard-attachment-release-and-harness-check.md) — deployment complete; real-harness delivery validation awaits separate authorization.
 
@@ -22,6 +25,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0064: Whiteboard palette/fills](docs/tasks/done/0064-whiteboard-palette-fills.md) — deployed; eleven named colors and optional soft fills.
+
+- [Task 0063: Coordinator agent restart](docs/tasks/done/0063-coordinator-agent-restart.md) — cc-restart and post-update sequencing validated; no live updates/restarts.
 
 - [Task 0062: Coordinator close permission](docs/tasks/done/0062-coordinator-agent-close.md) — cc-close skill/role and existing API playbook validated; no live agents closed.
 

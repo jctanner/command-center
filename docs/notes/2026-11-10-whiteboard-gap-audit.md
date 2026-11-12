@@ -22,3 +22,5 @@ Audit against dcd0b20 and original human brief, before remaining canvas implemen
 Initial plan: implement server export and a read-only download helper; document attachment transport/API/receipt/checksum/expiry contract for human approval; then build guarded transfers and run authorized harness checks; finally fill GUI features in the order above. Do not count existing sticky/ticket/touch tools as missing work, or claim that text messages carry files. No agent messages, remote file writes, live drawing mutations or deployment are part of the export development step.
 
 2026-11-12 scope update: only CC-55 item 4 was implemented and deployed. Frames/groups UI, align/lock, visual attribution, Excalidraw/Mermaid import and real Claude/pi image checks remain outside this task. See [task 0059](../tasks/done/0059-whiteboard-images.md).
+
+2026-11-12 colors follow-up: task0064 adds red/orange/green/teal/purple/gray alongside the original five, plus optional soft/none shape fills, deployed after approval. Other CC-55 items remain unchanged. See [task0064](../tasks/done/0064-whiteboard-palette-fills.md).

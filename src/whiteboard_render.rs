@@ -54,7 +54,9 @@ pub(crate) fn palette(theme: &str) -> Result<Value> {
         .iter()
         .find(|p| p["colors"]["mode"] == theme)
         .context("Unknown theme")?;
-    Ok(palette["colors"].clone())
+    let drawings: Value =
+        serde_json::from_str(include_str!("../web/src/whiteboard-palettes.json"))?;
+    Ok(drawings[palette["id"].as_str().context("Missing palette ID")?].clone())
 }
 pub(crate) fn render(job: &Job) -> Result<Rendered> {
     ensure!(job.theme == "light" || job.theme == "dark", "Invalid theme");
@@ -289,6 +291,81 @@ mod tests {
         assert!(render(&j).is_err());
         j.images.insert(id, "data:image/png;base64,AA==".into());
         assert!(render(&j).is_err());
+    }
+    #[test]
+    fn named_strokes_and_soft_fills_render_in_both_themes_with_legacy_stickies() {
+        let colors = [
+            "ink", "accent", "blue", "magenta", "yellow", "red", "orange", "green", "teal",
+            "purple", "gray",
+        ];
+        for theme in ["dark", "light"] {
+            let p = palette(theme).unwrap();
+            let mut j = job();
+            j.theme = theme.into();
+            let original = j.scene.elements[0].clone();
+            j.scene.elements = colors
+                .iter()
+                .enumerate()
+                .map(|(i, color)| {
+                    let mut e = original.clone();
+                    e.id = uuid::Uuid::new_v4().to_string();
+                    let d = &mut e.drawing;
+                    d.x = i as f64 * 44.;
+                    d.y = 0.;
+                    d.w = 40.;
+                    d.h = 40.;
+                    d.text.clear();
+                    d.color = (*color).into();
+                    d.fill = Some("soft".into());
+                    d.clean = true;
+                    e
+                })
+                .collect();
+            j.bounds = Some(Bounds {
+                x: 0.,
+                y: 0.,
+                w: 484.,
+                h: 40.,
+            });
+            let result = render(&j).unwrap();
+            let pixels =
+                resvg::tiny_skia::Pixmap::decode_png(&STANDARD.decode(&result.png).unwrap())
+                    .unwrap();
+            for (i, color) in colors.iter().enumerate() {
+                let soft = p[format!("{color}_soft")].as_str().unwrap();
+                assert!(
+                    result
+                        .svg
+                        .contains(&format!("stroke=\"{}\"", p[*color].as_str().unwrap()))
+                );
+                assert!(result.svg.contains(&format!("fill=\"{soft}\"")));
+                let pixel = pixels.pixel(i as u32 * 44 + 20, 20).unwrap();
+                let rgb = (1..7)
+                    .step_by(2)
+                    .map(|n| u8::from_str_radix(&soft[n..n + 2], 16).unwrap())
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    [pixel.red(), pixel.green(), pixel.blue()],
+                    rgb.as_slice(),
+                    "{theme}/{color}"
+                );
+            }
+            j.scene.elements.truncate(1);
+            j.scene.elements[0].drawing.kind = "sticky".into();
+            j.scene.elements[0].drawing.fill = None;
+            assert!(render(&j).unwrap().svg.contains(if theme == "dark" {
+                "#403923"
+            } else {
+                "#fff0ad"
+            }));
+            j.scene.elements[0].drawing.fill = Some("none".into());
+            let svg = render(&j).unwrap().svg;
+            assert!(!svg.contains(if theme == "dark" {
+                "#403923"
+            } else {
+                "#fff0ad"
+            }));
+        }
     }
     #[test]
     fn oversized_pixels_invalid_scale_and_geometry_fail_closed() {

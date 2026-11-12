@@ -1,8 +1,8 @@
 // Shared scene persistence. Editor gestures remain local until acknowledged.
 export type ImageRef={id:string;width:number;height:number};
-export type Drawing={image?:ImageRef;id:string;kind:string;x:number;y:number;w:number;h:number;text:string;color:string;clean:boolean;seed:number;from?:string;to?:string;points?:{x:number;y:number}[];author:string;revision?:string;created_by?:string;updated_at?:number};
+export type Drawing={fill?:'none'|'soft';image?:ImageRef;id:string;kind:string;x:number;y:number;w:number;h:number;text:string;color:string;clean:boolean;seed:number;from?:string;to?:string;points?:{x:number;y:number}[];author:string;revision?:string;created_by?:string;updated_at?:number};
 export type SharedScene={id:string;name:string;revision:number;metadata_revision:string;ticket:string|null;elements:Drawing[];updated_at:number};
-export function drawingData(item:Drawing){const{kind,x,y,w,h,text,color,clean,seed,from,to,points,image}=item;return{kind,x,y,w,h,text,color,clean,seed,...from?{from}:{},...to?{to}:{},...points?{points}:{},...image?{image}:{}};}
+export function drawingData(item:Drawing){const{kind,x,y,w,h,text,color,clean,seed,from,to,points,image,fill}=item;return{kind,x,y,w,h,text,color,clean,seed,...from?{from}:{},...to?{to}:{},...points?{points}:{},...image?{image}:{},...fill?{fill}:{}};}
 export const signature=(item:Drawing|undefined)=>item?JSON.stringify(drawingData(item)):'';
 export function drawingUUID(){const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;return Array.from(b,n=>n.toString(16).padStart(2,'0')).join('').replace(/^(........)(....)(....)(....)(............)$/,'$1-$2-$3-$4-$5');}
 function diff(base:Drawing[],local:Drawing[]){const a=new Map(base.map(s=>[s.id,s])),b=new Map(local.map(s=>[s.id,s]));return new Set([...a.keys(),...b.keys()].filter(id=>signature(a.get(id))!==signature(b.get(id))));}

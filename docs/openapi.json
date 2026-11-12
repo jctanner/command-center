@@ -3984,7 +3984,13 @@
               "accent",
               "blue",
               "magenta",
-              "yellow"
+              "yellow",
+              "red",
+              "orange",
+              "green",
+              "teal",
+              "purple",
+              "gray"
             ]
           },
           "clean": {
@@ -4047,6 +4053,18 @@
                 "type": "null"
               }
             ]
+          },
+          "fill": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "none",
+              "soft",
+              null
+            ],
+            "description": "Optional on rectangle/ellipse/diamond/sticky only. soft uses the stroke-matched theme tint; none is transparent. Omitted/null preserves original behavior, including default yellow sticky fill."
           }
         },
         "required": [
@@ -4105,7 +4123,13 @@
               "accent",
               "blue",
               "magenta",
-              "yellow"
+              "yellow",
+              "red",
+              "orange",
+              "green",
+              "teal",
+              "purple",
+              "gray"
             ]
           },
           "clean": {
@@ -4176,6 +4200,18 @@
           },
           "image": {
             "$ref": "#/components/schemas/WhiteboardImage"
+          },
+          "fill": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "none",
+              "soft",
+              null
+            ],
+            "description": "Optional on rectangle/ellipse/diamond/sticky only. soft uses the stroke-matched theme tint; none is transparent. Omitted/null preserves original behavior, including default yellow sticky fill."
           }
         },
         "required": [
@@ -4484,7 +4520,13 @@
                   "accent",
                   "blue",
                   "magenta",
-                  "yellow"
+                  "yellow",
+                  "red",
+                  "orange",
+                  "green",
+                  "teal",
+                  "purple",
+                  "gray"
                 ]
               },
               "clean": {
@@ -4547,6 +4589,18 @@
                     "type": "null"
                   }
                 ]
+              },
+              "fill": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "none",
+                  "soft",
+                  null
+                ],
+                "description": "Optional on rectangle/ellipse/diamond/sticky only. soft uses the stroke-matched theme tint; none is transparent. Omitted/null preserves original behavior, including default yellow sticky fill."
               }
             },
             "required": []

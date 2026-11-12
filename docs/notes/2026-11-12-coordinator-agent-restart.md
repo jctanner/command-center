@@ -1,0 +1,5 @@
+# Coordinator restart capability
+
+[Task0063](../tasks/done/0063-coordinator-agent-restart.md) adds cc-restart and its [playbook](../reference/coordinator-restarts.md), with aligned parent/coordinator role and skill routing. Explicit restart or delegated maintenance scope supplies authority. Finish authorized package update first, then prepare against installed CLI; review exact native conversation/path, save durable receipt before one POST and recover via status GET only. Version evidence, restored conversation and process liveness are separate. No automatic old-message replay or package execution interface.
+
+Skill validation and coordinator helpers13 pass. Restart tests15 pass, including four new fake-package regressions for newly installed Codex/Claude/pi executables and rejection of an installation changed after preparation. No live provider calls/updates/restarts/messages, backend/production frontend change, deploy, commit/push or ticket mutation. Existing coordinator can reread its role/cc-restart next task.

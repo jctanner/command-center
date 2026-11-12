@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,renameSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';
 import {spawn,spawnSync,type ChildProcess} from 'node:child_process';import {createServer} from 'node:net';
 test.setTimeout(60000);
@@ -115,4 +115,20 @@ test('Claude resumed from an old repository auto-selects its exact native log',a
  await wrappedHarness('claude');const source=join(home,'projects',dir.replace(/[^a-zA-Z0-9]/g,'-'),native+'.jsonl');const previous=join(home,'projects','old-repository');mkdirSync(previous);writeFileSync(join(previous,native+'.jsonl'),JSON.stringify({type:'user',sessionId:native,cwd:'/fixture/old-repository',timestamp:new Date().toISOString(),message:{role:'user',content:'Exact resumed history'}})+'\n');rmSync(source);
  const t=await target();const d=await json('/api/v1/hosts/local/agents/conversation?'+new URLSearchParams({session,window:windowId,pane,connection_revision:t.connection_revision}));expect(d.association).toBe('process');expect(d.conversations.find((c:any)=>c.id===d.selected).session).toBe(native);
  await page.goto(base+'/#/queue');await page.locator('.queue-card').click();await expect(page.locator('.agent-history')).toContainText('Exact resumed history');await expect(page.getByLabel('Conversation history',{exact:true})).toHaveValue(d.selected);
+});
+
+
+function upgradeFixture(provider:string){
+ const source=join(dir,'upgrade.c');writeFileSync(source,'#include <stdio.h>\n#include <string.h>\nint main(int argc,char**argv){if(argc>1&&!strcmp(argv[1],"--help")){puts("Fixture upgraded resume harness");return 0;}puts("FIXTURE_UPGRADED_'+provider+'");for(int i=1;i<argc;i++)printf("ARG:%s\\n",argv[i]);fflush(stdout);char line[8192];while(fgets(line,sizeof(line),stdin)){printf("INPUT:%s",line);fflush(stdout);}return 0;}');
+ run('cc',[source,'-o',join(dir,'bin',provider+'.new')]);renameSync(join(dir,'bin',provider+'.new'),join(dir,'bin',provider));
+}
+for(const provider of ['codex','claude','pi'])test(`post-update restart uses newly installed ${provider} and exact saved conversation`,async()=>{
+ await harness(provider);const original=await target(),oldPid=tmux('display-message','-p','-t',pane,'#{pane_pid}');upgradeFixture(provider);
+ const prepared=await prepare(original);expect(prepared.command[0]).toBe(join(dir,'bin',provider));expect(prepared.session).toBe(native);expect(prepared.state).toBe('prepared');
+ await post('/api/v1/hosts/local/agents/restart',{id:prepared.id});await complete(prepared.id);
+ expect(tmux('display-message','-p','-t',pane,'#{pane_pid}')).not.toBe(oldPid);expect((await target()).instance).not.toBe(original.instance);const output=tmux('capture-pane','-p','-t',pane);expect(output).toContain('FIXTURE_UPGRADED_'+provider);expect(output).toContain(provider==='pi'?join(dir,'pi-session.jsonl'):native);expect((await post('/api/v1/hosts/local/agents/restart',{id:prepared.id})).status).toBe(409);
+});
+test('an installation changed after preparation cannot kill the original process',async()=>{
+ await harness('codex');const original=await target(),pid=tmux('display-message','-p','-t',pane,'#{pane_pid}'),prepared=await prepare(original);upgradeFixture('codex');
+ const response=await post('/api/v1/hosts/local/agents/restart',{id:prepared.id});expect(response.status).toBe(200);expect((await response.json()).state).toBe('checking');expect(tmux('display-message','-p','-t',pane,'#{pane_pid}')).toBe(pid);expect((await target()).instance).toBe(original.instance);expect(tmux('capture-pane','-p','-t',pane)).not.toContain('FIXTURE_UPGRADED_codex');expect((await json('/api/v1/hosts/local/agents/restart-status?id='+prepared.id)).state).toBe('checking');expect((await post('/api/v1/hosts/local/agents/restart',{id:prepared.id})).status).toBe(409);
 });

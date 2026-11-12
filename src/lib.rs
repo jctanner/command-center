@@ -317,7 +317,7 @@ async fn same_host(
     let api = request.uri().path().starts_with("/api/");
     let embedded_whiteboard = request.uri().path() == "/whiteboard.html";
     let mut response = next.run(request).await;
-    if api {
+    if api || embedded_whiteboard {
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());

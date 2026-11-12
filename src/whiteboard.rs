@@ -67,6 +67,8 @@ pub(crate) struct Drawing {
     pub text: String,
     #[serde(default = "ink")]
     pub color: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<String>,
     #[serde(default)]
     pub clean: bool,
     #[serde(default = "one")]
@@ -142,7 +144,17 @@ pub(crate) fn valid(d: &Drawing) -> bool {
             "freehand",
         ]
         .contains(&d.kind.as_str())
-        && ["ink", "accent", "blue", "magenta", "yellow"].contains(&d.color.as_str())
+        && [
+            "ink", "accent", "blue", "magenta", "yellow", "red", "orange", "green", "teal",
+            "purple", "gray",
+        ]
+        .contains(&d.color.as_str())
+        && d.fill.as_ref().is_none_or(|fill| {
+            matches!(
+                d.kind.as_str(),
+                "rectangle" | "ellipse" | "diamond" | "sticky"
+            ) && matches!(fill.as_str(), "none" | "soft")
+        })
         && (if d.kind == "image" {
             d.image
                 .as_ref()
@@ -655,7 +667,7 @@ async fn edit(
             for (k, v) in b.changes {
                 if ![
                     "kind", "x", "y", "w", "h", "text", "color", "clean", "seed", "from", "to",
-                    "points", "image",
+                    "points", "image", "fill",
                 ]
                 .contains(&k.as_str())
                 {
@@ -749,6 +761,18 @@ pub(crate) fn description(s: &Scene) -> String {
     let mut text = format!("{} · revision {}\n", s.name, s.revision);
     for e in &s.elements {
         text.push_str(&format!("{} {} {:?} at ({:.0},{:.0}) size {:.0}×{:.0}; revision {}; created by {}; last edit {}",e.id,e.drawing.kind,e.drawing.text,e.drawing.x,e.drawing.y,e.drawing.w,e.drawing.h,e.revision,e.created_by,e.author));
+        text.push_str(&format!(
+            "; color {}; fill {}",
+            e.drawing.color,
+            e.drawing
+                .fill
+                .as_deref()
+                .unwrap_or(if e.drawing.kind == "sticky" {
+                    "default sticky"
+                } else {
+                    "none"
+                })
+        ));
         if let Some(image) = &e.drawing.image {
             text.push_str(&format!(
                 "; image {}×{} pixels; blob {}",
@@ -870,6 +894,7 @@ async fn graph(
                     expected_revision: None,
                     element: Drawing {
                         image: None,
+                        fill: None,
                         kind: n.kind,
                         x,
                         y,
@@ -897,6 +922,7 @@ async fn graph(
                     expected_revision: None,
                     element: Drawing {
                         image: None,
+                        fill: None,
                         kind: "arrow".into(),
                         x: x + 100.,
                         y: y + 50.,
@@ -1031,9 +1057,54 @@ mod tests {
         crate::whiteboard_images::gc(&c).unwrap();
         crate::whiteboard_images::require(&c, &scene.id, &r).unwrap();
     }
+    #[test]
+    fn named_colors_and_optional_shape_fills_are_validated_and_described() {
+        let mut d = drawing("Fixture");
+        for color in [
+            "ink", "accent", "blue", "magenta", "yellow", "red", "orange", "green", "teal",
+            "purple", "gray",
+        ] {
+            d.color = color.into();
+            for fill in [None, Some("soft".into()), Some("none".into())] {
+                d.fill = fill;
+                assert!(valid(&d));
+            }
+        }
+        d.color = "#ff0000".into();
+        assert!(!valid(&d));
+        d.color = "red".into();
+        for fill in ["red", "#ff0000", "url(https://example.org)", "solid"] {
+            d.fill = Some(fill.into());
+            assert!(!valid(&d));
+        }
+        d.fill = Some("soft".into());
+        for kind in ["arrow", "freehand", "text"] {
+            d.kind = kind.into();
+            assert!(!valid(&d));
+        }
+        d.kind = "sticky".into();
+        d.fill = None;
+        assert!(valid(&d));
+        assert!(serde_json::to_value(&d).unwrap().get("fill").is_none());
+        let mut c = Connection::open_in_memory().unwrap();
+        let scene = fixture(&c);
+        d.fill = Some("soft".into());
+        let scene = apply(
+            &mut c,
+            &scene.id,
+            batch(vec![Upsert {
+                id: rev(),
+                expected_revision: None,
+                element: d,
+            }]),
+        )
+        .unwrap();
+        assert!(description(&scene).contains("color red; fill soft"));
+    }
     fn drawing(text: &str) -> Drawing {
         Drawing {
             image: None,
+            fill: None,
             kind: "rectangle".into(),
             x: 0.,
             y: 0.,

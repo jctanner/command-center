@@ -4,9 +4,23 @@ export function drawingEnds(item,items){
  const boundary=(s,p)=>{const c=center(s),dx=p.x-c.x,dy=p.y-c.y,a=Math.max(1,s.w/2),b=Math.max(1,s.h/2);if(!dx&&!dy)return c;const k=s.kind==='ellipse'?1/Math.sqrt(dx*dx/(a*a)+dy*dy/(b*b)):s.kind==='diamond'?1/(Math.abs(dx)/a+Math.abs(dy)/b):Math.min(dx?a/Math.abs(dx):Infinity,dy?b/Math.abs(dy):Infinity);return{x:c.x+dx*k,y:c.y+dy*k};};
  const a=items.find(s=>s.id===item.from),b=items.find(s=>s.id===item.to),ca=a?center(a):{x:item.x,y:item.y},cb=b?center(b):{x:item.x+item.w,y:item.y+item.h};return[a?boundary(a,cb):ca,b?boundary(b,ca):cb];
 }
+// Only trusted palette hex values become paint. Unknown scene names or missing
+// theme entries fall back to ink; never feed arbitrary CSS into the generator.
+export function drawingColor(palette,name){
+ const p=palette||{},hex=value=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value);
+ const ink=hex(p.foreground)?p.foreground:p.mode==='light'?'#1f2937':'#d6dee8';
+ const key=['ink','accent','blue','magenta','yellow','red','orange','green','teal','purple','gray'].includes(name)?(name==='ink'?'foreground':name):'foreground';
+ return hex(p[key])?p[key]:ink;
+}
+export function drawingSoft(palette,name){
+ const p=palette||{},hex=value=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value);
+ const known=['ink','accent','blue','magenta','yellow','red','orange','green','teal','purple','gray'].includes(name);
+ const value=p[(known?name:'ink')+'_soft'];
+ return hex(value)?value:hex(p.ink_soft)?p.ink_soft:p.mode==='light'?'#e2e5e9':'#282f38';
+}
 export function drawingGeometry(generator,item,items,palette){
- const s=item,stroke=palette[s.color==='ink'?'foreground':s.color]||palette.accent;
- const options={stroke,strokeWidth:1.8,roughness:s.clean?0:1.05,seed:Math.max(1,s.seed),fillStyle:'solid',fill:s.kind==='sticky'?(palette.mode==='light'?'#fff0ad':'#403923'):'none'};
+ palette=palette||{};const s=item,stroke=drawingColor(palette,s.color);
+ const options={stroke,strokeWidth:1.8,roughness:s.clean?0:1.05,seed:Math.max(1,s.seed),fillStyle:'solid',fill:s.fill==='soft'?drawingSoft(palette,s.color):s.fill==='none'?'none':s.kind==='sticky'?(palette.mode==='light'?'#fff0ad':'#403923'):'none'};
  let drawings=[];if(s.kind==='rectangle'||s.kind==='sticky')drawings=[generator.rectangle(s.x,s.y,s.w,s.h,options)];
  if(s.kind==='ellipse')drawings=[generator.ellipse(s.x+s.w/2,s.y+s.h/2,s.w,s.h,options)];
  if(s.kind==='diamond')drawings=[generator.polygon([[s.x+s.w/2,s.y],[s.x+s.w,s.y+s.h/2],[s.x+s.w/2,s.y+s.h],[s.x,s.y+s.h/2]],options)];

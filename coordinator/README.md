@@ -11,7 +11,7 @@ claude
 
 Complete normal provider authentication/trust prompts yourself. This does not create a built-in CC agent or install MCP tools. No `.mcp.json` is needed yet.
 
-The project skills are `cc-inventory`, `cc-overlap-review`, `cc-coordinate`, `cc-tickets`, `cc-launch`, `cc-message` and `cc-close`. Ask, for example: “Inventory the running agents and identify possible overlapping work. Read their existing conversations and relevant files; draft recommendations without messaging anyone.”
+The project skills are `cc-inventory`, `cc-overlap-review`, `cc-coordinate`, `cc-tickets`, `cc-launch`, `cc-message`, `cc-close` and `cc-restart`. Ask, for example: “Inventory the running agents and identify possible overlapping work. Read their existing conversations and relevant files; draft recommendations without messaging anyone.”
 
 ## Read helper
 
@@ -80,3 +80,7 @@ For requested Codex launches, this coordinator selects `approval_policy: "approv
 ## Closing agents
 
 The coordinator can close specified agents when you request it, or within an explicitly delegated cleanup task with bounded targets/criteria. Use `cc-close` and the [closure playbook](../docs/reference/coordinator-closing.md). The existing API previews and revalidates the agent process, window and session links; no new service or backend restart is needed. Closing also closes every other pane in that window and may end last-window sessions. Clear dedicated-window scope needs no repeated generic permission question; unrelated collateral effects require clarification. Nothing is closed merely by enabling the skill. Uncertain closes are inspected, never automatically repeated; ticket/outbox changes and replacement launches stay separate.
+
+## Restarting agents after updates
+
+Use `cc-restart` and the [restart playbook](../docs/reference/coordinator-restarts.md) for explicitly requested restarts or delegated update-and-restart maintenance. Existing API resumes a process-linked Codex/Claude/pi conversation in the same pane, replacing that pane’s shell/agent/children and keeping siblings/windows. Finish the separately authorized package installation first, then prepare against the newly installed executable. A durable one-use receipt and read-only status recovery prevent uncertain retries. Actual version evidence is separate from restart completion; old drafts/messages are not resent. No backend restart or live agent action is needed to enable these instructions. A running coordinator can reread its AGENTS/cc-restart skill on its next task.
