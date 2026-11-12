@@ -32,6 +32,8 @@ impl Bounds {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Job {
+    #[serde(default)]
+    pub images: std::collections::BTreeMap<String, String>,
     pub scene: Scene,
     pub bounds: Option<Bounds>,
     pub theme: String,
@@ -73,6 +75,45 @@ pub(crate) fn render(job: &Job) -> Result<Rendered> {
         job.bounds.as_ref().is_none_or(Bounds::valid),
         "Invalid bounds"
     );
+    let mut image_bytes = 0usize;
+    let mut image_pixels = 0u64;
+    let mut allowed = std::collections::HashSet::new();
+    for e in &job.scene.elements {
+        if let Some(r) = &e.drawing.image {
+            if allowed.contains(&r.id) {
+                continue;
+            }
+            let value = job.images.get(&r.id).context("Missing stored image")?;
+            let bytes = STANDARD.decode(
+                value
+                    .strip_prefix("data:image/png;base64,")
+                    .context("Only stored PNG data allowed")?,
+            )?;
+            use sha2::{Digest, Sha256};
+            ensure!(
+                format!("{:x}", Sha256::digest(&bytes)) == r.id
+                    && image::guess_format(&bytes)? == image::ImageFormat::Png,
+                "Stored image digest/type mismatch"
+            );
+            let dims = image::ImageReader::with_format(
+                std::io::Cursor::new(&bytes),
+                image::ImageFormat::Png,
+            )
+            .into_dimensions()?;
+            ensure!(
+                dims == (r.width, r.height),
+                "Stored image dimensions mismatch"
+            );
+            image_bytes += bytes.len();
+            image_pixels += u64::from(r.width) * u64::from(r.height);
+            ensure!(
+                image_bytes <= crate::whiteboard_images::BYTE_LIMIT && image_pixels <= 16_000_000,
+                "Stored image budget exceeded"
+            );
+            allowed.insert(r.id.clone());
+        }
+    }
+    ensure!(job.images.len() == allowed.len(), "Unreferenced image data");
     let deadline = Instant::now() + Duration::from_secs(6);
     let rt = rquickjs::Runtime::new()?;
     rt.set_memory_limit(64 * 1024 * 1024);
@@ -82,9 +123,9 @@ pub(crate) fn render(job: &Job) -> Result<Rendered> {
     let output:String=context.with(|ctx|->rquickjs::Result<String>{
   ctx.eval::<(),_>(format!("var rough=(function(){{var module={{exports:{{}}}};{ROUGH};return module.exports;}})();"))?;
   ctx.eval::<(),_>(CORE.replace("export function ","function "))?;
-  let input=json!({"items":job.scene.elements,"palette":palette(&job.theme).unwrap(),"bounds":job.bounds,"scale":job.scale,"font":if job.scene.elements.iter().any(|e|!e.drawing.text.is_empty()&&!matches!(e.drawing.kind.as_str(),"arrow"|"freehand")){STANDARD.encode(FONT)}else{String::new()}});
+  let input=json!({"images":job.images,"items":job.scene.elements,"palette":palette(&job.theme).unwrap(),"bounds":job.bounds,"scale":job.scale,"font":if job.scene.elements.iter().any(|e|!e.drawing.text.is_empty()&&!matches!(e.drawing.kind.as_str(),"arrow"|"freehand")){STANDARD.encode(FONT)}else{String::new()}});
   ctx.globals().set("__input",serde_json::to_string(&input).unwrap())?;
-  ctx.eval("(()=>{const j=JSON.parse(__input),b=j.bounds||drawingBounds(j.items),width=Math.ceil(b.w*j.scale),height=Math.ceil(b.h*j.scale);if(!Number.isFinite(width)||!Number.isFinite(height)||width<1||height<1||width>8192||height>8192||width*height>8000000)throw Error('Export exceeds pixel budget');return JSON.stringify({svg:sceneSVG(rough.generator(),j.items,j.palette,b,j.scale,j.font),width,height});})()")
+  ctx.eval("(()=>{const j=JSON.parse(__input),b=j.bounds||drawingBounds(j.items),width=Math.ceil(b.w*j.scale),height=Math.ceil(b.h*j.scale);if(!Number.isFinite(width)||!Number.isFinite(height)||width<1||height<1||width>8192||height>8192||width*height>8000000)throw Error('Export exceeds pixel budget');return JSON.stringify({svg:sceneSVG(rough.generator(),j.items,j.palette,b,j.scale,j.font,j.images),width,height});})()")
  }).map_err(|_|anyhow::anyhow!("Drawing generation failed or exceeded its budget"))?;
     #[derive(Deserialize)]
     struct Svg {
@@ -101,7 +142,16 @@ pub(crate) fn render(job: &Job) -> Result<Rendered> {
     let mut options = resvg::usvg::Options {
         font_family: "Liberation Sans".into(),
         image_href_resolver: resvg::usvg::ImageHrefResolver {
-            resolve_data: Box::new(|_, _, _| None),
+            resolve_data: Box::new(move |mime, bytes, _| {
+                use sha2::{Digest, Sha256};
+                if mime == "image/png"
+                    && allowed.contains(&format!("{:x}", Sha256::digest(bytes.as_slice())))
+                {
+                    Some(resvg::usvg::ImageKind::PNG(bytes))
+                } else {
+                    None
+                }
+            }),
             resolve_string: Box::new(|_, _| None),
         },
         ..Default::default()
@@ -132,10 +182,10 @@ pub(crate) fn render(job: &Job) -> Result<Rendered> {
 pub fn worker_main() -> Result<()> {
     let mut input = Vec::new();
     std::io::stdin()
-        .take(2 * 1024 * 1024 + 1)
+        .take(12 * 1024 * 1024 + 1)
         .read_to_end(&mut input)?;
     ensure!(
-        input.len() <= 2 * 1024 * 1024,
+        input.len() <= 12 * 1024 * 1024,
         "Render input exceeded budget"
     );
     let job: Job = serde_json::from_slice(&input)?;
@@ -151,6 +201,7 @@ mod tests {
         let id = uuid::Uuid::new_v4().to_string();
         let scene:Scene=serde_json::from_value(json!({"id":uuid::Uuid::new_v4().to_string(),"name":"Fixture","revision":1,"metadata_revision":"metadata","ticket":null,"updated_at":1,"elements":[{"id":id,"revision":"revision","kind":"rectangle","x":0,"y":0,"w":180,"h":90,"text":"<script> & hello","color":"accent","seed":7,"clean":false,"author":"fixture","created_by":"fixture","updated_at":1}]})).unwrap();
         Job {
+            images: Default::default(),
             scene,
             bounds: None,
             theme: "dark".into(),
@@ -192,6 +243,52 @@ mod tests {
         let image = resvg::tiny_skia::Pixmap::decode_png(&png).unwrap();
         assert_eq!((image.width(), image.height()), (clean.width, clean.height));
         assert_eq!(image.pixel(0, 0).unwrap().alpha(), 255);
+    }
+    #[test]
+    fn stored_images_render_pixels_and_reject_external_or_tampered_sources() {
+        use sha2::{Digest, Sha256};
+        let mut j = job();
+        let mut bytes = std::io::Cursor::new(vec![]);
+        image::RgbaImage::from_pixel(32, 16, image::Rgba([250, 10, 20, 255]))
+            .write_to(&mut bytes, image::ImageFormat::Png)
+            .unwrap();
+        let bytes = bytes.into_inner();
+        let id = format!("{:x}", Sha256::digest(&bytes));
+        let d = &mut j.scene.elements[0].drawing;
+        d.kind = "image".into();
+        d.text.clear();
+        d.x = 0.;
+        d.y = 0.;
+        d.w = 64.;
+        d.h = 32.;
+        d.image = Some(crate::whiteboard_images::ImageRef {
+            id: id.clone(),
+            width: 32,
+            height: 16,
+        });
+        j.images.insert(
+            id.clone(),
+            format!("data:image/png;base64,{}", STANDARD.encode(&bytes)),
+        );
+        j.bounds = Some(Bounds {
+            x: 0.,
+            y: 0.,
+            w: 64.,
+            h: 32.,
+        });
+        j.scale = 2.;
+        let rendered = render(&j).unwrap();
+        assert!(rendered.svg.contains("<image"));
+        assert!(rendered.svg.contains("data:image/png;base64,"));
+        let png = STANDARD.decode(rendered.png).unwrap();
+        let pixels = resvg::tiny_skia::Pixmap::decode_png(&png).unwrap();
+        let pixel = pixels.pixel(64, 32).unwrap();
+        assert_eq!((pixel.red(), pixel.green(), pixel.blue()), (250, 10, 20));
+        j.images
+            .insert(id.clone(), "https://example.org/private.png".into());
+        assert!(render(&j).is_err());
+        j.images.insert(id, "data:image/png;base64,AA==".into());
+        assert!(render(&j).is_err());
     }
     #[test]
     fn oversized_pixels_invalid_scale_and_geometry_fail_closed() {

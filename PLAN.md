@@ -22,6 +22,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
+- [Task 0060: Open agent conversation layout](docs/tasks/done/0060-open-agent-conversation-layout.md) — published; redundant history frame and human bubble indent removed.
+
+- [Task 0059: Whiteboard clipboard/drop images](docs/tasks/done/0059-whiteboard-images.md) — deployed; CC-55 item 4 only.
+
 - [Task 0058: Tickets navigation](docs/tasks/done/0058-tickets-navigation.md) — published and verified.
 
 - [Task 0057: Guarded question responses](docs/tasks/done/0057-guarded-question-responses.md) — deployed; desktop/phone controls verified without answering the live question.
@@ -196,6 +200,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Decisions
 
+- [ADR-0004: board-owned raster blobs](docs/decisions/0004-whiteboard-raster-blobs.md) — deployed.
+
 - [ADR-0003: bounded shared-geometry export renderer](docs/decisions/0003-bounded-whiteboard-export-renderer.md) — implemented; deployment pending.
 
 - [ADR-0002: Whiteboard editor and state](docs/decisions/0002-whiteboard-engine-and-state.md) — proposed.
@@ -203,6 +209,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-12: Whiteboard images deployed](docs/notes/2026-11-12-whiteboard-images-deployed.md)
+
+- [2026-11-12: Whiteboard image paste/drop ready](docs/notes/2026-11-12-whiteboard-images-ready.md)
 
 - [2026-11-10: exports ready and attachment design](docs/notes/2026-11-10-whiteboard-exports-ready.md)
 

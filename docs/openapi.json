@@ -2365,6 +2365,115 @@
           }
         }
       }
+    },
+    "/whiteboards/{id}/images": {
+      "post": {
+        "operationId": "uploadWhiteboardImage",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Upload a bounded raster to an observed board",
+        "description": "Explicit human paste/drop or authorized drawing task. Raw <=4 MiB PNG/JPEG/GIF/WebP bytes, sniffed regardless of Content-Type. SVG rejected; first frame normalized to metadata-free PNG <=4 MiB/8 MP/8192 per side. Revision checked before decode and atomically before storage. Returns board-scoped content hash and intrinsic dimensions; does not change scene revision. Place through ordinary element operations with kind image and image descriptor. Same normalized content deduplicates; never auto-retry uncertain uploads. Board quota16 MiB/32 MP; global64 MiB. Unreferenced uploads expire opportunistically after24h; current/retained-history references survive. Deleted boards lose blob bytes. One decode at a time, busy429.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact configured origin; this is not authentication."
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "maxLength": 4194304
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored image reference",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhiteboardImage"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/whiteboards/{id}/images/{image}": {
+      "get": {
+        "operationId": "readWhiteboardImage",
+        "tags": [
+          "Whiteboard"
+        ],
+        "summary": "Read a stored normalized PNG from a live board",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          },
+          {
+            "name": "image",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Normalized PNG; no-store and nosniff. No URL/path resolution.",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3840,7 +3949,8 @@
               "sticky",
               "text",
               "arrow",
-              "freehand"
+              "freehand",
+              "image"
             ]
           },
           "x": {
@@ -3927,6 +4037,16 @@
                 "y"
               ]
             }
+          },
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WhiteboardImage"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3950,7 +4070,8 @@
               "sticky",
               "text",
               "arrow",
-              "freehand"
+              "freehand",
+              "image"
             ]
           },
           "x": {
@@ -4052,6 +4173,9 @@
           },
           "updated_at": {
             "type": "integer"
+          },
+          "image": {
+            "$ref": "#/components/schemas/WhiteboardImage"
           }
         },
         "required": [
@@ -4325,7 +4449,8 @@
                   "sticky",
                   "text",
                   "arrow",
-                  "freehand"
+                  "freehand",
+                  "image"
                 ]
               },
               "x": {
@@ -4412,6 +4537,16 @@
                     "y"
                   ]
                 }
+              },
+              "image": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WhiteboardImage"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": []
@@ -5303,6 +5438,33 @@
           "token",
           "choice"
         ]
+      },
+      "WhiteboardImage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 of normalized stored PNG, scoped to its board; never a URL."
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8192
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8192
+          }
+        },
+        "description": "Intrinsic pixels; product <=8,000,000; dimensions must exactly match the board-owned blob. image elements require this descriptor and empty text; other kinds must omit it."
       }
     },
     "responses": {

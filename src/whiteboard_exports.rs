@@ -340,8 +340,8 @@ fn expire(c: &Connection) -> Result<(), ApiError> {
 async fn worker(job: Job) -> Result<Rendered, ApiError> {
     let exe = std::env::current_exe().map_err(db)?;
     let body = serde_json::to_vec(&job).map_err(db)?;
-    if body.len() > 2 * 1024 * 1024 {
-        return Err(bad("Render input exceeds 2 MiB"));
+    if body.len() > 12 * 1024 * 1024 {
+        return Err(bad("Render input exceeds 12 MiB"));
     }
     let mut command = tokio::process::Command::new(exe);
     command
@@ -439,8 +439,10 @@ fn prepare(
     }
     let meta = json!({"id":request.id,"board":board,"revision":scene.revision,"scope":request.scope,"bounds":bounds,"scale":request.scale,"theme":request.theme,"created_at":now(),"expires_at":now()+TTL,"state":"rendering","element_ids":frozen.elements.iter().map(|e|&e.id).collect::<Vec<_>>(),"artifacts":{}});
     tx.execute("INSERT INTO whiteboard_exports(id,board,digest,metadata,native,description) VALUES(?1,?2,?3,?4,?5,?6)",params![request.id,board,digest,serde_json::to_string(&meta).map_err(db)?,native,description.as_bytes()]).map_err(db)?;
+    let images = crate::whiteboard_images::render_images(&tx, &frozen)?;
     tx.commit().map_err(db)?;
     Ok(Prepared::Render(Job {
+        images,
         scene: frozen,
         bounds,
         theme: request.theme,
@@ -620,7 +622,7 @@ async fn artifact(
                     (header::CACHE_CONTROL, "no-store".into()),
                     (
                         header::CONTENT_SECURITY_POLICY,
-                        "default-src 'none'; style-src 'unsafe-inline'; font-src data:; sandbox"
+                        "default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; sandbox"
                             .into(),
                     ),
                 ],

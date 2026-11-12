@@ -12,7 +12,7 @@ Audit against dcd0b20 and original human brief, before remaining canvas implemen
 | Attribution | Creator/last editor in API, selection details and tooltip; no visual author style | Add visual option after transfers design |
 | Groups/frames | Missing | Minimal API named scopes for export first; GUI grouping/framing later |
 | Align/lock | Missing | After group/frame GUI |
-| Image paste | Missing | After rendering and managed-artifact design |
+| Image paste/drop | CC-55 item 4 deployed in task 0059: scoped raster blobs, paste/drop, resize/sync/history/export | Validated/deployed; other CC-55 items remain backlog |
 | Excalidraw import | Missing | After image support; bounded semantic conversion with warnings |
 | Mermaid import | Missing, optional | Last; existing semantic graph API handles simple flows |
 | Server image export | Missing; only browser images and REST JSON/text | First implementation task 0052 |
@@ -20,3 +20,5 @@ Audit against dcd0b20 and original human brief, before remaining canvas implemen
 | Harness delivery verification | Not performed | Only after approved attachment implementation and explicit outward test authorization |
 
 Initial plan: implement server export and a read-only download helper; document attachment transport/API/receipt/checksum/expiry contract for human approval; then build guarded transfers and run authorized harness checks; finally fill GUI features in the order above. Do not count existing sticky/ticket/touch tools as missing work, or claim that text messages carry files. No agent messages, remote file writes, live drawing mutations or deployment are part of the export development step.
+
+2026-11-12 scope update: only CC-55 item 4 was implemented and deployed. Frames/groups UI, align/lock, visual attribution, Excalidraw/Mermaid import and real Claude/pi image checks remain outside this task. See [task 0059](../tasks/done/0059-whiteboard-images.md).

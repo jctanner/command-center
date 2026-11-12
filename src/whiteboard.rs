@@ -43,6 +43,7 @@ fn rev() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 pub(crate) fn init(c: &Connection) -> anyhow::Result<()> {
+    crate::whiteboard_images::init(c)?;
     c.execute_batch("CREATE TABLE IF NOT EXISTS whiteboards(id TEXT PRIMARY KEY,data TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS whiteboard_operations(board TEXT NOT NULL,id TEXT NOT NULL,digest TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(board,id)); CREATE TABLE IF NOT EXISTS whiteboard_element_ids(board TEXT NOT NULL,id TEXT NOT NULL,revision TEXT NOT NULL,creator TEXT NOT NULL,PRIMARY KEY(board,id)); CREATE TABLE IF NOT EXISTS whiteboard_history(board TEXT NOT NULL,revision INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(board,revision));")?;
     Ok(())
 }
@@ -55,6 +56,8 @@ pub(crate) struct Point {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Drawing {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<crate::whiteboard_images::ImageRef>,
     pub kind: String,
     pub x: f64,
     pub y: f64,
@@ -129,6 +132,7 @@ pub(crate) fn valid(d: &Drawing) -> bool {
         .iter()
         .all(|n| n.is_finite() && n.abs() <= 100_000.)
         && [
+            "image",
             "rectangle",
             "ellipse",
             "diamond",
@@ -139,6 +143,14 @@ pub(crate) fn valid(d: &Drawing) -> bool {
         ]
         .contains(&d.kind.as_str())
         && ["ink", "accent", "blue", "magenta", "yellow"].contains(&d.color.as_str())
+        && (if d.kind == "image" {
+            d.image
+                .as_ref()
+                .is_some_and(crate::whiteboard_images::valid)
+                && d.text.is_empty()
+        } else {
+            d.image.is_none()
+        })
         && d.text.len() <= 4800
         && !d.text.contains('\0')
         && d.seed <= 100_000
@@ -237,6 +249,9 @@ fn apply(c: &mut Connection, id: &str, b: Operations) -> Result<Scene, ApiError>
     for up in &b.upserts {
         if !uuid(&up.id) || !ids.insert(up.id.clone()) || !valid(&up.element) {
             return Err(bad("Invalid drawing element or duplicate ID"));
+        }
+        if let Some(image) = &up.element.image {
+            crate::whiteboard_images::require(&tx, id, image)?;
         }
         match s.elements.iter().find(|e| e.id == up.id) {
             Some(e) if Some(&e.revision) != up.expected_revision.as_ref() => {
@@ -433,6 +448,7 @@ fn apply(c: &mut Connection, id: &str, b: Operations) -> Result<Scene, ApiError>
         }
         tx.execute("DELETE FROM whiteboard_history WHERE rowid=(SELECT rowid FROM whiteboard_history ORDER BY rowid LIMIT 1)",[]).map_err(db)?;
     }
+    crate::whiteboard_images::gc(&tx)?;
     tx.commit().map_err(db)?;
     Ok(s)
 }
@@ -570,8 +586,9 @@ async fn delete_board(
             if scene.revision != b.revision {
                 return Err(conflict("Board changed; refresh before deleting"));
             }
-            tx.execute("UPDATE whiteboards SET deleted=1 WHERE id=?1", [id])
+            tx.execute("UPDATE whiteboards SET deleted=1 WHERE id=?1", [&id])
                 .map_err(db)?;
+            crate::whiteboard_images::gc(&tx)?;
             tx.commit().map_err(db)?;
             Ok(StatusCode::NO_CONTENT)
         })
@@ -638,7 +655,7 @@ async fn edit(
             for (k, v) in b.changes {
                 if ![
                     "kind", "x", "y", "w", "h", "text", "color", "clean", "seed", "from", "to",
-                    "points",
+                    "points", "image",
                 ]
                 .contains(&k.as_str())
                 {
@@ -732,6 +749,12 @@ pub(crate) fn description(s: &Scene) -> String {
     let mut text = format!("{} · revision {}\n", s.name, s.revision);
     for e in &s.elements {
         text.push_str(&format!("{} {} {:?} at ({:.0},{:.0}) size {:.0}×{:.0}; revision {}; created by {}; last edit {}",e.id,e.drawing.kind,e.drawing.text,e.drawing.x,e.drawing.y,e.drawing.w,e.drawing.h,e.revision,e.created_by,e.author));
+        if let Some(image) = &e.drawing.image {
+            text.push_str(&format!(
+                "; image {}×{} pixels; blob {}",
+                image.width, image.height, image.id
+            ));
+        }
         if e.drawing.kind == "arrow" {
             text.push_str(&format!(
                 "; {} → {}",
@@ -846,6 +869,7 @@ async fn graph(
                     id: n.id,
                     expected_revision: None,
                     element: Drawing {
+                        image: None,
                         kind: n.kind,
                         x,
                         y,
@@ -872,6 +896,7 @@ async fn graph(
                     id: e.id,
                     expected_revision: None,
                     element: Drawing {
+                        image: None,
                         kind: "arrow".into(),
                         x: x + 100.,
                         y: y + 50.,
@@ -951,8 +976,64 @@ mod tests {
         .unwrap();
         scene
     }
+    #[test]
+    fn image_elements_use_board_blobs_and_ordinary_revision_guards() {
+        let mut c = Connection::open_in_memory().unwrap();
+        let scene = fixture(&c);
+        let r = crate::whiteboard_images::ImageRef {
+            id: "a".repeat(64),
+            width: 32,
+            height: 16,
+        };
+        let mut d = drawing("");
+        d.kind = "image".into();
+        d.image = Some(r.clone());
+        let id = rev();
+        let make = |expected_revision, element| {
+            batch(vec![Upsert {
+                id: id.clone(),
+                expected_revision,
+                element,
+            }])
+        };
+        assert!(apply(&mut c, &scene.id, make(None, d.clone())).is_err());
+        c.execute(
+            "INSERT INTO whiteboard_images VALUES(?1,?2,32,16,0,x'00')",
+            params![scene.id, r.id],
+        )
+        .unwrap();
+        let added = apply(&mut c, &scene.id, make(None, d.clone())).unwrap();
+        let old = added.elements[0].revision.clone();
+        assert_eq!(added.elements[0].created_by, "Coordinator fixture");
+        assert!(description(&added).contains("image 32×16 pixels"));
+        d.x = 99.;
+        d.w = 400.;
+        d.h = 200.;
+        let moved = apply(&mut c, &scene.id, make(Some(old.clone()), d.clone())).unwrap();
+        assert_eq!(moved.elements[0].drawing.x, 99.);
+        assert!(apply(&mut c, &scene.id, make(Some(old), d.clone())).is_err());
+        d.image.as_mut().unwrap().width = 33;
+        assert!(
+            apply(
+                &mut c,
+                &scene.id,
+                make(Some(moved.elements[0].revision.clone()), d)
+            )
+            .is_err()
+        );
+        let mut remove = batch(vec![]);
+        remove.deletes = vec![Removal {
+            id: id.clone(),
+            revision: moved.elements[0].revision.clone(),
+        }];
+        let deleted = apply(&mut c, &scene.id, remove).unwrap();
+        assert!(deleted.elements.is_empty());
+        crate::whiteboard_images::gc(&c).unwrap();
+        crate::whiteboard_images::require(&c, &scene.id, &r).unwrap();
+    }
     fn drawing(text: &str) -> Drawing {
         Drawing {
+            image: None,
             kind: "rectangle".into(),
             x: 0.,
             y: 0.,

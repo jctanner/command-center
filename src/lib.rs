@@ -24,6 +24,7 @@ mod tmux_management;
 pub mod transport;
 mod whiteboard;
 mod whiteboard_exports;
+mod whiteboard_images;
 mod whiteboard_render;
 pub use whiteboard_render::worker_main as whiteboard_render_worker;
 
@@ -156,6 +157,7 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
         )))
         .merge(board::routes())
         .merge(whiteboard::routes())
+        .merge(whiteboard_images::routes())
         .merge(whiteboard_exports::routes())
         .route(
             "/api/v1/openapi.json",
