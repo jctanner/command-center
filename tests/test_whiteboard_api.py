@@ -54,6 +54,31 @@ class WhiteboardApi(unittest.TestCase):
   body={'id':uid(),'name':'CLI fixture'};intent.write_text(json.dumps(body));board=run('create','--input',str(intent));self.assertEqual(run('get','--board',board['id'])['name'],'CLI fixture')
   node=uid();graph={'operation_id':uid(),'actor':'Coordinator fixture','nodes':[{'id':node,'label':'CLI box'}]};intent.write_text(json.dumps(graph));drawn=run('draw','--board',board['id'],'--input',str(intent));self.assertEqual(drawn['elements'][0]['text'],'CLI box');self.assertIn('CLI box',run('description','--board',board['id'])['description']);self.assertEqual(run('check','--board',board['id'],'--operation',graph['operation_id'])['revision'],drawn['revision'])
 
+ def test_live_stream_committed_writes_reconnect_and_failed_or_replayed_operations(self):
+  def connect():
+   response=self.opener.open(self.url+'/api/v1/whiteboards/events',timeout=3)
+   self.assertTrue(response.headers['Content-Type'].startswith('text/event-stream'))
+   self.assertIn('no-store',response.headers['Cache-Control']);self.assertEqual(response.headers['X-Accel-Buffering'],'no')
+   return response
+  def event(response):
+   lines=[]
+   while True:
+    line=response.readline().decode().strip()
+    if not line and lines:break
+    if line:lines.append(line)
+   self.assertIn('event: whiteboards',lines)
+   return json.loads(next(v[6:]for v in lines if v.startswith('data: ')))
+  with connect() as response:
+   initial=event(response);board=self.create();created=event(response)
+   self.assertEqual(created['epoch'],initial['epoch']);self.assertGreater(created['sequence'],initial['sequence'])
+   body,scene=self.graph(board);changed=event(response);self.assertGreater(changed['sequence'],created['sequence'])
+   path='whiteboards/'+board['id'];self.call(path+'/graph','POST',body)
+   self.call(path,'PATCH',{'revision':uid(),'name':'Rejected'},409)
+   with connect() as again:self.assertEqual(event(again),changed)
+   saved=self.call(path,'PATCH',{'revision':scene['metadata_revision'],'name':'Remote rename','ticket':None});renamed=event(response);self.assertGreater(renamed['sequence'],changed['sequence'])
+   self.call(path,'DELETE',{'revision':saved['revision']},204);deleted=event(response);self.assertGreater(deleted['sequence'],renamed['sequence'])
+  with connect() as again:self.assertEqual(event(again),deleted)
+
  def test_origin_and_payload_guards(self):
   for page,expected in [('whiteboard.html','SAMEORIGIN'),('whiteboard-prototype.html','DENY'),('','DENY')]:
    with self.opener.open(self.url+'/'+page)as response:self.assertEqual(response.headers.get('X-Frame-Options'),expected)

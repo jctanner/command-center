@@ -13,6 +13,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 
 
+
 - [Task 0054: Whiteboard attachment release and harness check](docs/tasks/pending/0054-whiteboard-attachment-release-and-harness-check.md) — deployment complete; real-harness delivery validation awaits separate authorization.
 
 - [Plan 0003: guarded Whiteboard attachments](docs/plans/0003-whiteboard-attachments.md) — approved, implemented and deployed; real-harness validation pending.
@@ -25,6 +26,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0067: Whiteboard live events](docs/tasks/done/0067-whiteboard-live-events.md) — deployed after approval; SSE and four access paths verified.
 
 - [Task 0066: Distinct Whiteboard palette](docs/tasks/done/0066-distinct-whiteboard-palette.md) — deployed; [bug0032 fixed](docs/bugs/fixed/0032-whiteboard-indistinct-named-colors.md).
 
@@ -335,3 +338,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [2026-11-04: ledger adoption](docs/notes/2026-11-04-work-ledger-adoption.md)
 
 This ledger does not mirror or change live CC Board tickets. CC-1 remains ongoing; select subsequent repository work with the user rather than inferring a new assignment from a live card.
+
+- [2026-11-12: Whiteboard live updates ready](docs/notes/2026-11-12-whiteboard-live-events-ready.md)
+
+- [2026-11-12: Whiteboard live updates deployed](docs/notes/2026-11-12-whiteboard-live-events-deployed.md)

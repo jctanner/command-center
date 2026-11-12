@@ -495,7 +495,7 @@ async fn create(
         return Err(bad("Use a UUID and a nonblank name up to 120 bytes"));
     }
     s.board
-        .with(move |c| {
+        .whiteboard_write(move |c| {
             valid_ticket(c, &b.ticket)?;
             let count: i64 = c
                 .query_row(
@@ -538,13 +538,15 @@ async fn create(
         .await
 }
 async fn list(State(s): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    s.board.with(|c|{let mut q=c.prepare("SELECT data FROM whiteboards WHERE deleted=0 ORDER BY rowid DESC LIMIT 100").map_err(db)?;let rows=q.query_map([],|r|r.get::<_,String>(0)).map_err(db)?;let mut out=vec![];for row in rows{let scene:Scene=serde_json::from_str(&row.map_err(db)?).map_err(db)?;out.push(json!({"id":scene.id,"name":scene.name,"revision":scene.revision,"metadata_revision":scene.metadata_revision,"ticket":scene.ticket,"updated_at":scene.updated_at,"elements":scene.elements.len()}));}Ok(Json(json!({"whiteboards":out})))}).await
+    s.board.whiteboard_write(|c|{let mut q=c.prepare("SELECT data FROM whiteboards WHERE deleted=0 ORDER BY rowid DESC LIMIT 100").map_err(db)?;let rows=q.query_map([],|r|r.get::<_,String>(0)).map_err(db)?;let mut out=vec![];for row in rows{let scene:Scene=serde_json::from_str(&row.map_err(db)?).map_err(db)?;out.push(json!({"id":scene.id,"name":scene.name,"revision":scene.revision,"metadata_revision":scene.metadata_revision,"ticket":scene.ticket,"updated_at":scene.updated_at,"elements":scene.elements.len()}));}Ok(Json(json!({"whiteboards":out})))}).await
 }
 async fn detail(
     State(s): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Scene>, ApiError> {
-    s.board.with(move |c| Ok(Json(load(c, &id)?))).await
+    s.board
+        .whiteboard_write(move |c| Ok(Json(load(c, &id)?)))
+        .await
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -563,7 +565,7 @@ async fn metadata(
         return Err(bad("Invalid whiteboard name"));
     }
     s.board
-        .with(move |c| {
+        .whiteboard_write(move |c| {
             let tx = c.transaction().map_err(db)?;
             let mut scene = load(&tx, &id)?;
             if scene.metadata_revision != b.revision {
@@ -592,7 +594,7 @@ async fn delete_board(
     Json(b): Json<DeleteBoard>,
 ) -> Result<StatusCode, ApiError> {
     s.board
-        .with(move |c| {
+        .whiteboard_write(move |c| {
             let tx = c.transaction().map_err(db)?;
             let scene = load(&tx, &id)?;
             if scene.revision != b.revision {
@@ -611,7 +613,9 @@ async fn operations(
     Path(id): Path<String>,
     Json(b): Json<Operations>,
 ) -> Result<Json<Scene>, ApiError> {
-    s.board.with(move |c| Ok(Json(apply(c, &id, b)?))).await
+    s.board
+        .whiteboard_write(move |c| Ok(Json(apply(c, &id, b)?)))
+        .await
 }
 async fn add_elements(
     State(s): State<Arc<AppState>>,
@@ -621,7 +625,9 @@ async fn add_elements(
     if !b.deletes.is_empty() || b.upserts.iter().any(|e| e.expected_revision.is_some()) {
         return Err(bad("Create accepts only new elements"));
     }
-    s.board.with(move |c| Ok(Json(apply(c, &id, b)?))).await
+    s.board
+        .whiteboard_write(move |c| Ok(Json(apply(c, &id, b)?)))
+        .await
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -640,7 +646,7 @@ async fn edit(
 ) -> Result<Json<Scene>, ApiError> {
     let request_digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&b).map_err(db)?));
     s.board
-        .with(move |c| {
+        .whiteboard_write(move |c| {
             let prior: Option<String> = c
                 .query_row(
                     "SELECT digest FROM whiteboard_operations WHERE board=?1 AND id=?2",
@@ -711,7 +717,7 @@ async fn delete_element(
     Json(b): Json<DeleteElement>,
 ) -> Result<Json<Scene>, ApiError> {
     s.board
-        .with(move |c| {
+        .whiteboard_write(move |c| {
             Ok(Json(apply(
                 c,
                 &id,
@@ -735,7 +741,7 @@ async fn operation(
     Path((id, op)): Path<(String, String)>,
 ) -> Result<Json<Value>, ApiError> {
     s.board
-        .with(move |c| {
+        .whiteboard_write(move |c| {
             load(c, &id)?;
             let result: Option<String> = c
                 .query_row(
@@ -795,7 +801,7 @@ async fn readback(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     s.board
-        .with(move |c| {
+        .whiteboard_write(move |c| {
             let scene = load(c, &id)?;
             Ok(Json(
                 json!({"id":scene.id,"revision":scene.revision,"description":description(&scene)}),
@@ -807,7 +813,7 @@ async fn history(
     State(s): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    s.board.with(move|c|{load(c,&id)?;let mut q=c.prepare("SELECT revision,data FROM whiteboard_history WHERE board=?1 ORDER BY revision DESC LIMIT 100").map_err(db)?;let rows=q.query_map([id],|r|Ok((r.get::<_,u64>(0)?,r.get::<_,String>(1)?))).map_err(db)?;let mut out=vec![];for row in rows{let(revision,data)=row.map_err(db)?;let scene:Scene=serde_json::from_str(&data).map_err(db)?;out.push(json!({"revision":revision,"updated_at":scene.updated_at,"elements":scene.elements.len()}));}Ok(Json(json!({"history":out})))}).await
+    s.board.whiteboard_write(move|c|{load(c,&id)?;let mut q=c.prepare("SELECT revision,data FROM whiteboard_history WHERE board=?1 ORDER BY revision DESC LIMIT 100").map_err(db)?;let rows=q.query_map([id],|r|Ok((r.get::<_,u64>(0)?,r.get::<_,String>(1)?))).map_err(db)?;let mut out=vec![];for row in rows{let(revision,data)=row.map_err(db)?;let scene:Scene=serde_json::from_str(&data).map_err(db)?;out.push(json!({"revision":revision,"updated_at":scene.updated_at,"elements":scene.elements.len()}));}Ok(Json(json!({"history":out})))}).await
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -857,7 +863,7 @@ async fn graph(
         ));
     }
     s.board
-        .with(move |c| {
+        .whiteboard_write(move |c| {
             let scene = load(c, &id)?;
             let origin = scene
                 .elements
@@ -955,7 +961,7 @@ async fn export_json(
     State(s): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<impl axum::response::IntoResponse, ApiError> {
-    s.board.with(move|c|{let scene=load(c,&id)?;Ok(([(header::CONTENT_DISPOSITION,"attachment; filename=whiteboard.json"),(header::CACHE_CONTROL,"no-store")],Json(json!({"type":"cc-whiteboard","version":1,"scene":scene,"description":description(&scene)}))))}).await
+    s.board.whiteboard_write(move|c|{let scene=load(c,&id)?;Ok(([(header::CONTENT_DISPOSITION,"attachment; filename=whiteboard.json"),(header::CACHE_CONTROL,"no-store")],Json(json!({"type":"cc-whiteboard","version":1,"scene":scene,"description":description(&scene)}))))}).await
 }
 pub(crate) fn routes() -> Router<Arc<AppState>> {
     Router::new()

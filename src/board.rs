@@ -104,6 +104,9 @@ pub(crate) struct Ticket {
 }
 pub(crate) struct Board {
     db: Arc<Mutex<Connection>>,
+    pub(crate) whiteboard_events: tokio::sync::watch::Sender<u64>,
+    pub(crate) whiteboard_epoch: String,
+    pub(crate) whiteboard_event_slots: Arc<tokio::sync::Semaphore>,
 }
 impl Board {
     pub fn new(path: Option<PathBuf>) -> anyhow::Result<Self> {
@@ -131,7 +134,28 @@ impl Board {
         crate::whiteboard_exports::init(&db)?;
         Ok(Self {
             db: Arc::new(Mutex::new(db)),
+            whiteboard_events: tokio::sync::watch::channel(0).0,
+            whiteboard_epoch: uuid::Uuid::new_v4().to_string(),
+            whiteboard_event_slots: Arc::new(tokio::sync::Semaphore::new(32)),
         })
+    }
+    /// Notify inside the owned DB job, after successful committed work. HTTP
+    /// disconnect cannot lose the invalidation between commit and publication.
+    /// Read-only and idempotent duplicate calls do not change total_changes.
+    pub(crate) async fn whiteboard_write<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&mut Connection) -> Result<T, ApiError> + Send + 'static,
+    ) -> Result<T, ApiError> {
+        let events = self.whiteboard_events.clone();
+        self.with(move |c| {
+            let before = c.total_changes();
+            let result = f(c);
+            if result.is_ok() && c.total_changes() != before {
+                events.send_modify(|revision| *revision = revision.wrapping_add(1));
+            }
+            result
+        })
+        .await
     }
     pub(crate) async fn with<T: Send + 'static>(
         &self,

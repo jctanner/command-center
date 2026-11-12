@@ -23,6 +23,7 @@ pub mod tmux;
 mod tmux_management;
 pub mod transport;
 mod whiteboard;
+mod whiteboard_events;
 mod whiteboard_exports;
 mod whiteboard_images;
 mod whiteboard_render;
@@ -158,6 +159,7 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
         .merge(board::routes())
         .merge(whiteboard::routes())
         .merge(whiteboard_images::routes())
+        .merge(whiteboard_events::routes())
         .merge(whiteboard_exports::routes())
         .route(
             "/api/v1/openapi.json",

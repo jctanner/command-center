@@ -2474,6 +2474,29 @@
           }
         }
       }
+    },
+    "/whiteboards/events": {
+      "get": {
+        "operationId": "watchWhiteboards",
+        "summary": "Watch coalesced whiteboard catalog and scene invalidations",
+        "description": "Server-sent events named whiteboards contain epoch (backend lifetime UUID) and sequence (coalesced change counter). An initial invalidation is always emitted, including reconnects; fetch the catalog and selected scene using REST. Event IDs are opaque hints, not durable replay cursors. No scene content is streamed. Maximum 32 concurrent connections; keepalive comments; no-store; proxy buffering disabled. Disconnect while hidden. Preserve local drafts and uncertain operation receipts before reconciliation.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Live invalidation stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Live connection limit reached; reconnect later"
+          }
+        }
+      }
     }
   },
   "components": {
