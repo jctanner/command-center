@@ -2,7 +2,7 @@
 
 Owner: CC dev
 Claimed: 2026-11-12
-State: current
+State: done
 
 Investigate reported live32-element board revision7 read-only: red swatch absent in human theme, browser blank while server PNG correct. Inspect deployed assets, console, scene/schema and theme mappings across themes; ask selected theme if unavailable. Add safe ink color fallback and prevent a single bad color/element blanking the scene without mutating stored drawing. Regression coverage for root cause and fallbacks. No live element changes, disruptive deployment/restart or commit/push without request; preserve uncommitted tasks0063/0064.
 
@@ -36,3 +36,7 @@ Browser fix published without service restart, with private HTML backups and cur
 Final focused palette browser suite9 passes, including missing/empty CSS paint tokens using generated-palette fallback. Previous export/shared regressions6 pass:15 unique browser cases overall. Node paint invariants and all24 hue/contrast tests pass; Rust75, server HTTP exports11, format/Clippy/release/frontend build and OpenAPI pass. Missing CSS swatches now fall back to generated palette paint as well as canvas ink fallback. Normal roughjs fill paths may have stroke none; outline assertions account for that.
 
 Remaining: approved backend restart to publish no-store HTML policy and embedded shared-paint changes. Private restart script prepared, not executed; coordinator restart and palette feature work remains uncommitted. No live board edit, messages, commit/push.
+
+## Approved deployment — 2026-11-12
+
+Human approved joint deployment. Four configured access paths healthy; listeners/configuration and canonical local tmux pane/PID inventory unchanged. Live read-only diagram check renders32 objects, nine distinct semantic swatches, labeled Theme ink/accent and no-store HTML, with zero page errors/writes/terminal sockets. Private backups and screenshot evidence retained under ignored `.local/`. No scene edits, agent messages or commit/push.

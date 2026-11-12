@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task 0065: Whiteboard red/browser fallback](docs/tasks/current/0065-whiteboard-browser-color-fallback.md) — CC dev; browser fix published/verified; backend cache-header restart pending approval.
+
 
 
 
@@ -25,6 +25,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0066: Distinct Whiteboard palette](docs/tasks/done/0066-distinct-whiteboard-palette.md) — deployed; [bug0032 fixed](docs/bugs/fixed/0032-whiteboard-indistinct-named-colors.md).
+
+- [Task 0065: Whiteboard color fallback/cache protection](docs/tasks/done/0065-whiteboard-browser-color-fallback.md) — deployed; [bug0031 fixed](docs/bugs/fixed/0031-whiteboard-red-stale-render.md).
 
 - [Task 0064: Whiteboard palette/fills](docs/tasks/done/0064-whiteboard-palette-fills.md) — deployed; eleven named colors and optional soft fills.
 

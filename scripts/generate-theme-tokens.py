@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Generate semantic CSS tokens from the pinned Omarchy palette data."""
 import json
-import colorsys
 import re
 import shutil
 from pathlib import Path
@@ -52,24 +51,22 @@ def tokens(colors):
     return values
 
 COLORS = ['ink', 'accent', 'blue', 'magenta', 'yellow', 'red', 'orange', 'green', 'teal', 'purple', 'gray']
+# Drawing color names describe hues, not a theme's arbitrary terminal ANSI slots.
+DRAWING_BASES = {
+    'dark': {'red':'#ff6b6b','orange':'#ffb347','yellow':'#e9d84a','green':'#70d04b','teal':'#38c9b6','blue':'#58a6ff','purple':'#a78bfa','magenta':'#ed6dd4','gray':'#b0b0b0'},
+    'light': {'red':'#bc1830','orange':'#a64800','yellow':'#786200','green':'#276d18','teal':'#006c70','blue':'#1255b7','purple':'#703bbd','magenta':'#a31c83','gray':'#626262'},
+}
 def whiteboard_palette(colors, semantic):
-    # Preserve the original five drawing values, independently of UI contrast
-    # adjustments. New drawing colors use the readable semantic theme tokens.
     result = {'mode': colors['mode'], 'background': colors['background'], 'foreground': colors['foreground']}
     for name in COLORS:
-        legacy = {'ink':'foreground', 'accent':'accent', 'blue':'blue', 'magenta':'magenta', 'yellow':'yellow'}.get(name)
-        result[name] = colors[legacy] if legacy else semantic[name]
-        # Terminal ANSI slots are intentionally nonsemantic in some themes.
-        # A named diagram failure color still needs to look red.
-        red_fallback = False
-        if name == 'red':
-            hue, saturation, _ = colorsys.rgb_to_hsv(*(v / 255 for v in rgb(result[name])))
-            if saturation < .2 or not (hue <= 25/360 or hue >= 340/360):
-                red_fallback = True
-                base = '#bf0e34' if colors['mode'] == 'light' else '#ff9898'
-                soft = mix(colors['background'], base, .13)
-                result[name] = readable(base, [semantic[k] for k in ['bg','surface','raised','hover']] + [soft], colors['mode'] == 'light')
-        result[name + '_soft'] = mix(colors['background'], result[name], .13) if legacy or red_fallback else semantic[name + '-soft']
+        if name in ('ink','accent'):
+            result[name] = colors['foreground' if name == 'ink' else 'accent']
+            result[name + '_soft'] = mix(colors['background'],result[name],.13)
+        else:
+            base = DRAWING_BASES[colors['mode']][name]
+            soft = mix(colors['background'],base,.13)
+            result[name] = readable(base,[semantic[k] for k in ['bg','surface','raised','hover']] + [soft],colors['mode']=='light')
+            result[name + '_soft'] = soft
     return result
 
 def main():

@@ -15,3 +15,5 @@
 .wb-fill{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:12px 0}.wb-fill select{min-width:0;max-width:108px;font-size:11px;padding:5px}
 
 .wb-render-warning{flex-shrink:0;margin:0 0 6px;color:var(--cc-yellow);font-size:12px}
+
+#wb-palette .wb-theme-colors{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:5px}#wb-palette .wb-palette-label{grid-column:1/-1;font-size:10px;color:var(--cc-muted)}#wb-palette .wb-theme-colors button{display:flex;align-items:center;gap:5px;width:auto;height:26px;padding:2px;border-radius:4px;background:transparent;font-size:10px;color:var(--cc-text)}.wb-swatch{width:18px;height:18px;flex:none;border-radius:50%}
