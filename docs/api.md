@@ -159,3 +159,7 @@ Codex also emits a single environments.environment_context input_text item witho
 ## Codex status look-back
 
 Process-linked Codex status first scans the last 512 KiB of native events. If no root lifecycle anchor is present, it retries with 2 MiB and then an 8 MiB maximum window, stopping once a root anchor is found or the file start is reached. Snapshot reads are bounded and partial first records are discarded. Fresh item_completed events refresh only their identified active root; child completion/progress, token counts, arbitrary output and terminal silence do not establish state. Existing 15-minute Working expiry and invalid/future/incomplete evidence checks remain. An anchor beyond the cap is honestly Unknown. Native logs, conversation pages, receipt positions and terminal transport are unchanged.
+
+## Coordinator agent closure
+
+Human-requested closure or explicitly delegated agent cleanup uses the existing GET/POST `/hosts/{host}/windows/close`, with both `agent_pane` and `agent_instance`. See [coordinator closure](reference/coordinator-closing.md) for exact preview/POST fields, whole-window/linked-session effects and read-only uncertain recovery. This is separate from restart, messaging and ticket CRUD; it adds no backend endpoint or automatic cleanup.

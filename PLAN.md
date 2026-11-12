@@ -9,6 +9,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+
 - [Task 0054: Whiteboard attachment release and harness check](docs/tasks/pending/0054-whiteboard-attachment-release-and-harness-check.md) — deployment complete; real-harness delivery validation awaits separate authorization.
 
 - [Plan 0003: guarded Whiteboard attachments](docs/plans/0003-whiteboard-attachments.md) — approved, implemented and deployed; real-harness validation pending.
@@ -21,6 +22,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0062: Coordinator close permission](docs/tasks/done/0062-coordinator-agent-close.md) — cc-close skill/role and existing API playbook validated; no live agents closed.
+
+- [Task 0061: Claude named-session status](docs/tasks/done/0061-claude-named-session-status.md) — deployed; [bug0030 fixed](docs/bugs/fixed/0030-claude-named-session-status.md); original queued messages resumed.
 
 - [Task 0060: Open agent conversation layout](docs/tasks/done/0060-open-agent-conversation-layout.md) — published; redundant history frame and human bubble indent removed.
 

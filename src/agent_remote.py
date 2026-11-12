@@ -152,7 +152,7 @@ def observe(request):
     except (OSError, ValueError, IndexError):
         if not kind: fail(409,'No process-backed agent association is available')
         cwd = tmux(request, 'display-message', '-p', '-t', target, '#{pane_current_path}').rstrip('\n')
-    return dict(target=target, kind=kind, identity=identity, base=agent_base, args=args,
+    return dict(target=target, socket=request.get("socket"), kind=kind, identity=identity, base=agent_base, args=args,
                 env=env, cwd=cwd, context=text, visible=tmux(request, 'capture-pane', '-p', '-t', target, '-S', '0'), in_mode=info[3] != '0',
                 screen=hashlib.sha256(captured.encode()).hexdigest())
 
@@ -498,7 +498,7 @@ def claude_current_session(home, cwd, session):
     return None
 
 
-def claude_tmux_matches(recorded, target):
+def claude_tmux_matches(recorded, target, socket=None):
     if not isinstance(recorded,str) or not isinstance(target,str):return False
     if recorded in (target, target.lstrip('$')):return True
     # CC viewers link the original window: the physical window/pane IDs remain
@@ -506,7 +506,16 @@ def claude_tmux_matches(recorded, target):
     # This is used only alongside the verified foreground PID/start/domain/cwd.
     original=re.fullmatch(r'\$[0-9]+:(@[0-9]+\.%[0-9]+)',target)
     viewer=re.fullmatch(r'cc-view-[0-9a-f]{32}:(@[0-9]+\.%[0-9]+)',recorded)
-    return bool(original and viewer and original[1]==viewer[1])
+    if original and viewer and original[1]==viewer[1]: return True
+    # Native Claude can persist its session's literal name instead of $ID.
+    # Resolve exact current membership on this socket; a matching suffix alone
+    # must never link a different session, a renamed alias or another server.
+    named=re.fullmatch(r'([^:\x00-\x1f\x7f]{1,240}):(@[0-9]+\.%[0-9]+)',recorded)
+    if not original or not named or named[2]!=original[1]: return False
+    try:
+        members=tmux({'socket':socket},'list-panes','-s','-t','='+named[1]+':','-F','#{session_id}:#{window_id}.#{pane_id}')
+        return len(members)<=262144 and target in members.splitlines()[:2048]
+    except (Failure,OSError,subprocess.SubprocessError): return False
 
 def process_sessions(observation, home, follow_continuations=True):
     """Provider state must match live PID/start identity, never cwd alone."""
@@ -540,7 +549,7 @@ def process_sessions(observation, home, follow_continuations=True):
                     return set()
             session = record.get('sessionId', '')
             if (record.get('pid') == pid and str(record.get('procStart')) == start
-                    and claude_tmux_matches(record.get('tmux'), observation['target'])
+                    and claude_tmux_matches(record.get('tmux'), observation['target'], observation.get('socket'))
                     and os.path.realpath(record.get('cwd', '')) == os.path.realpath(observation['cwd'])
                     and re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', session)):
                 if follow_continuations:

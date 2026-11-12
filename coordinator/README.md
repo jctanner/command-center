@@ -11,7 +11,7 @@ claude
 
 Complete normal provider authentication/trust prompts yourself. This does not create a built-in CC agent or install MCP tools. No `.mcp.json` is needed yet.
 
-The project skills are `cc-inventory`, `cc-overlap-review`, `cc-coordinate`, `cc-tickets`, `cc-launch` and `cc-message`. Ask, for example: “Inventory the running agents and identify possible overlapping work. Read their existing conversations and relevant files; draft recommendations without messaging anyone.”
+The project skills are `cc-inventory`, `cc-overlap-review`, `cc-coordinate`, `cc-tickets`, `cc-launch`, `cc-message` and `cc-close`. Ask, for example: “Inventory the running agents and identify possible overlapping work. Read their existing conversations and relevant files; draft recommendations without messaging anyone.”
 
 ## Read helper
 
@@ -76,3 +76,7 @@ For example: “Ask the two named agents to agree on their interface, relay thei
 Have the running coordinator reread `CLAUDE.md`, `AGENTS.md` and `.claude/skills/cc-message/SKILL.md` before its first send. This update sends no live messages itself and adds no fictional CLI commands: use the documented existing REST methods.
 
 For requested Codex launches, this coordinator selects `approval_policy: "approve-for-me"` during preparation, following the user’s standing preference. This uses automatic review with the workspace-write sandbox. Unsupported Codex versions fail explicitly; other harnesses keep their defaults. The web launch dialogs offer the same option alongside Harness default.
+
+## Closing agents
+
+The coordinator can close specified agents when you request it, or within an explicitly delegated cleanup task with bounded targets/criteria. Use `cc-close` and the [closure playbook](../docs/reference/coordinator-closing.md). The existing API previews and revalidates the agent process, window and session links; no new service or backend restart is needed. Closing also closes every other pane in that window and may end last-window sessions. Clear dedicated-window scope needs no repeated generic permission question; unrelated collateral effects require clarification. Nothing is closed merely by enabling the skill. Uncertain closes are inspected, never automatically repeated; ticket/outbox changes and replacement launches stay separate.
