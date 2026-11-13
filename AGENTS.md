@@ -134,6 +134,8 @@ Report what changed, how it was verified, and remaining limitations. Do not expa
 
 - SSH machines may specify an optional literal `ssh_jump` destination/alias. Apply it through shared transport for inventory, PTYs, files and agent actions; do not implement a nested interactive shell or forward the SSH agent. Enforce noninteractive authentication and strict host-key verification on both hops. Jump-route edits change connection identity and invalidate pending grants/read scopes, while direct-host identities remain backward compatible.
 
+- Optional `python_venv` is a literal project-relative/absolute Python environment, saved in the same machine-qualified project pin. Omission inherits its default; explicit empty launch value disables it. Bind canonical directory/config/interpreter identities into launch/restart plans, fail closed before tmux mutations when unavailable/replaced, and apply PATH/VIRTUAL_ENV after tmux spawning (tmux can override PATH passed through `-e`). Never source activation scripts, accept arbitrary environment variables, install packages or restart live agents merely because a default changes. Restart preserves the process's observed validated venv, not a newly edited project default.
+
 ## Native pi agents
 
 - Discover exact `pi`/`pi-coding-agent` foreground commands, including Node processes whose title is `pi`. Verify process/start identity before granting any message input; do not match unrelated commands such as pip or ping. Preserve native launch behavior and existing pi processes.

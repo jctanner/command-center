@@ -139,10 +139,10 @@ def observe(request):
         start=pane_process['start'];foreground=leader['pid'];agent_start=agent_process['start'];agent_base=agent_process['base']
         argv=(agent_base/'cmdline').read_bytes().decode(errors='replace').split('\0')
         args = argv
-        # Read only the two provider-home variables. Never return environments.
+        # Read only allowlisted provider/environment identity metadata. Never return environments.
         for value in (agent_base / 'environ').read_bytes().decode(errors='replace').split('\0'):
             key, _, val = value.partition('=')
-            if key in ('CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CC_LAUNCH_ID', 'PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'CC_RESTART_ID'):
+            if key in ('VIRTUAL_ENV','CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CC_LAUNCH_ID', 'PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'CC_RESTART_ID'):
                 env[key] = val
         boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
         basis=f'{boot}:{info[0]}:{start}:{foreground}:{agent_start}:{kind}'
@@ -1352,6 +1352,23 @@ def project_directory(value):
     info=path.stat()
     return str(path), f'{info.st_dev}:{info.st_ino}'
 
+def python_venv(project, value):
+    if value is None or value == '': return None, None
+    if not isinstance(value,str) or len(value.encode())>4096 or any(ord(c)<32 or 127<=ord(c)<160 for c in value):
+        fail(400,'Python venv must be a literal directory path')
+    try:
+        root=Path(value).expanduser()
+        if not root.is_absolute(): root=Path(project)/root
+        root=root.resolve(strict=True)
+        cfg=root/'pyvenv.cfg'; binary=root/'bin'/'python'
+        if not root.is_dir() or not cfg.is_file() or cfg.stat().st_size>65536 or not binary.is_file() or not os.access(binary,os.X_OK):
+            fail(400,'Python venv needs pyvenv.cfg and an executable bin/python')
+        identities=[]
+        for item in (root,root/'bin',cfg,binary):
+            info=item.stat();identities.append([str(item.resolve()),info.st_dev,info.st_ino,info.st_mtime_ns,info.st_size])
+        return str(root), hashlib.sha256(json.dumps(identities).encode()).hexdigest()
+    except (OSError,ValueError,RuntimeError): fail(400,'Python venv is unavailable; check its directory')
+
 def launch_executable(kind):
     if kind not in ('codex', 'claude', 'pi'): fail(400, 'Choose Codex, Claude or pi')
     search = os.environ.get('PATH', '') + os.pathsep + str(Path.home()/'.local/bin') + os.pathsep + str(Path.home()/'.cargo/bin') + ':/usr/local/bin'
@@ -1462,6 +1479,10 @@ def launch_options(request):
     card_name=launch_label(request.get('card_name'),240,'Agent card name')
     path,identity=project_directory(request.get('path'))
     kind=request.get('provider')
+    defaults=request.get('project_venvs') or {}
+    value=request.get('python_venv')
+    if value is None: value=defaults.get(path)
+    venv,venv_identity=python_venv(path,value)
     executable,executable_identity,_=launch_executable(kind)
     approval_policy=launch_approval_policy(kind,request.get('approval_policy'))
     if approval_policy: codex_launch_flags(executable,approval_policy)
@@ -1471,7 +1492,7 @@ def launch_options(request):
         session=candidate.get('session','')
         if not isinstance(session,str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session): continue
         candidates.append(dict(id=candidate['id'],session=session,timestamp=candidate['timestamp'],title=launch_title(candidate,kind),active=session in active))
-    return dict(project=path,directory_identity=identity,provider=kind,model=model,approval_policy=approval_policy,executable=executable,executable_identity=executable_identity,conversations=candidates,target_session=target_session,destination_identity=destination_identity,window_name=window_name,card_name=card_name)
+    return dict(python_venv=venv,venv_identity=venv_identity,project=path,directory_identity=identity,provider=kind,model=model,approval_policy=approval_policy,executable=executable,executable_identity=executable_identity,conversations=candidates,target_session=target_session,destination_identity=destination_identity,window_name=window_name,card_name=card_name)
 
 def launch_status(request):
     identifier=request.get('launch_id','')
@@ -1509,11 +1530,16 @@ def launch_status(request):
         except (Failure,OSError): pass
     if metadata.get('conversation'):association.setdefault('conversation',metadata['conversation'])
     return dict(found=True,launch_id=identifier,session=row[0],window=row[1],pane=row[2],
-                session_name=fields[5],destination=metadata.get('destination','session'),project=metadata['project'],provider=kind,model=metadata.get('model'),approval_policy=metadata.get('approval_policy'),
+                session_name=fields[5],destination=metadata.get('destination','session'),project=metadata['project'],provider=kind,model=metadata.get('model'),python_venv=metadata.get('python_venv'),approval_policy=metadata.get('approval_policy'),
                 running=row[3]=='0' and kind in row[4].lower(),exited=row[3]=='1',
                 context=tmux(request,'capture-pane','-p','-t',row[2],'-S','0')[-12000:],**association)
 
 def respawn_launch(request, pane, directory, environment, command):
+    # tmux sets PATH from its spawning client after applying -e overrides.
+    # Apply the literal venv environment after tmux, without a shell/script.
+    values=dict(environment[i+1].split('=',1) for i in range(0,len(environment),2) if '=' in environment[i+1])
+    if values.get('VIRTUAL_ENV'):
+        command=['/usr/bin/env','PATH='+values['PATH'],'VIRTUAL_ENV='+values['VIRTUAL_ENV'],'PYTHONHOME=',*command]
     # tmux's protocol rejects large argv messages. A private one-shot argv file
     # keeps long prompts literal without typing terminal input or shell quoting.
     if sum(len(arg.encode())+1 for arg in environment+command) <= 6000:
@@ -1549,6 +1575,9 @@ def launch_agent(request):
     executable,executable_identity,search=launch_executable(kind)
     if identity!=request.get('directory_identity') or path!=request.get('project'): fail(409,'Project directory changed; prepare it again')
     if executable!=request.get('executable') or executable_identity!=request.get('executable_identity'): fail(409,'Agent installation changed; prepare again')
+    venv,venv_identity=python_venv(path,request.get('python_venv'))
+    if venv_identity!=request.get('venv_identity'): fail(409,'Python venv changed; prepare the launch again')
+    if venv: search=str(Path(venv)/'bin')+os.pathsep+search
     model=launch_model(request.get('model'))
     command=[executable]
     approval_policy=launch_approval_policy(kind,request.get('approval_policy'))
@@ -1578,7 +1607,7 @@ def launch_agent(request):
         row=tmux(request,'new-session','-d','-P','-F','#{session_id}\t#{window_id}\t#{pane_id}','-s',name,'-n',kind,'-c',path,'-x','120','-y','36','/bin/sleep','86400').strip().split('\t')
     if len(row)!=3: fail(502,'Launch state uncertain; check the launch before trying again')
     try:
-        metadata=json.dumps(dict(launch_id=identifier,project=path,provider=kind,model=model,approval_policy=approval_policy,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,destination='window' if target_session else 'session'))
+        metadata=json.dumps(dict(launch_id=identifier,project=path,python_venv=venv,provider=kind,model=model,approval_policy=approval_policy,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,destination='window' if target_session else 'session'))
         tmux(request,'set-option','-w','-t',row[1],'@cc_launch',metadata)
         if not target_session:tmux(request,'set-option','-t',row[0],'@cc_launch',metadata)
         else:tmux(request,'rename-window','-t',row[1],kind+'-'+identifier[:8])
@@ -1586,7 +1615,8 @@ def launch_agent(request):
             tmux(request,'rename-window','-t',row[1],window_name)
             tmux(request,'set-option','-w','-t',row[1],'automatic-rename','off')
         tmux(request,'set-option','-w','-t',row[1],'remain-on-exit','on')
-        environment=['-e','PATH='+search,'-e','CC_LAUNCH_ID='+identifier]
+        environment=['-e','PATH='+search,'-e','CC_LAUNCH_ID='+identifier,'-e','VIRTUAL_ENV='+ (venv or '')]
+        if venv: environment += ['-e','PYTHONHOME=']
         for key,default in (('CODEX_HOME','.codex'),('CLAUDE_CONFIG_DIR','.claude')):
             environment += ['-e',key+'='+os.environ.get(key,str(Path.home()/default))]
         for key in ('PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR'):
@@ -1615,9 +1645,13 @@ def restart_plan(request, observation):
         except (OSError,subprocess.SubprocessError): pass
     command += ['resume',session] if kind=='codex' else ['--session',chosen['path']] if kind=='pi' else ['--resume',session]
     info=os.stat(chosen['path'])
-    environment={key:value for key,value in observation['env'].items() if key in ('CODEX_HOME','CLAUDE_CONFIG_DIR','PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR')}
+    environment={key:value for key,value in observation['env'].items() if key in ('VIRTUAL_ENV','CODEX_HOME','CLAUDE_CONFIG_DIR','PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR')}
+    venv,venv_identity=python_venv(project,observation['env'].get('VIRTUAL_ENV'))
+    if venv: search=str(Path(venv)/'bin')+os.pathsep+search
+    environment['VIRTUAL_ENV']=venv or ''
+    if venv: environment['PYTHONHOME']=''
     environment['PATH']=search
-    return dict(identity=observation['identity'],provider=kind,session=session,conversation=chosen['id'],
+    return dict(python_venv=venv,venv_identity=venv_identity,identity=observation['identity'],provider=kind,session=session,conversation=chosen['id'],
                 path=chosen['path'],project=project,directory_identity=directory_identity,
                 executable_identity=executable_identity,command=command,environment=environment,
                 log_device=info.st_dev,log_inode=info.st_ino)
@@ -1639,7 +1673,7 @@ def restart_agent(request, observation):
         fail(409,'The agent changed immediately before restart; inspect the pane')
     environment=[]
     for key,value in {**plan['environment'],'CC_RESTART_ID':identifier}.items(): environment += ['-e',key+'='+value]
-    tmux(request,'respawn-pane','-k','-t',observation['target'],'-c',plan['project'],*environment,*plan['command'])
+    respawn_launch(request,observation['target'],plan['project'],environment,plan['command'])
     return dict(state='checking')
 
 

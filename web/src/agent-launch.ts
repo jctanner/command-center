@@ -1,8 +1,8 @@
 export type LaunchedAgent = { host: string; connection_revision: string; launch_id: string; session: string; window: string; pane: string; project: string; provider: string; session_name: string; running: boolean; exited: boolean; context: string; found: boolean };
 type Host = { id: string; name: string; connection_revision: string };
-type Project = { path: string; name: string; pinned: boolean };
+type Project = { python_venv?: string | null; path: string; name: string; pinned: boolean };
 type Projects = { revision: string; connection_revision: string; projects: Project[]; discovery_error?: string };
-type Prepared = { approval_policy?: string | null; model: string | null; endpoint: string; token: string; launch_id: string; project: string; provider: string; executable: string; conversations: { id: string; session: string; title: string; timestamp: string; active: boolean }[] };
+type Prepared = { python_venv?: string | null; approval_policy?: string | null; model: string | null; endpoint: string; token: string; launch_id: string; project: string; provider: string; executable: string; conversations: { id: string; session: string; title: string; timestamp: string; active: boolean }[] };
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '') => { const n = document.createElement(tag); n.textContent = text; return n; };
 async function request<T>(url: string, body?: unknown): Promise<T> {
   const response = await fetch(url, { ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), signal: AbortSignal.timeout(25000) });
@@ -15,6 +15,8 @@ export class AgentLauncher {
   private path = element('input');
   private provider = element('select');
   private model = element('input');
+  private venv = element('input');
+  private rememberVenv = element('input');
   private approvalPolicy = element('select');
   private initialPrompt = element('textarea');
   private promptHelp = element('small');
@@ -54,6 +56,7 @@ export class AgentLauncher {
     for (const value of ['codex', 'claude', 'pi']) { const o = element('option', value === 'codex' ? 'Codex' : value === 'pi' ? 'pi' : 'Claude'); o.value = value; this.provider.append(o); }
     this.pin.type = 'checkbox'; this.name.placeholder = 'Optional project name'; this.name.setAttribute('aria-label', 'Pinned project name');
     label('Machine', this.machine); label('Project', this.project); label('Directory', this.path); label('Agent', this.provider); label('Model (optional)', this.model);
+    this.venv.setAttribute('aria-label','Python venv');this.venv.placeholder='None, .venv or /absolute/venv';this.venv.maxLength=4096;label('Python venv (optional)',this.venv);this.rememberVenv.type='checkbox';const remember=element('label','Remember venv for this project');remember.className='agent-launch-pin';remember.prepend(this.rememberVenv);fields.append(remember,element('small','Uses the venv for commands the agent runs. Does not source activation scripts. Remembering a venv also pins the project.'));
     fields.append(element('small', 'Enter a model name or alias, or leave blank for no override.'));
     this.approvalPolicy.setAttribute('aria-label','Codex approval policy');
     this.approvalPolicy.append(new Option('Harness default',''),new Option('Automatic review (workspace-write)','approve-for-me'));
@@ -69,8 +72,9 @@ export class AgentLauncher {
     for (const b of [this.check, this.start, this.recover, this.another, this.close]) b.type = 'button';
     actions.append(this.check, this.start, this.recover, this.another, this.close); this.dialog.append(heading, intro, fields, this.feedback, this.context, actions); document.body.append(this.dialog);
     this.machine.onchange = () => { void this.loadProjects(); };
-    this.project.onchange = () => { this.invalidate(); const manual = this.project.value === ''; this.path.value = this.project.value; this.path.readOnly = !manual; this.pin.checked = false; this.name.value = this.projects?.projects.find(p => p.path === this.project.value)?.name || ''; this.update(); if (!manual) void this.prepare(); };
+    this.project.onchange = () => { this.invalidate(); const manual = this.project.value === ''; this.path.value = this.project.value; this.venv.value=this.projects?.projects.find(p=>p.path===this.project.value)?.python_venv||'';this.rememberVenv.checked=false; this.path.readOnly = !manual; this.pin.checked = false; this.name.value = this.projects?.projects.find(p => p.path === this.project.value)?.name || ''; this.update(); if (!manual) void this.prepare(); };
     this.path.oninput = () => { this.invalidate(); this.update(); };
+    this.venv.oninput=()=>{this.invalidate();this.update();};this.venv.onchange=()=>{if(this.path.value.trim())void this.prepare();};
     this.model.oninput = () => { this.invalidate(); this.feedback.textContent = 'Model changed. Check project to continue.'; this.update(); };
     this.model.onchange = () => { if (this.path.value.trim()) void this.prepare(); };
     this.approvalPolicy.onchange = () => { this.invalidate(); this.update(); if (this.path.value.trim()) void this.prepare(); };
@@ -109,7 +113,7 @@ export class AgentLauncher {
   private url(host: string, action: string) { return `/api/v1/hosts/${encodeURIComponent(host)}/agents/${action}`; }
   private update() {
     const locked = this.busy || !!this.receipt;
-    for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.approvalPolicy, this.destination, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
+    for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.venv, this.rememberVenv, this.approvalPolicy, this.destination, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
     this.approvalPolicy.disabled = locked || !this.projects || this.provider.value !== 'codex';
     this.check.disabled = locked || this.checking || !this.path.value.trim() || !this.projects;
     const resumed=!!this.conversation.value, tooLong=new TextEncoder().encode(this.initialPrompt.value).length>24000;
@@ -125,7 +129,7 @@ export class AgentLauncher {
     this.start.textContent = `${this.conversation.value ? 'Resume' : 'Start'} ${this.provider.value === 'pi' ? 'pi' : this.provider.value === 'claude' ? 'Claude' : 'Codex'}`;
   }
   private async loadProjects() {
-    this.invalidate(); this.projects = undefined; this.path.value = ''; this.model.value = ''; this.approvalPolicy.value = ''; this.pin.checked = false; this.project.replaceChildren();this.destination.replaceChildren(new Option('New dedicated session','')); this.feedback.textContent = 'Loading projects…'; this.update();
+    this.invalidate(); this.projects = undefined; this.path.value = '';this.venv.value='';this.rememberVenv.checked=false; this.model.value = ''; this.approvalPolicy.value = ''; this.pin.checked = false; this.project.replaceChildren();this.destination.replaceChildren(new Option('New dedicated session','')); this.feedback.textContent = 'Loading projects…'; this.update();
     const host = this.host(), generation = this.generation; if (!host) return;
     try {
       const [data,inventory]=await Promise.all([request<Projects>(`/api/v1/hosts/${encodeURIComponent(host.id)}/projects`),request<{sessions:{id:string;name:string}[]}>(`/api/v1/hosts/${encodeURIComponent(host.id)}/inventory`).catch(()=>({sessions:[]}))]);
@@ -136,7 +140,7 @@ export class AgentLauncher {
       const projects = [...data.projects].sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name));
       this.project.replaceChildren(...projects.map(p => { const o = element('option', `${p.pinned ? '★ ' : ''}${p.name} · ${p.path}`); o.value = p.path; return o; }));
       const manual = element('option', 'Another directory…'); manual.value = ''; this.project.append(manual);
-      this.path.value = this.project.value; this.path.readOnly = !!this.project.value; this.name.value = projects.find(p => p.path === this.project.value)?.name || '';
+      this.path.value = this.project.value; this.venv.value=this.projects?.projects.find(p=>p.path===this.project.value)?.python_venv||'';this.rememberVenv.checked=false; this.path.readOnly = !!this.project.value; this.name.value = projects.find(p => p.path === this.project.value)?.name || '';
       this.feedback.textContent = data.discovery_error ? 'Live directory discovery is unavailable. Pinned projects and manual directories can still be used.' : '';
       this.update(); if (this.path.value) await this.prepare();
     } catch (e) { if (generation === this.generation) { this.feedback.textContent = String(e); this.update(); } }
@@ -146,6 +150,7 @@ export class AgentLauncher {
     this.invalidate(); const generation = this.generation; this.checking = true; this.feedback.textContent = 'Checking directory, agent and project history…'; this.update();
     try {
       const query = new URLSearchParams({ connection_revision: host.connection_revision, path: this.path.value, provider: this.provider.value });
+      query.set('python_venv',this.venv.value.trim());
       if (this.model.value.trim()) query.set('model', this.model.value.trim());
       if(this.provider.value==='codex'&&this.approvalPolicy.value)query.set('approval_policy',this.approvalPolicy.value);
       if(this.destination.value)query.set('target_session',this.destination.value);
@@ -154,7 +159,7 @@ export class AgentLauncher {
       this.prepared = data; this.path.value = data.project;
       const fresh = element('option', 'New conversation'); fresh.value = ''; this.conversation.replaceChildren(fresh);
       for (const c of data.conversations) { const o = element('option', `${c.active ? 'Already running' : 'Resume'}: ${c.title} · ${c.timestamp ? new Date(c.timestamp).toLocaleString() : c.session.slice(0, 8)}`); o.value = c.id; o.disabled = c.active; this.conversation.append(o); }
-      this.feedback.textContent = `${data.provider === 'pi' ? 'pi' : data.provider === 'claude' ? 'Claude' : 'Codex'} available · ${data.approval_policy==='approve-for-me'?'Automatic review (workspace-write) · ':''}${data.conversations.length} project conversation${data.conversations.length === 1 ? '' : 's'}. ${this.destination.selectedOptions[0]?.textContent||'New dedicated session'}.`;
+      this.feedback.textContent = `${data.provider === 'pi' ? 'pi' : data.provider === 'claude' ? 'Claude' : 'Codex'} available · ${data.approval_policy==='approve-for-me'?'Automatic review (workspace-write) · ':''}${data.python_venv?'Python venv: '+data.python_venv+' · ':''}${data.conversations.length} project conversation${data.conversations.length === 1 ? '' : 's'}. ${this.destination.selectedOptions[0]?.textContent||'New dedicated session'}.`;
     } catch (e) { if (generation === this.generation) this.feedback.textContent = String(e); }
     finally { if (generation === this.generation) { this.checking = false; this.update(); } }
   }
@@ -163,8 +168,8 @@ export class AgentLauncher {
     if (!prepared || !host || !projects || this.busy || this.receipt) return;
     this.busy = true; this.update(); this.feedback.textContent = 'Starting agent…';
     try {
-      if (this.pin.checked) {
-        const response = await fetch(`/api/v1/hosts/${encodeURIComponent(host.id)}/projects`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: projects.revision, path: prepared.project, name: this.name.value.trim() || undefined, pinned: true }), signal: AbortSignal.timeout(25000) });
+      if (this.pin.checked || this.rememberVenv.checked) {
+        const response = await fetch(`/api/v1/hosts/${encodeURIComponent(host.id)}/projects`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: projects.revision, path: prepared.project, name: this.name.value.trim() || projects.projects.find(p=>p.path===prepared.project)?.name || undefined, pinned: true, ...(this.rememberVenv.checked?{python_venv:this.venv.value.trim()}:{}) }), signal: AbortSignal.timeout(25000) });
         const value = await response.json(); if (!response.ok) throw new Error(value.error || 'Project could not be pinned');
         projects.revision = value.revision;
       }

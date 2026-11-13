@@ -23,13 +23,13 @@ test.beforeEach(async()=>{
  writeFileSync(config,`[[hosts]]\nid="local"\nname="Restart fixture"\nsocket=${JSON.stringify(socket)}\n`);await startBackend();
 });
 test.afterEach(async()=>{await stopBackend();if(socket)spawnSync('/usr/bin/tmux',['-S',socket,'kill-server']);if(dir)rmSync(dir,{recursive:true,force:true});});
-async function harness(provider:string){
+async function harness(provider:string,venv=''){
  let path:string;
  if(provider==='codex'){path=join(home,'sessions/2026/11/05/log.jsonl');mkdirSync(join(home,'sessions/2026/11/05'),{recursive:true});writeFileSync(path,JSON.stringify({type:'session_meta',payload:{id:native,cwd:dir}})+'\n');}
  else if(provider==='claude'){const project=dir.replace(/[^a-zA-Z0-9]/g,'-');mkdirSync(join(home,'projects',project),{recursive:true});path=join(home,'projects',project,native+'.jsonl');writeFileSync(path,JSON.stringify({type:'user',sessionId:native,cwd:dir,timestamp:new Date().toISOString(),message:{role:'user',content:'Fixture conversation'}})+'\n');}
  else{path=join(dir,'pi-session.jsonl');writeFileSync(path,JSON.stringify({type:'session',version:3,id:native,cwd:dir})+'\n');}
  const args=provider==='codex'?['resume',native]:provider==='claude'?['--resume',native]:['--session',path];
- const command=`exec env CODEX_HOME='${home}' CLAUDE_CONFIG_DIR='${home}' PI_CODING_AGENT_DIR='${home}' '${join(dir,'bin',provider)}' ${args.map(a=>`'${a}'`).join(' ')}`;
+ const command=`exec env ${venv?`VIRTUAL_ENV='${venv}' PATH='${venv}/bin:/usr/bin:/bin' `:''}CODEX_HOME='${home}' CLAUDE_CONFIG_DIR='${home}' PI_CODING_AGENT_DIR='${home}' '${join(dir,'bin',provider)}' ${args.map(a=>`'${a}'`).join(' ')}`;
  tmux('respawn-pane','-k','-t',pane,command);await expect.poll(()=>tmux('display-message','-p','-t',pane,'#{pane_current_command}')).toBe(provider);
 }
 for(const provider of ['codex','claude','pi'])test(`${provider} restart retains pane, exact conversation and card settings without replay`,async({page})=>{
@@ -131,4 +131,9 @@ for(const provider of ['codex','claude','pi'])test(`post-update restart uses new
 test('an installation changed after preparation cannot kill the original process',async()=>{
  await harness('codex');const original=await target(),pid=tmux('display-message','-p','-t',pane,'#{pane_pid}'),prepared=await prepare(original);upgradeFixture('codex');
  const response=await post('/api/v1/hosts/local/agents/restart',{id:prepared.id});expect(response.status).toBe(200);expect((await response.json()).state).toBe('checking');expect(tmux('display-message','-p','-t',pane,'#{pane_pid}')).toBe(pid);expect((await target()).instance).toBe(original.instance);expect(tmux('capture-pane','-p','-t',pane)).not.toContain('FIXTURE_UPGRADED_codex');expect((await json('/api/v1/hosts/local/agents/restart-status?id='+prepared.id)).state).toBe('checking');expect((await post('/api/v1/hosts/local/agents/restart',{id:prepared.id})).status).toBe(409);
+});
+
+
+test('restart preserves a manually activated venv in the actual resumed process',async()=>{
+ const venv=join(dir,'.venv');run('/usr/bin/python3',['-m','venv','--without-pip',venv]);await harness('pi',venv);const old=await target();const prepared=await prepare(old);expect(prepared.python_venv).toBe(venv);const before=tmux('display-message','-p','-t',pane,'#{pane_pid}');expect((await post('/api/v1/hosts/local/agents/restart',{id:prepared.id})).status).toBe(200);await complete(prepared.id);const after=tmux('display-message','-p','-t',pane,'#{pane_pid}');expect(after).not.toBe(before);const env=Object.fromEntries(readFileSync('/proc/'+after+'/environ','utf8').split('\0').filter(v=>v.includes('=')).map(v=>{const at=v.indexOf('=');return[v.slice(0,at),v.slice(at+1)];}));expect(env.VIRTUAL_ENV).toBe(venv);expect(env.PATH.startsWith(venv+'/bin:')).toBe(true);expect(tmux('capture-pane','-p','-t',pane)).not.toContain('INPUT:');
 });

@@ -210,6 +210,87 @@
             "description": "Configured stable machine ID; includes tmux socket scope."
           }
         ]
+      },
+      "put": {
+        "operationId": "pinProject",
+        "summary": "Pin, rename, or update a machine-qualified project default",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Configured stable machine ID; includes tmux socket scope."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact configured scheme://authority."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "revision",
+                  "path",
+                  "pinned"
+                ],
+                "properties": {
+                  "revision": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "python_venv": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 4096,
+                    "description": "Omit/null retains the previous saved venv. Empty string clears it. Saving a default does not activate or validate a remote venv until launch preparation. Unpin removes the default."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated revision-checked machine settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/hosts/{host}/fs": {
@@ -2497,6 +2578,138 @@
           }
         }
       }
+    },
+    "/hosts/{host}/agents/launch-options": {
+      "get": {
+        "operationId": "prepareAgentLaunch",
+        "summary": "Prepare an explicit standalone agent launch",
+        "description": "Expiring single-use grant binds endpoint, canonical project, installed CLI, optional Python venv identity and reviewed options. Preparation does not launch. Start cannot override the venv. Never source shell scripts or pass arbitrary environment variables.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Configured stable machine ID; includes tmux socket scope."
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "codex",
+                "claude",
+                "pi"
+              ]
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "approval_policy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_session",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "window_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "card_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "python_venv",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 4096,
+              "description": "Optional literal Python venv directory: project-relative or absolute. Omit/null uses the saved machine/project default; empty string disables it for this launch. Validated pyvenv.cfg and executable bin/python identities are bound into preparation and rechecked before tmux mutation. No activation script is executed."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prepared launch; python_venv is the canonical directory or null. Internal filesystem identities are not exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "launch_id": {
+                      "type": "string"
+                    },
+                    "project": {
+                      "type": "string"
+                    },
+                    "python_venv": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2816,6 +3029,13 @@
               "approve-for-me"
             ],
             "description": "Optional Codex-only automatic review policy. Omit/null/default preserves harness defaults; approve-for-me requires the installed Codex to advertise --approve-for-me. Bound at preparation and rechecked before tmux creation; cannot be overridden at Start."
+          },
+          "python_venv": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Canonical venv prepared for this recorded launch."
           }
         },
         "required": [
@@ -3185,6 +3405,14 @@
               "approve-for-me"
             ],
             "description": "Optional Codex-only automatic review policy. Omit/null/default preserves harness defaults; approve-for-me requires the installed Codex to advertise --approve-for-me. Bound at preparation and rechecked before tmux creation; cannot be overridden at Start."
+          },
+          "python_venv": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096,
+            "description": "Optional literal Python venv directory: project-relative or absolute. Omit/null uses the saved machine/project default; empty string disables it for this launch. Validated pyvenv.cfg and executable bin/python identities are bound into preparation and rechecked before tmux mutation. No activation script is executed."
           }
         },
         "description": "Explicitly reviewed launch input. Dedicated detached session by default, or a new detached window in target_session. Preparation grants expire after 120 seconds. Never invent flags, shell commands or approval bypasses.",
@@ -3609,6 +3837,13 @@
                   "items": {
                     "type": "object"
                   }
+                },
+                "python_venv": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Saved optional launch venv; relative to this machine/project directory."
                 }
               },
               "required": [

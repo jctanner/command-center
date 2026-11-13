@@ -29,6 +29,7 @@ struct Grant {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Prepare {
+    pub(crate) python_venv: Option<String>,
     pub(crate) connection_revision: String,
     pub(crate) path: String,
     pub(crate) provider: String,
@@ -73,7 +74,7 @@ pub(crate) async fn prepare(
         machine
             .transport
             .agent_request(
-                json!({"action":"launch_options", "path":query.path,"provider":query.provider,"model":query.model,"approval_policy":query.approval_policy,"target_session":query.target_session,"window_name":query.window_name,"card_name":query.card_name}),
+                json!({"action":"launch_options", "path":query.path,"provider":query.provider,"model":query.model,"approval_policy":query.approval_policy,"target_session":query.target_session,"window_name":query.window_name,"card_name":query.card_name,"python_venv":query.python_venv,"project_venvs":machine.config.projects.iter().filter_map(|p| p.python_venv.as_ref().map(|v| (p.path.clone(), v.clone()))).collect::<HashMap<_,_>>()}),
             )
             .await?,
     )?;
@@ -113,6 +114,7 @@ pub(crate) async fn prepare(
         .as_object_mut()
         .unwrap()
         .remove("executable_identity");
+    prepared.as_object_mut().unwrap().remove("venv_identity");
     prepared["endpoint"] = json!(crate::attention::scope(&machine.config, "", "", "").0);
     prepared["token"] = json!(token);
     prepared["launch_id"] = json!(id);
@@ -212,6 +214,7 @@ pub(crate) async fn start(
                 binding.ticket.clone(),
                 binding.revision.clone(),
                 crate::board::Run {
+                    python_venv: prepared["python_venv"].as_str().map(str::to_owned),
                     id: id.clone(),
                     host: host.clone(),
                     endpoint: crate::attention::scope(&machine.config, "", "", "").0,

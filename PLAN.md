@@ -14,6 +14,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 
 
+
 - [Task 0054: Whiteboard attachment release and harness check](docs/tasks/pending/0054-whiteboard-attachment-release-and-harness-check.md) — deployment complete; real-harness delivery validation awaits separate authorization.
 
 - [Plan 0003: guarded Whiteboard attachments](docs/plans/0003-whiteboard-attachments.md) — approved, implemented and deployed; real-harness validation pending.
@@ -26,6 +27,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0068: Project Python venv](docs/tasks/done/0068-project-python-venv.md) — deployed; personal-assistant default validated and saved.
 
 - [Task 0067: Whiteboard live events](docs/tasks/done/0067-whiteboard-live-events.md) — deployed after approval; SSE and four access paths verified.
 
@@ -342,3 +345,7 @@ This ledger does not mirror or change live CC Board tickets. CC-1 remains ongoin
 - [2026-11-12: Whiteboard live updates ready](docs/notes/2026-11-12-whiteboard-live-events-ready.md)
 
 - [2026-11-12: Whiteboard live updates deployed](docs/notes/2026-11-12-whiteboard-live-events-deployed.md)
+
+- [2026-11-13: Project Python venv ready](docs/notes/2026-11-13-project-python-venv-ready.md)
+
+- [2026-11-13: Project Python venv deployed](docs/notes/2026-11-13-project-python-venv-deployed.md)

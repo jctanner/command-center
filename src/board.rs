@@ -65,6 +65,8 @@ struct Check {
 }
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct Run {
+    #[serde(default)]
+    pub python_venv: Option<String>,
     pub id: String,
     pub host: String,
     pub endpoint: String,
@@ -541,6 +543,7 @@ pub(crate) struct Binding {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Prepare {
+    python_venv: Option<String>,
     revision: String,
     host: String,
     connection_revision: String,
@@ -588,6 +591,7 @@ async fn prepare(
         State(s.clone()),
         Path(b.host),
         Query(launch::Prepare {
+            python_venv: b.python_venv,
             connection_revision: b.connection_revision,
             path: b.path,
             provider: b.provider,
@@ -845,6 +849,7 @@ mod tests {
     }
     fn run() -> Run {
         Run {
+            python_venv: None,
             id: revision(),
             host: "local".into(),
             endpoint: "endpoint".into(),

@@ -1,5 +1,5 @@
 import type {CardTarget} from './agent-card-editor';
-type Receipt={id:string;state:string;note:string;provider:string;session:string;project:string;command:string[]};
+type Receipt={python_venv?:string|null;id:string;state:string;note:string;provider:string;session:string;project:string;command:string[]};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,text='')=>{const e=document.createElement(tag);e.textContent=text;return e;};
 export class AgentRestarter {
  private dialog=el('dialog');private description=el('p');private command=el('pre');private feedback=el('p');private cancel=el('button','Cancel');private confirm=el('button','Restart agent');private check=el('button','Check restart status');private dismiss=el('button','I’ve checked the pane');
@@ -27,7 +27,7 @@ export class AgentRestarter {
    if(epoch!==this.epoch||!this.dialog.open)return;this.receipt=receipt;this.describe(receipt);this.feedback.textContent='Unsaved agent work and active tools may be interrupted. Pending messages and drafts stay with the old process for review and are not resent.';this.confirm.disabled=false;this.cancel.focus();
   }catch(error){if(epoch===this.epoch)this.feedback.textContent=String(error);}
  }
- private describe(r:Receipt){this.description.textContent=`${this.target?.label} · ${r.provider} · Session ${r.session} · ${r.project}. Replace this pane’s agent, its shell and child processes, then resume this exact conversation. The tmux window, pane and sibling panes remain. Card name, notes, color and pin carry over after verification.`;this.command.textContent=r.command.map(a=>JSON.stringify(a)).join(' ');}
+ private describe(r:Receipt){this.description.textContent=`${this.target?.label} · ${r.provider} · Session ${r.session} · ${r.project}${r.python_venv?" · Python venv: "+r.python_venv:""}. Replace this pane’s agent, its shell and child processes, then resume this exact conversation. The tmux window, pane and sibling panes remain. Card name, notes, color and pin carry over after verification.`;this.command.textContent=r.command.map(a=>JSON.stringify(a)).join(' ');}
  private async start(){
   const target=this.target,r=this.receipt;if(!target||!r||this.busy)return;
   // Save only an opaque receipt ID, before issuing the one human-confirmed POST.

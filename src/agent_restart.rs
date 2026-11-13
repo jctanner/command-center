@@ -71,7 +71,7 @@ fn write(c: &rusqlite::Connection, r: &Receipt) -> Result<(), ApiError> {
     Ok(())
 }
 fn public(r: &Receipt) -> Value {
-    json!({"id":r.id,"state":r.state,"note":r.note,"provider":r.plan["provider"],"session":r.plan["session"],"project":r.plan["project"],"command":r.plan["command"]})
+    json!({"id":r.id,"state":r.state,"note":r.note,"provider":r.plan["provider"],"session":r.plan["session"],"project":r.plan["project"],"command":r.plan["command"],"python_venv":r.plan["python_venv"]})
 }
 pub(crate) async fn prepare(
     State(s): State<Arc<AppState>>,

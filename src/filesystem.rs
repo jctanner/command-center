@@ -404,7 +404,7 @@ pub(crate) async fn projects(
     for pin in &machine.config.projects {
         found.insert(
             pin.path.clone(),
-            json!({"path":pin.path,"name":pin.name,"pinned":true,"windows":[]}),
+            json!({"path":pin.path,"name":pin.name,"pinned":true,"python_venv":pin.python_venv,"windows":[]}),
         );
     }
     let mut discovery_error = None;
@@ -443,6 +443,7 @@ pub(crate) async fn projects(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Pin {
+    python_venv: Option<String>,
     revision: String,
     path: String,
     name: Option<String>,
@@ -454,6 +455,15 @@ pub(crate) async fn pin(
     Json(pin): Json<Pin>,
 ) -> Result<Json<machines::Settings>, ApiError> {
     let mut host = state.registry.get(&id).await?.config.clone();
+    let python_venv = pin
+        .python_venv
+        .map(|v| if v.is_empty() { None } else { Some(v) })
+        .unwrap_or_else(|| {
+            host.projects
+                .iter()
+                .find(|p| p.path == pin.path)
+                .and_then(|p| p.python_venv.clone())
+        });
     host.projects.retain(|p| p.path != pin.path);
     if pin.pinned {
         let name = pin.name.unwrap_or_else(|| {
@@ -464,6 +474,7 @@ pub(crate) async fn pin(
                 .into()
         });
         host.projects.push(ProjectPin {
+            python_venv,
             path: pin.path,
             name,
         });

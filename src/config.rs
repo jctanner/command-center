@@ -22,6 +22,8 @@ pub struct Host {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectPin {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub python_venv: Option<String>,
     pub path: String,
     pub name: String,
 }
@@ -86,6 +88,12 @@ impl Host {
                     && !project.name.chars().any(char::is_control),
                 "invalid project name"
             );
+            if let Some(venv) = &project.python_venv {
+                ensure!(
+                    !venv.is_empty() && venv.len() <= 4096 && !venv.chars().any(char::is_control),
+                    "invalid Python venv path"
+                );
+            }
             ensure!(paths.insert(&project.path), "duplicate pinned project path");
         }
 

@@ -15,11 +15,13 @@ async function status(prepared:{launch_id:string;revision:string;endpoint:string
 test.beforeAll(async()=>{
  dir=mkdtempSync(join(tmpdir(),'cc-launch-'));socket=join(dir,'tmux.sock');home=join(dir,'home');bin=join(dir,'bin');project=join(dir,"project ' ; literal");
  mkdirSync(project);mkdirSync(bin);mkdirSync(home);mkdirSync(join(dir,'calls'));
- const script=join(dir,'fake-agent.py');writeFileSync(script,String.raw`import os, sys, json, time
+ const script=join(dir,'fake-agent.py');writeFileSync(script,String.raw`import os, sys, json, time, subprocess
 if '--help' in sys.argv:
  print('Fixture CLI '+('--approve-for-me' if os.path.exists('FIXTURE_POLICY_SUPPORT') else ''));sys.exit(0)
-with open(os.path.join('FIXTURE_CALLS_DIRECTORY',str(os.getpid())+'.json'),'w') as f:
- json.dump(dict(args=sys.argv[1:],cwd=os.getcwd()),f)
+record=dict(args=sys.argv[1:],cwd=os.getcwd(),venv=os.environ.get('VIRTUAL_ENV'),path=os.environ.get('PATH'),python_prefix=subprocess.check_output(['python','-c','import sys;print(sys.prefix)'],text=True).strip() if os.environ.get('VIRTUAL_ENV') else None)
+filename=os.path.join('FIXTURE_CALLS_DIRECTORY',str(os.getpid())+'.json')
+with open(filename+'.tmp','w') as f: json.dump(record,f)
+os.replace(filename+'.tmp',filename)
 print('Fixture agent ready',flush=True)
 while True: time.sleep(1)
 `.replace('FIXTURE_CALLS_DIRECTORY',join(dir,'calls')).replace('FIXTURE_POLICY_SUPPORT',join(dir,'policy-support')));
@@ -45,7 +47,7 @@ while True: time.sleep(1)
  await expect.poll(async()=>{try{return(await api('/api/v1/health')).status;}catch{return 0;}}).toBe(200);
 });
 test.afterAll(()=>{backend?.kill('SIGTERM');sshd?.kill('SIGTERM');if(socket)spawnSync('tmux',['-S',socket,'kill-server']);if(dir)rmSync(dir,{recursive:true,force:true});});
-function calls(){return readdirSync(join(dir,'calls')).map(f=>JSON.parse(readFileSync(join(dir,'calls',f),'utf8')));}
+function calls(){return readdirSync(join(dir,'calls')).filter(f=>f.endsWith('.json')).map(f=>JSON.parse(readFileSync(join(dir,'calls',f),'utf8')));}
 
 test('new and resumed agents use literal directories, explicit session IDs and single-use grants',async()=>{
  const before=tmux('display-message','-p','-t','original','#{window_width}x#{window_height}/#{pane_pid}');
@@ -106,7 +108,7 @@ test('manual directories can be pinned and resumed from the same shared project 
  const dialog=page.getByRole('dialog',{name:'Start an agent'});
  await expect(dialog.getByLabel('Agent project',{exact:true})).toContainText('Another directory');
  await dialog.getByLabel('Agent project',{exact:true}).selectOption('');await dialog.getByLabel('Project directory',{exact:true}).fill(manual);
- await dialog.getByRole('checkbox').check();await dialog.getByRole('textbox',{name:'Pinned project name',exact:true}).fill('My manual project');
+ await dialog.getByRole('checkbox',{name:'Keep this project in Files and the launcher'}).check();await dialog.getByRole('textbox',{name:'Pinned project name',exact:true}).fill('My manual project');
  await dialog.getByRole('button',{name:'Check project',exact:true}).click();
  await expect(dialog.getByLabel('Start or resume',{exact:true})).toContainText('Resume this manual project');
  const conversation=await dialog.getByLabel('Start or resume',{exact:true}).locator('option').nth(1).getAttribute('value');
@@ -322,8 +324,10 @@ test('initial prompt validation preserves launch grants and ticket-owned prompts
 });
 
 test('phone initial prompt preserves drafts across resume selection and sends once',async({page})=>{
+ writeFileSync(join(home,'codex/sessions/2026/11/01/rollout-phone-resume.jsonl'),JSON.stringify({type:'session_meta',payload:{id:'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',cwd:project,timestamp:'2026-11-01T14:00:00Z'}})+'\n');
  await page.setViewportSize({width:393,height:852});let sockets=0;page.on('websocket',s=>{if(s.url().includes('/terminal?'))sockets++;});
  await page.goto(base);await page.getByRole('button',{name:'Start agent',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Start an agent',exact:true});
+ await dialog.getByLabel('Agent project',{exact:true}).selectOption(project);
  const prompt=dialog.getByRole('textbox',{name:'Initial prompt',exact:true});await expect(prompt).toBeEnabled();const text='Plan the mobile fixture.\nThen implement and verify it.';await prompt.fill(text);
  const conversations=dialog.getByLabel('Start or resume',{exact:true});await expect(conversations.locator('option')).not.toHaveCount(1);const id=await conversations.locator('option:not([disabled])').nth(1).getAttribute('value');await conversations.selectOption(id!);await expect(prompt).toBeDisabled();await expect(prompt).toHaveValue(text);await conversations.selectOption('');await expect(prompt).toBeEnabled();await expect(prompt).toHaveValue(text);
  await prompt.fill('😀'.repeat(6001));await expect(dialog.getByRole('button',{name:'Start Codex',exact:true})).toBeDisabled();await expect(dialog).toContainText('Prompt is too long');await prompt.fill(text);
@@ -365,10 +369,30 @@ test('phone launchers expose Codex automatic review and reset it for other harne
   await expect(policy).toHaveValue('');await policy.selectOption('approve-for-me');await expect(dialog.getByRole('status')).toContainText('Automatic review (workspace-write)');
   await dialog.getByLabel('Agent provider',{exact:true}).selectOption('pi');await expect(policy).toHaveValue('');await expect(policy).toBeDisabled();
   await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
-  const t=await boardTicket('Policy UI ticket');await page.getByRole('button',{name:'Board',exact:true}).click();await page.getByRole('button',{name:'Policy UI ticket',exact:true}).click();
+  const t=await boardTicket('Policy UI ticket');await page.getByRole('button',{name:'Tickets',exact:true}).click();await page.getByRole('button',{name:'Policy UI ticket',exact:true}).click();
   await page.getByRole('dialog').getByRole('button',{name:'Start agent',exact:true}).click();
   const ticketDialog=page.getByRole('dialog',{name:'Start ticket agent'});await ticketDialog.getByLabel('Ticket Codex approval policy',{exact:true}).selectOption('approve-for-me');
   await ticketDialog.getByRole('button',{name:'Check project',exact:true}).click();await expect(ticketDialog.getByRole('status')).toContainText('Automatic review (workspace-write)');
   await ticketDialog.getByLabel('Ticket agent provider',{exact:true}).selectOption('claude');await expect(ticketDialog.getByLabel('Ticket Codex approval policy',{exact:true})).toBeDisabled();await expect(ticketDialog.getByRole('button',{name:'Start agent',exact:true})).toBeDisabled();
  }finally{rmSync(join(dir,'policy-support'),{force:true});}
+});
+
+
+test('literal venv reaches pi subprocesses locally and through shared SSH transport',async()=>{
+ const venv=join(project,'.venv');command('/usr/bin/python3',['-m','venv','--without-pip',venv]);
+ const hosts=await(await api('/api/v1/hosts')).json();
+ for(const host of hosts){
+  const query=new URLSearchParams({connection_revision:host.connection_revision,path:project,provider:'pi',python_venv:'.venv'});const response=await api(`/api/v1/hosts/${host.id}/agents/launch-options?${query}`);expect(response.status,await response.clone().text()).toBe(200);const prepared=await response.json();expect(prepared.python_venv).toBe(venv);expect(prepared.venv_identity).toBeUndefined();const count=calls().length;expect((await launch(prepared,null,host.id)).status).toBe(200);await expect.poll(()=>calls().length).toBe(count+1);const found=calls().filter(c=>c.venv===venv);expect(found.length).toBeGreaterThan(0);for(const call of found){expect(call.python_prefix,JSON.stringify(call)).toBe(venv);expect(call.path.startsWith(venv+'/bin:')).toBe(true);}
+ }
+});
+
+test('launcher remembers project venv and ordinary rename preserves it',async({page})=>{
+ if(!existsSync(join(project,'.venv')))command('/usr/bin/python3',['-m','venv','--without-pip',join(project,'.venv')]);
+ await page.goto(base+'/#/queue');await page.getByRole('button',{name:'Start agent',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Start an agent'});await dialog.getByLabel('Agent project').selectOption(project);await expect(dialog.getByLabel('Agent project')).toHaveValue(project);await dialog.getByLabel('Agent provider').selectOption('pi');await dialog.getByLabel('Python venv',{exact:true}).fill('.venv');await dialog.getByLabel('Remember venv for this project').check();await dialog.getByRole('button',{name:'Check project',exact:true}).click();await expect(dialog).toContainText('Python venv:');await page.screenshot({path:'../test-results/launch-venv-desktop.png'});const before=calls().length;await dialog.getByRole('button',{name:'Start pi',exact:true}).click();await expect.poll(()=>calls().length).toBe(before+1);await expect(dialog).not.toBeVisible();
+ let projects=await(await api('/api/v1/hosts/local/projects')).json();expect(projects.projects.find((p:any)=>p.path===project).python_venv).toBe('.venv');
+ const save=await fetch(base+'/api/v1/hosts/local/projects',{method:'PUT',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({revision:projects.revision,path:project,name:'Renamed project',pinned:true})});expect(save.ok).toBe(true);
+ projects=await(await api('/api/v1/hosts/local/projects')).json();expect(projects.projects.find((p:any)=>p.path===project).python_venv).toBe('.venv');const inherited=await prepare('pi');expect(inherited.python_venv).toBe(join(project,'.venv'));
+ const ticket=await boardTicket('Venv ticket','pi');const ticketPrepared=await boardPrepare(ticket,'pi');expect(ticketPrepared.python_venv).toBe(join(project,'.venv'));expect((await api(`/api/v1/board/tickets/${ticket.id}/launch`,{token:ticketPrepared.token})).status).toBe(200);const recorded=await(await api(`/api/v1/board/tickets/${ticket.id}`)).json();expect(recorded.runs[0].python_venv).toBe(join(project,'.venv'));
+ await page.getByRole('button',{name:'Start agent',exact:true}).click();await dialog.getByLabel('Agent project').selectOption(project);await expect(dialog.getByLabel('Python venv',{exact:true})).toHaveValue('.venv');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+ const hosts=await(await api('/api/v1/hosts')).json();const query=new URLSearchParams({connection_revision:hosts.find((h:any)=>h.id==='local').connection_revision,path:project,provider:'pi',python_venv:''});expect((await(await api('/api/v1/hosts/local/agents/launch-options?'+query)).json()).python_venv).toBeNull();
 });
