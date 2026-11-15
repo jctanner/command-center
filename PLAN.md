@@ -9,7 +9,6 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task 0070: Native folder trust (CC-72)](docs/tasks/current/0070-native-folder-trust.md) — completion approved; real tests and scoped preparation consent verified, final release checks.
 
 
 
@@ -30,6 +29,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0070: Native folder trust (CC-72)](docs/tasks/done/0070-native-folder-trust.md) — real native tests, guarded preparation consent, docs and approved deployment complete.
 
 - [Task 0069: Agent token metrics (CC-2/CC-3)](docs/tasks/done/0069-agent-token-metrics.md) — pushed and deployed with approval; live metrics/API/UI verified.
 

@@ -2,7 +2,7 @@
 
 Owner: CC dev
 Claimed: 2026-11-14
-State: current
+State: done (2026-11-15; real-harness validation, preparation consent and deployment complete)
 
 Human reprioritized ahead of CC-2/3 and CC-55; token metrics checkpoint f4645c4. Detect and surface native Claude/Codex folder-trust prompts, with an explicit human-only guarded action and audit. Inspect the human-identified CC-63 and CC-70 panes read-only (exact runtime targets remain private); never answer those live prompts. Report detection/guard/API design before implementing the answer action. Ask before any disposable harness launch or disruptive deployment. Unit/synthetic browser tests require no live harness starts. Local commit requested when done; no push. Optional pre-trust only if supported and justified, default off; avoid weakening normal trust/approval safeguards.
 
@@ -31,7 +31,7 @@ Human action uses a separate 120-second one-use capability and durable metadata-
 - After final status wording correction, desktop/phone/offline UI tests: 3 passed; updated synthetic mobile screenshot inspected. No false desktop-terminal-only notice or Unknown feedback while trust controls are present.
 - `git diff --check`: passed. Private evidence under /tmp/cc-trust-* and ignored test-results.
 
-## Remaining gates / handoff
+## Original gates / handoff (superseded by approved completion below)
 
 Read-only inspection of the human-identified live Claude panes found both already working, not at trust. No keys sent to them. No real Claude/Codex test agents launched. An asynchronous approval question requests two disposable real-harness sessions in fresh temporary folders; it remains unanswered. Real profile/initial-prompt-consumption acceptance is therefore NOT claimed. Unsupported dialogs fail closed. Do not launch those real harness tests without approval. Keep CC-2/3 paused pending CC-72 disposition; CC-55 remains later.
 
@@ -60,3 +60,12 @@ Validation: Rust88 passed, native trust Python8 and preparation Python3, fronten
 Human has authorized push and deployment after checks. No production restart has yet occurred for this completion. No live native trust prompts other than the disposable tests were answered.
 
 Final staged launch regressions:17 passed with explicit CC_BINARY=../target/release/command-center and CC_WEB_DIR=dist-next (local/SSH endpoint/directory guards, literal initial prompts, ticket claims, recovery across backend restart, phone navigation, policy and Python venv). Existing Python policy/activity/outbox suites:4/5/7 passed. Native-profile/preparation tests8/3, Rust88, OpenAPI6, synthetic trust/UI12 and real native4 all pass; fmt/Clippy/build clean. Release gate resolved; deploying next under the explicit human request.
+
+
+## Approved completion deployment
+
+Implementation2711a0b pushed and deployed under the human's explicit request. Existing exact runtime/environment/listeners preserved, backups retained privately, and no submitting outbox/question/trust/export operations interrupted. All four configured health paths, Whiteboard SSE and served trust/token-metrics contracts passed. Running executable hash matches the staged release. Configuration hashes and canonical tmux pane/PID inventory are unchanged.
+
+Live desktop1440px and compact393px Chromium checks: preparation checkbox default off, unsupported pi disabled/reset, zero page errors, API writes or terminal sockets. No production agent launches/restarts/trust decisions were needed for this verification. All disposable native test folders and processes removed; provider-owned native audit/history is left to the provider. Coordinator docs and skill explain awaiting_trust, explicit human controls and preparation consent, and prohibit coordinator trust answers.
+
+Final outcome: real native4, synthetic trust/UI12, staged launch regressions17, Rust88, Python native profiles8/preparation3/policy4/activity5/outbox7, OpenAPI6 passed; fmt/Clippy/frontend/release build passed. CC-72 is complete. No further work authorized by this completion; stop after reporting commits/deployment evidence.
