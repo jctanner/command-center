@@ -36,3 +36,11 @@ Human action uses a separate 120-second one-use capability and durable metadata-
 Read-only inspection of the human-identified live Claude panes found both already working, not at trust. No keys sent to them. No real Claude/Codex test agents launched. An asynchronous approval question requests two disposable real-harness sessions in fresh temporary folders; it remains unanswered. Real profile/initial-prompt-consumption acceptance is therefore NOT claimed. Unsupported dialogs fail closed. Do not launch those real harness tests without approval. Keep CC-2/3 paused pending CC-72 disposition; CC-55 remains later.
 
 Implementation is ready for the requested local commit on main, not deployed/pushed. Disruptive deployment still needs explicit approval. Prepared `/tmp/cc-deploy-native-folder-trust.py` (syntax-checked, not executed) preserves runtime/listeners/panes, backs up state, preflights submitting outbox/question/export/trust receipts, verifies four health/SSE paths and trust contract using GET only. No live ticket status changed and no native trust decision made.
+
+## Approved push and deployment
+
+Human explicitly requested push then deploy. Pushed local checkpoint f4645c4 and implementation 483b14f to origin/main, then executed `/tmp/cc-deploy-native-folder-trust.py` successfully. All four configured health/access paths and initial SSE events passed. Configuration hashes and canonical tmux pane/PID inventory unchanged. Trust routes present in served contract; no new native trust decisions or agent launches attempted.
+
+Read-only live Chromium: Agents loaded, zero page errors, zero trust-decision POSTs. Read-only rhlaptop filesystem request validated the new stdin helper over the existing shared SSH/ProxyJump path. Runtime/database/assets backed up privately. Existing browsers need one reload for the new controls.
+
+Deployment gate is resolved; real Claude/Codex disposable acceptance tests remain separately unapproved and unperformed. Task stays current for that validation, with no claim that actual provider acceptance/initial-prompt consumption was verified. CC-2/3 remains paused, CC-55 later.

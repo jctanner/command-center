@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task 0070: Native folder trust (CC-72)](docs/tasks/current/0070-native-folder-trust.md) — implemented/tested; real-harness checks and deployment await approval.
+- [Task 0070: Native folder trust (CC-72)](docs/tasks/current/0070-native-folder-trust.md) — deployed as 483b14f; real-harness checks still await permission.
 
 - [Task 0069: Agent token metrics (CC-2/CC-3)](docs/tasks/pending/0069-agent-token-metrics.md) — paused for human-prioritized CC-72; no implementation yet.
 
@@ -355,3 +355,5 @@ This ledger does not mirror or change live CC Board tickets. CC-1 remains ongoin
 - [2026-11-13: Project Python venv deployed](docs/notes/2026-11-13-project-python-venv-deployed.md)
 
 - [2026-11-14: Native folder trust implementation](docs/notes/2026-11-14-native-folder-trust-implementation.md)
+
+- [2026-11-14: Native folder trust deployed](docs/notes/2026-11-14-native-folder-trust-deployed.md)
