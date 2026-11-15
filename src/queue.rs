@@ -117,6 +117,7 @@ struct Item {
     card: crate::agent_cards::Card,
     background_tasks: Value,
     folder_trust: Value,
+    token_metrics: Value,
 }
 type PaneTarget = (String, String, String);
 fn retain_disconnected(
@@ -137,6 +138,9 @@ fn retain_disconnected(
         }
         let mut item = old.clone();
         item.status = "disconnected".into();
+        if item.token_metrics.is_object() {
+            item.token_metrics["stale"] = json!(true);
+        }
         item.activity = Activity {
             state: AgentState::Disconnected,
             source: "transport".into(),
@@ -265,8 +269,8 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                             if seen.len() > 32 { result.limited = true; continue; }
                             let (endpoint,attention_key)=crate::attention::scope(&machine.config,&session.id,&window.id,&pane.id);
                             let (watch,version)=state.attention.observation_args(&attention_key).await;
-                            let observation = machine.transport.agent_request(json!({"action":"status", "session":session.id,"window":window.id,"pane":pane.id,"conversation":watch,"known_reply_version":version})).await;
-                            let (context, activity, instance, reply, background_tasks, folder_trust) = match observation {
+                            let observation = state.token_metrics.observe(&machine.connection_revision,&machine.transport,json!({"action":"status", "session":session.id,"window":window.id,"pane":pane.id,"conversation":watch,"known_reply_version":version})).await;
+                            let (context, activity, instance, reply, background_tasks, folder_trust, token_metrics) = match observation {
                                 // A dead/replaced foreground process is retained below
                                 // with its original last-seen time, never refreshed as live.
                                 Ok(value) if value["status"] == 409 => continue,
@@ -276,9 +280,9 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                                     let activity = Activity::from_value(&value["activity"], &text);
                                     let instance=value["instance"].as_str().map(str::to_owned);
                                     let reply=serde_json::from_value::<crate::attention::Reply>(value["reply"].clone()).ok();
-                                    (text, activity, instance, reply, value["background_tasks"].clone(),crate::folder_trust::prompt_view(&value["folder_trust"]))
+                                    (text, activity, instance, reply, value["background_tasks"].clone(),crate::folder_trust::prompt_view(&value["folder_trust"]),value["token_metrics"].clone())
                                 }
-                                _ => (String::new(), Activity::unknown("Agent observation unavailable; refresh or open terminal"),None,None,Value::Null,Value::Null),
+                                _ => (String::new(), Activity::unknown("Agent observation unavailable; refresh or open terminal"),None,None,Value::Null,Value::Null,Value::Null),
                             };
                             let attention=match state.attention.observe((&attention_key,&endpoint),instance.as_deref(),&activity,reply,true,None).await {
                                 Ok(view)=>view,
@@ -291,7 +295,7 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                                 pane:pane.id, project:pane.cwd, agent:provider,
                                 status:if matches!(activity.state,AgentState::Approval|AgentState::AwaitingTrust) {"attention"} else {"live"}.into(),
                                 prompt:detected.unwrap_or_else(|| if activity.state == AgentState::Approval {if matches!(activity.source.as_str(),"pi_bridge"|"claude_input") {"Agent is waiting for input"} else if activity.source=="terminal_question" {&activity.reason} else {"Agent is awaiting approval"}} else {"Live agent"}.into()),
-                                context:context.chars().take(24000).collect(), activity, last_seen:now(), attention,card:Default::default(),background_tasks,folder_trust,
+                                context:context.chars().take(24000).collect(), activity, last_seen:now(), attention,card:Default::default(),background_tasks,folder_trust,token_metrics,
                             });
                         }
                     }
@@ -342,6 +346,7 @@ mod tests {
             card: Default::default(),
             background_tasks: Value::Null,
             folder_trust: Value::Null,
+            token_metrics: Value::Null,
         };
         let mut items = vec![];
         retain_disconnected(
@@ -381,6 +386,7 @@ mod tests {
             card: Default::default(),
             background_tasks: Value::Null,
             folder_trust: Value::Null,
+            token_metrics: Value::Null,
         };
         let mut missing = vec![];
         retain_disconnected(

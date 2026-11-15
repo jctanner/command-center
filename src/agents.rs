@@ -136,7 +136,12 @@ pub(crate) async fn conversation(
     let (_, version) = state.attention.observation_args(&attention_key).await;
     let mut request = target.request();
     request["known_reply_version"] = json!(version);
-    let mut value = result(machine.transport.agent_request(request).await?)?;
+    let mut value = result(
+        state
+            .token_metrics
+            .observe(&machine.connection_revision, &machine.transport, request)
+            .await?,
+    )?;
     if state.registry.get(&host).await?.connection_revision != target.connection_revision {
         return Err(ApiError(
             StatusCode::CONFLICT,

@@ -11,7 +11,6 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 - [Task 0070: Native folder trust (CC-72)](docs/tasks/current/0070-native-folder-trust.md) — deployed as 483b14f; real-harness checks still await permission.
 
-- [Task 0069: Agent token metrics (CC-2/CC-3)](docs/tasks/pending/0069-agent-token-metrics.md) — paused for human-prioritized CC-72; no implementation yet.
 
 
 
@@ -31,6 +30,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0069: Agent token metrics (CC-2/CC-3)](docs/tasks/done/0069-agent-token-metrics.md) — implemented and verified locally; not pushed/deployed.
 
 - [Task 0068: Project Python venv](docs/tasks/done/0068-project-python-venv.md) — deployed; personal-assistant default validated and saved.
 
@@ -235,6 +236,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-15: Agent token metrics local checkpoint](docs/notes/2026-11-15-agent-token-metrics.md)
 
 - [2026-11-12: Whiteboard images deployed](docs/notes/2026-11-12-whiteboard-images-deployed.md)
 

@@ -190,6 +190,10 @@ impl Transport {
         mut request: serde_json::Value,
     ) -> Result<serde_json::Value> {
         request["socket"] = serde_json::json!(self.host.socket);
+        request.as_object_mut().unwrap().remove("_token_code");
+        if request["_collect_token_metrics"] == true {
+            request["_token_code"] = serde_json::json!(include_str!("token_metrics_remote.py"));
+        }
         if request["action"] == "question_answer" {
             request["_question_code"] = serde_json::json!(include_str!("agent_questions.py"));
         }

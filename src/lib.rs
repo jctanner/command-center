@@ -22,6 +22,7 @@ mod slack_state;
 mod terminal;
 pub mod tmux;
 mod tmux_management;
+mod token_metrics;
 pub mod transport;
 mod whiteboard;
 mod whiteboard_events;
@@ -58,6 +59,7 @@ pub struct AppState {
     connection_tests: Semaphore,
     file_slots: Arc<Semaphore>,
     queue: queue::Queue,
+    token_metrics: token_metrics::Metrics,
     questions: questions::Questions,
     folder_trust: folder_trust::Trust,
     features: features::Features,
@@ -102,6 +104,7 @@ impl AppState {
             jira,
             board,
             queue: queue::Queue::default(),
+            token_metrics: token_metrics::Metrics::default(),
             questions: questions::Questions::default(),
             folder_trust: folder_trust::Trust::default(),
             agents,

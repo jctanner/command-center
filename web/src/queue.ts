@@ -1,3 +1,4 @@
+import {AgentTokenMetrics,type TokenMetrics} from './agent-token-metrics';
 import {QuestionControls,type InputQuestion} from './agent-question';
 import {BackgroundTasks,backgroundLabel,type BackgroundSnapshot} from './agent-background';
 import {AgentRestarter} from './agent-restart';
@@ -14,7 +15,7 @@ type AgentState = 'working' | 'ready' | 'approval' | 'awaiting_trust' | 'unknown
 type Activity = { state: AgentState; source: string; reason: string; evidence_at?: number; observed_at: number; transition?: string };
 export type AgentFileTarget={host:string;connection:string;path:string};
 export type QueueTarget = { instance?:string|null;host: string; connection: string; session: string; window: string; pane: string };
-type Item = { folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
+type Item = {token_metrics?:TokenMetrics|null; folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
 type Host = { id: string; name: string; connection_revision: string; error?: string; limited: boolean; items: Item[] };
 type Snapshot = { checked_at: number; hosts: Host[] };
 type Message = { id: string; role: 'user' | 'assistant'; text: string; timestamp: string; order?: number; truncated?: boolean };
@@ -22,7 +23,7 @@ type Conversation = { id: string; session: string; timestamp: string; linked: bo
 type Approval = { id: string; title: string; context: string; choices: { id: string; label: string }[]; token?: string; submitted?: boolean };
 type InputRequest = InputQuestion;
 const inputSource=(source?:string)=>['pi_bridge','terminal_question','claude_input'].includes(source||'');
-type Detail = {folder_trust?:InputQuestion|null;input_request?:InputRequest|null; background_tasks?:BackgroundSnapshot|null;outbox_entries?:OutboxEntry[]; card?:AgentCard;approval?: Approval; read_state?: ReadState; activity?: Activity; instance?: string; context: string; project: string; provider: string; selected?: string; association: string; conversations: Conversation[]; messages: Message[]; activities?: AgentActivityEntry[]; activity_limited?: boolean; older_cursor?: number; send_available: boolean; send_reason?: string; message_token?: string; attention: boolean; history_version?: string; history_unchanged?: boolean; history_branch?: string; history_reset?: boolean; history_notice?: string };
+type Detail = {token_metrics?:TokenMetrics|null;folder_trust?:InputQuestion|null;input_request?:InputRequest|null; background_tasks?:BackgroundSnapshot|null;outbox_entries?:OutboxEntry[]; card?:AgentCard;approval?: Approval; read_state?: ReadState; activity?: Activity; instance?: string; context: string; project: string; provider: string; selected?: string; association: string; conversations: Conversation[]; messages: Message[]; activities?: AgentActivityEntry[]; activity_limited?: boolean; older_cursor?: number; send_available: boolean; send_reason?: string; message_token?: string; attention: boolean; history_version?: string; history_unchanged?: boolean; history_branch?: string; history_reset?: boolean; history_notice?: string };
 const node = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] => { const n = document.createElement(tag); n.textContent = text; return n; };
 const stateOf = (item: Item): AgentState => item.activity?.state || (item.status === 'disconnected' ? 'disconnected' : item.status === 'attention' || (!item.status && item.prompt !== 'Live agent') ? 'approval' : 'unknown');
 const projectName = (path: string) => path.split('/').filter(Boolean).at(-1) || '/';
@@ -100,6 +101,7 @@ export class AttentionQueue {
   private detailsButton = node('button', 'Details');
   private subtitle = node('p');
   private chatNotice = node('p');
+  private tokenMetrics=new AgentTokenMetrics(true);
   private trustControls=new QuestionControls(value=>{this.submitting=value;this.updateSend();},()=>{void this.loadDetail(true);},'folder-trust');
   private approvalCard = node('section');
   private questionControls=new QuestionControls(value=>{this.submitting=value;this.updateSend();},()=>{void this.loadDetail();void this.refresh();});
@@ -219,7 +221,7 @@ export class AttentionQueue {
     this.history.append(this.older);
     this.approvalCard.className = 'agent-approval'; this.approvalCard.setAttribute('aria-label', 'Tool approval'); this.approvalCard.hidden = true;
     this.liveActivity.className = 'agent-live-activity'; this.liveActivity.setAttribute('role', 'status'); this.liveActivity.setAttribute('aria-live', 'polite');
-    this.detail.append(chatHeader, this.chatNotice, this.metadata, this.backgroundTasks.element, this.history, this.liveActivity, this.approvalCard, form);
+    this.detail.append(chatHeader, this.tokenMetrics.element, this.chatNotice, this.metadata, this.backgroundTasks.element, this.history, this.liveActivity, this.approvalCard, form);
     this.render(); void this.refresh();
     window.setInterval(() => { if (!document.hidden || this.notifications.enabled()) void this.refresh(); if(!document.hidden&&this.visible)void this.outbox.refresh(); }, 6000);
     window.setInterval(() => {
@@ -335,7 +337,8 @@ export class AttentionQueue {
       const background=backgroundLabel(item.background_tasks,stateOf(item)==='disconnected');if(background){for(const parent of [machine,context]){const badge=node('span',background);badge.className='queue-background-count';if(parent===context)parent.prepend(badge,document.createTextNode(' · '));else parent.append(badge);}}
       b.title=`${name.textContent}\n${context.title}\nRight-click or Shift+F10 for agent actions`;
       if(item.folder_trust){const trust=node('small',item.folder_trust.title);trust.className='queue-card-prompt';b.append(trust);}
-      b.append(machine,stateBadge(item.activity,stateOf(item)),name,folder,context,node('small',`${item.session_name} / ${item.window_name} / ${item.pane}`));
+      const tokens=new AgentTokenMetrics();tokens.update(item.token_metrics,!!h.error||stateOf(item)==='disconnected');
+      b.append(machine,stateBadge(item.activity,stateOf(item)),name,folder,context,node('small',`${item.session_name} / ${item.window_name} / ${item.pane}`),tokens.element);
       b.dataset.hasPrompt=String(!!item.card?.name&&waiting(item));
       if(item.card?.notes){const note=node('span',item.card.notes);note.className='agent-card-note-preview queue-card-note';note.title=item.card.notes;b.append(note);}if(item.card?.name&&waiting(item)){const prompt=node('span',item.prompt);prompt.className='agent-card-note-preview queue-card-prompt';prompt.title=item.prompt;b.append(prompt);}
       const flags = node('span'); flags.className = 'attention-flags';
@@ -381,7 +384,7 @@ export class AttentionQueue {
       if (chosen) void this.loadDetail(true);
     }
     this.detail.querySelector<HTMLFormElement>('form')!.hidden = !chosen;
-    this.detail.querySelector('summary')!.textContent = chosen && stateOf(chosen.item) === 'disconnected' ? 'Last observed terminal context' : 'Live terminal context';
+    this.detail.querySelector('.agent-screen > summary')!.textContent = chosen && stateOf(chosen.item) === 'disconnected' ? 'Last observed terminal context' : 'Live terminal context';
     this.conversationSelect.hidden = !chosen;
     this.updateSend();
     this.markRead.hidden = !unread(this.detailData?.read_state || chosen?.item.attention);
@@ -423,6 +426,8 @@ export class AttentionQueue {
     return activity ? `${activity.state}/${activity.source}/${activity.transition || activity.evidence_at || ''}` : '';
   }
   private renderActivity() {
+    const chosen=this.chosen();const metrics=this.detailKey===this.selected&&this.detailData?.instance===chosen?.item.attention?.instance?this.detailData?.token_metrics:chosen?.item.token_metrics;this.tokenMetrics.element.hidden=!chosen;this.tokenMetrics.update(metrics,this.detailUnavailable||stateOf(chosen?.item||({} as Item))==='disconnected'||!!chosen?.h.error);
+
     const selected=this.chosen();const detailed=this.detailKey===this.selected&&this.detailData?.instance===selected?.item.attention?.instance?this.detailData?.background_tasks:undefined;const queued=selected?.item.background_tasks;const background=detailed&&(!queued||detailed.observed_at>=queued.observed_at)?detailed:queued;this.backgroundTasks.update(background,this.detailUnavailable||this.currentActivity()?.state==='disconnected');
     const activity = this.currentActivity(), key = this.draftKey(), pending = this.pendingReplies.get(key);
     if (pending && (Date.now() - pending.at > 15 * 60 * 1000 || this.latestReply() !== pending.reply ||

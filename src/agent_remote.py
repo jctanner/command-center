@@ -1412,6 +1412,14 @@ def transcript_version(chosen):
     if 'leaf_id' in chosen: version=hashlib.sha256((version+':'+json.dumps(chosen['leaf_id'])).encode()).hexdigest()
     return info, version
 
+def observed_token_metrics(request, observation, chosen, association):
+    code=request.get('_token_code')
+    if not isinstance(code,str) or not chosen:return None
+    try:
+        namespace={};exec(code,namespace)
+        return namespace['collect'](chosen['path'],observation['kind'],chosen['id'],observation.get('identity'),association,request.get('_token_cursor'),chosen.get('leaf_id',False))
+    except (OSError,ValueError,TypeError,KeyError,RuntimeError):return None
+
 def reply_observation(chosen, kind, known_version=None, page=None):
     if not chosen: return None
     info, version = transcript_version(chosen)
@@ -1828,6 +1836,7 @@ def execute(request):
         chosen = linked[0] if len(linked) == 1 else next((c for c in candidates if c['id'] == request.get('conversation')), None)
         if not chosen and len(candidates) == 1 and not observation['env'].get('CC_LAUNCH_ID'): chosen = candidates[0]
         return dict(instance=observation['identity'], context=observation['context'],
+                    _token_metrics=observed_token_metrics(request,observation,chosen if chosen and chosen.get('linked') else None,'process'),
                     reply=reply_observation(chosen, observation['kind'], request.get('known_reply_version')),
                     folder_trust=folder_trust(observation),activity=provider_activity(observation, candidates),background_tasks=observed_background_tasks(observation,chosen if len(linked)==1 and chosen is linked[0] else None))
     if request.get('action') == 'outbox_status':
@@ -1934,6 +1943,7 @@ def execute(request):
     if observation['kind']=='pi' and (pi_dialog(observation) or result['activity']['state']=='approval'):
         result['send_available']=False
         result['send_reason']='Pi is waiting for input in a dialog. Answer it in the terminal before sending a message.'
+    result['_token_metrics']=observed_token_metrics(request,observation,chosen,result['association'])
     result['folder_trust']=folder_trust(observation)
     if result['folder_trust']:
         result['send_available']=False;result['send_reason']='Folder trust requires an explicit human choice.'

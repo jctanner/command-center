@@ -3816,6 +3816,17 @@
                 "type": "null"
               }
             ]
+          },
+          "token_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentTokenMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cards require process-linked history; conversation details may describe explicitly selected project history."
           }
         },
         "description": "Read-only observation. context/prompt are terminal evidence, not conversation history. Only process-linked provider state establishes Working/Ready. Retain source, timestamps and unavailable/limited labels. Do not treat inferred attention as permission to act.",
@@ -4406,6 +4417,17 @@
                 "type": "null"
               }
             ]
+          },
+          "token_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentTokenMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cards require process-linked history; conversation details may describe explicitly selected project history."
           }
         },
         "description": "Native user/assistant history; no reasoning/tool/system/sidechain messages. Preserve association: project history does not prove live process identity. Returned instance must match fresh queue attention.instance. Keep branch/version while paging; on history_reset discard previous page sequence. Do not expose terminal captures or action tokens to passive inventories.",
@@ -6129,6 +6151,182 @@
           },
           "updated_at": {
             "type": "integer"
+          }
+        }
+      },
+      "TokenCounts": {
+        "type": "object",
+        "description": "Provider-reported counts. Null means unreported or incomplete; cache and reasoning subsets must not be added twice.",
+        "properties": {
+          "input": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cached_input": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cache_write": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reasoning_output": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "AgentTokenMetrics": {
+        "type": "object",
+        "description": "Read-only numeric metadata from native logs. Context is the last reported request, not a live estimate. No model-name capacity inference.",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "claude",
+              "pi"
+            ]
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "instance": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "association": {
+            "type": "string",
+            "enum": [
+              "process",
+              "project"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "limited": {
+            "type": "boolean"
+          },
+          "session": {
+            "$ref": "#/components/schemas/TokenCounts"
+          },
+          "input_includes_cache": {
+            "type": "boolean",
+            "description": "Codex cache reads are already included in input."
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "used": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "window": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reported_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            }
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_at": {
+            "type": "integer",
+            "description": "Unix seconds when metadata was observed, not when tokens were consumed."
+          },
+          "note": {
+            "type": "string"
           }
         }
       }
