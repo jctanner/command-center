@@ -9,6 +9,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task 0069: Agent token metrics (CC-2/CC-3)](docs/tasks/pending/0069-agent-token-metrics.md) — paused for human-prioritized CC-72; no implementation yet.
+
 
 
 
