@@ -227,13 +227,20 @@ impl Transport {
     ) -> Result<serde_json::Value> {
         self.helper_request(include_str!("jira_bootstrap.py"),serde_json::json!({"project":project,"code":include_str!("jira_remote.py"),"request":request})).await
     }
+    // Trusted source and bounded request travel over stdin, not the remote
+    // shell command (Linux limits a single argv string to about 128 KiB).
+    // Restore payload stdin for existing helpers; never load source from clients.
+    const HELPER_BOOTSTRAP: &'static str = "import io,json,sys\nraw=sys.stdin.buffer.read(16*1024*1024+1)\nif len(raw)>16*1024*1024: raise ValueError('helper envelope too large')\nwire=json.loads(raw)\nsys.stdin=io.TextIOWrapper(io.BytesIO(json.dumps(wire['request'],ensure_ascii=False).encode('utf-8')),encoding='utf-8')\nexec(compile(wire['source'],'<command-center-helper>','exec'),{'__name__':'__main__'})";
     async fn helper_request(
         &self,
         script: &str,
         request: serde_json::Value,
     ) -> Result<serde_json::Value> {
-        let (program, args) =
-            self.command_invocation("python3", vec!["-c".into(), script.into()], false)?;
+        let (program, args) = self.command_invocation(
+            "python3",
+            vec!["-c".into(), Self::HELPER_BOOTSTRAP.into()],
+            false,
+        )?;
         tokio::time::timeout(Duration::from_secs(20), async {
             let mut child = Command::new(program)
                 .args(args)
@@ -244,7 +251,11 @@ impl Transport {
                 .spawn()
                 .context("starting host helper (requires Python 3)")?;
             let mut input = child.stdin.take().unwrap();
-            let body = serde_json::to_vec(&request)?;
+            let body = serde_json::to_vec(&serde_json::json!({"source":script,"request":request}))?;
+            ensure!(
+                body.len() <= 16 * 1024 * 1024,
+                "host helper envelope exceeds limit"
+            );
             let write = async move {
                 input.write_all(&body).await?;
                 drop(input);
@@ -324,5 +335,44 @@ mod tests {
             "tmux '-u' '-S' '/tmp/user'\\''s socket;touch bad' 'display-message' '-p' '#{session_id}'"
         );
         assert!(args.contains(&"StrictHostKeyChecking=yes".into()));
+    }
+    #[tokio::test]
+    async fn large_trusted_source_and_literal_payload_use_stdin_not_argv() {
+        let dir = tempfile::tempdir().unwrap();
+        let t = Transport {
+            host: Host {
+                id: "fixture".into(),
+                name: "Fixture".into(),
+                ssh: None,
+                socket: None,
+                ssh_config: None,
+                ssh_jump: None,
+                projects: vec![],
+            },
+            control_path: dir.path().join("control"),
+        };
+        let source = format!(
+            "# {}\nimport json,sys\nv=json.load(sys.stdin)\nprint(json.dumps({{'ok':v}}))",
+            "large helper with quotes '\" ".repeat(12000)
+        );
+        let payload = serde_json::json!({"text":"literal ' \" $() `backticks` \n café", "number":123, "source":"untrusted payload stays data"});
+        let result = t.helper_request(&source, payload.clone()).await.unwrap();
+        assert_eq!(result["ok"], payload);
+        let remote = Transport {
+            host: Host {
+                ssh: Some("fixture".into()),
+                ..t.host.clone()
+            },
+            control_path: dir.path().join("remote"),
+        };
+        let (_, args) = remote
+            .command_invocation(
+                "python3",
+                vec!["-c".into(), Transport::HELPER_BOOTSTRAP.into()],
+                false,
+            )
+            .unwrap();
+        assert!(args.last().unwrap().len() < 2048);
+        assert!(!args.last().unwrap().contains("large helper with quotes"));
     }
 }

@@ -20,7 +20,7 @@ class AgentOutbox(unittest.TestCase):
     def test_native_observation_never_uses_project_only_or_ambiguous_logs(self):
         self.write([dict(type='response_item',payload=dict(type='message',role='user',content='PRIVATE_INPUT')),
                     dict(type='response_item',payload=dict(type='message',role='assistant',content='PRIVATE_REPLY'))])
-        with patch.object(agent,'observe',return_value=self.observation),patch.object(agent,'provider_activity',return_value={'state':'ready'}):
+        with patch.object(agent,'observe',return_value=self.observation),patch.object(agent,'provider_activity',return_value={'state':'ready','source':'fixture'}):
             for candidates in [[dict(self.candidate,linked=False)],[self.candidate,dict(self.candidate,id='second')]]:
                 with patch.object(agent,'conversations',return_value=candidates):
                     result=agent.execute(dict(action='outbox_status',identity='process',conversation='linked'))
@@ -39,7 +39,7 @@ class AgentOutbox(unittest.TestCase):
         }
         for kind,items in records.items():
             self.write(items)
-            with patch.object(agent,'observe',return_value=dict(self.observation,kind=kind)),patch.object(agent,'conversations',return_value=[self.candidate]),patch.object(agent,'provider_activity',return_value={'state':'ready'}):
+            with patch.object(agent,'observe',return_value=dict(self.observation,kind=kind)),patch.object(agent,'conversations',return_value=[self.candidate]),patch.object(agent,'provider_activity',return_value={'state':'ready','source':'fixture'}):
                 observed=agent.execute(dict(action='outbox_status',identity='process'))
             self.assertEqual(len(observed['users']),1,kind)
             self.assertEqual(observed['users'][0]['digest'],agent.input_hash('INPUT'))
@@ -72,7 +72,7 @@ class AgentOutbox(unittest.TestCase):
         self.write([dict(type='user',promptSource='system',origin={'kind':'task-notification'},message=dict(role='user',content='NOT_HUMAN')),
                     dict(type='user',message=dict(role='user',content='Human message'))])
         _,old_version=agent.transcript_version(self.candidate)
-        with patch.object(agent,'observe',return_value=dict(self.observation,kind='claude')),patch.object(agent,'conversations',return_value=[self.candidate]),patch.object(agent,'provider_activity',return_value={'state':'ready'}):
+        with patch.object(agent,'observe',return_value=dict(self.observation,kind='claude')),patch.object(agent,'conversations',return_value=[self.candidate]),patch.object(agent,'provider_activity',return_value={'state':'ready','source':'fixture'}):
             page=agent.execute(dict(action='conversation',known_version=old_version))
             self.assertFalse(page.get('history_unchanged'))
             self.assertEqual([m['text'] for m in page['messages']],['Human message'])
@@ -89,7 +89,7 @@ class AgentOutbox(unittest.TestCase):
                     dict(type='response_item',payload=dict(type='message',role='assistant',content='Real reply'))])
         _,old_version=agent.transcript_version(self.candidate)
         old_reply=agent.reply_observation(self.candidate,'codex')
-        with patch.object(agent,'observe',return_value=self.observation),patch.object(agent,'conversations',return_value=[self.candidate]),patch.object(agent,'provider_activity',return_value={'state':'ready'}):
+        with patch.object(agent,'observe',return_value=self.observation),patch.object(agent,'conversations',return_value=[self.candidate]),patch.object(agent,'provider_activity',return_value={'state':'ready','source':'fixture'}):
             page=agent.execute(dict(action='conversation',known_version=old_version))
             self.assertFalse(page.get('history_unchanged'))
             self.assertTrue(page.get('history_reset'))

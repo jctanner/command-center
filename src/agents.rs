@@ -147,8 +147,11 @@ pub(crate) async fn conversation(
         &value["activity"],
         value["context"].as_str().unwrap_or(""),
     );
-    let attention =
-        !value["approval"].is_null() || activity.state == crate::queue::AgentState::Approval;
+    let attention = !value["approval"].is_null()
+        || matches!(
+            activity.state,
+            crate::queue::AgentState::Approval | crate::queue::AgentState::AwaitingTrust
+        );
     if target.before.is_none() {
         let reply = serde_json::from_value::<crate::attention::Reply>(value["reply"].clone()).ok();
         let view = state
@@ -187,15 +190,18 @@ pub(crate) async fn conversation(
     value["attention"] = json!(attention);
     if attention {
         value["send_available"] = json!(false);
-        value["send_reason"] = json!(
+        value["send_reason"] = json!(if value["folder_trust"].is_object() {
+            "Folder trust is waiting for your explicit choice in the folder disclosure. Messaging stays disabled until it is resolved."
+        } else {
             "Approval prompt detected. Respond in the terminal before sending a new message."
-        );
+        });
     } else if value["send_available"] != true && !value["send_reason"].is_string() {
         value["send_reason"] = json!(
             "Live process verification unavailable or pane is in copy mode. Use Open terminal."
         );
     }
     crate::questions::enrich(&state, &host, &target, &attention_key, &mut value).await?;
+    crate::folder_trust::enrich(&state, &host, &target, &attention_key, &mut value).await?;
     if !value["approval"].is_null() && target.before.is_none() {
         let mut grants = state.agents.approvals.lock().await;
         grants.retain(|_, g| g.grant.at.elapsed() < Duration::from_secs(120));

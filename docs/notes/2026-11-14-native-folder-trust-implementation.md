@@ -1,0 +1,7 @@
+# Native folder trust implementation checkpoint (CC-72)
+
+Human reprioritized CC-72 before CC-2/3 and CC-55. Token metrics are paused in local checkpoint f4645c4; no metrics implementation yet. [Task0070](../tasks/current/0070-native-folder-trust.md) implements launch-bound native folder trust and records the design/validation. Both supplied live Claude panes were already working at read-only inspection; neither received keys.
+
+Known Claude/Codex live disclosure profiles expose awaiting_trust on Agents and ticket runs. Explicit trust/decline uses separate expiring grants and durable claimed decisions; decline sends no keys, unknown/replaced/stale/uncertain cases fail closed. No pretrust or coordinator auto-answer. Shared stdin bootstrap fixes the SSH argv ceiling discovered by regression tests.
+
+Tests: Rust83, native parser/question/outbox30 plus HTTP13, contract1, feature browser19 and final phone/desktop/offline3; builds/Clippy/format/diff pass. Broader launch regression's fixture-order assertion corrected and targeted policy/SSH filesystem2 passed; task records original run outcome. Synthetic executables only. Real Claude/Codex acceptance tests await explicit permission already requested; do not claim them as verified. No deployment or push. Local commit is authorized. Keep lower-priority tickets paused until CC-72 disposition; restart deployment requires a separate go-ahead.

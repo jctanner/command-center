@@ -10,11 +10,11 @@ import { AgentNotifications } from './notifications';
 import { AgentLauncher, type LaunchedAgent } from './agent-launch';
 import { compactClient, compactViewport } from './layout';
 type ReadState = { key: string; instance: string; revision: number; finished: boolean; new_approval: boolean; unread_reply: boolean; needs_attention: boolean; conversation?: string; reply_cursor?: string; history_id?: string };
-type AgentState = 'working' | 'ready' | 'approval' | 'unknown' | 'disconnected';
+type AgentState = 'working' | 'ready' | 'approval' | 'awaiting_trust' | 'unknown' | 'disconnected';
 type Activity = { state: AgentState; source: string; reason: string; evidence_at?: number; observed_at: number; transition?: string };
 export type AgentFileTarget={host:string;connection:string;path:string};
 export type QueueTarget = { instance?:string|null;host: string; connection: string; session: string; window: string; pane: string };
-type Item = { background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
+type Item = { folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
 type Host = { id: string; name: string; connection_revision: string; error?: string; limited: boolean; items: Item[] };
 type Snapshot = { checked_at: number; hosts: Host[] };
 type Message = { id: string; role: 'user' | 'assistant'; text: string; timestamp: string; order?: number; truncated?: boolean };
@@ -22,16 +22,16 @@ type Conversation = { id: string; session: string; timestamp: string; linked: bo
 type Approval = { id: string; title: string; context: string; choices: { id: string; label: string }[]; token?: string; submitted?: boolean };
 type InputRequest = InputQuestion;
 const inputSource=(source?:string)=>['pi_bridge','terminal_question','claude_input'].includes(source||'');
-type Detail = {input_request?:InputRequest|null; background_tasks?:BackgroundSnapshot|null;outbox_entries?:OutboxEntry[]; card?:AgentCard;approval?: Approval; read_state?: ReadState; activity?: Activity; instance?: string; context: string; project: string; provider: string; selected?: string; association: string; conversations: Conversation[]; messages: Message[]; activities?: AgentActivityEntry[]; activity_limited?: boolean; older_cursor?: number; send_available: boolean; send_reason?: string; message_token?: string; attention: boolean; history_version?: string; history_unchanged?: boolean; history_branch?: string; history_reset?: boolean; history_notice?: string };
+type Detail = {folder_trust?:InputQuestion|null;input_request?:InputRequest|null; background_tasks?:BackgroundSnapshot|null;outbox_entries?:OutboxEntry[]; card?:AgentCard;approval?: Approval; read_state?: ReadState; activity?: Activity; instance?: string; context: string; project: string; provider: string; selected?: string; association: string; conversations: Conversation[]; messages: Message[]; activities?: AgentActivityEntry[]; activity_limited?: boolean; older_cursor?: number; send_available: boolean; send_reason?: string; message_token?: string; attention: boolean; history_version?: string; history_unchanged?: boolean; history_branch?: string; history_reset?: boolean; history_notice?: string };
 const node = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] => { const n = document.createElement(tag); n.textContent = text; return n; };
 const stateOf = (item: Item): AgentState => item.activity?.state || (item.status === 'disconnected' ? 'disconnected' : item.status === 'attention' || (!item.status && item.prompt !== 'Live agent') ? 'approval' : 'unknown');
 const projectName = (path: string) => path.split('/').filter(Boolean).at(-1) || '/';
 const agentTitle = (item: Item) => item.card?.name || (compactClient() && ['claude','codex','pi','pi-coding-agent'].includes(item.window_name.toLowerCase()) ? projectName(item.project) : item.window_name);
-const waiting = (item: Item) => stateOf(item) === 'approval';
+const waiting = (item: Item) => ['approval','awaiting_trust'].includes(stateOf(item));
 const unread = (state?: ReadState) => !!state && (state.finished || state.new_approval || state.unread_reply);
 const needsAttention = (item: Item) => waiting(item) || unread(item.attention);
-const stateLabel = (state: AgentState, source?: string) => ({ working: 'Working', ready: 'Ready', approval: source === 'terminal_question' ? 'Input (detected)' : inputSource(source) ? 'Awaiting input' : source === 'terminal_prompt' ? 'Approval (detected)' : 'Awaiting approval', unknown: 'Unknown', disconnected: 'Disconnected' })[state];
-const rank: Record<AgentState, number> = { approval: 0, ready: 1, working: 2, unknown: 3, disconnected: 4 };
+const stateLabel = (state: AgentState, source?: string) => ({ awaiting_trust:'Needs folder trust',working: 'Working', ready: 'Ready', approval: source === 'terminal_question' ? 'Input (detected)' : inputSource(source) ? 'Awaiting input' : source === 'terminal_prompt' ? 'Approval (detected)' : 'Awaiting approval', unknown: 'Unknown', disconnected: 'Disconnected' })[state];
+const rank: Record<AgentState, number> = { awaiting_trust:0,approval: 0, ready: 1, working: 2, unknown: 3, disconnected: 4 };
 function stateBadge(activity?: Activity, fallback: AgentState = 'unknown') {
   const badge = node('span', stateLabel(activity?.state || fallback, activity?.source));
   badge.className = 'agent-state'; badge.dataset.state = activity?.state || fallback;
@@ -100,6 +100,7 @@ export class AttentionQueue {
   private detailsButton = node('button', 'Details');
   private subtitle = node('p');
   private chatNotice = node('p');
+  private trustControls=new QuestionControls(value=>{this.submitting=value;this.updateSend();},()=>{void this.loadDetail(true);},'folder-trust');
   private approvalCard = node('section');
   private questionControls=new QuestionControls(value=>{this.submitting=value;this.updateSend();},()=>{void this.loadDetail();void this.refresh();});
   private approvalFeedback = new Map<string, string>();
@@ -150,7 +151,7 @@ export class AttentionQueue {
     const filters = node('div'); filters.className = 'queue-filters';
     this.hostSelect.setAttribute('aria-label', 'Queue machine'); this.projectSelect.setAttribute('aria-label', 'Queue project');
     this.statusSelect.setAttribute('aria-label', 'Agent status');
-    this.options(this.statusSelect, 'All agents', [['needs_attention', 'Needs attention'], ['attention', 'Awaiting input / approval'], ['ready', 'Ready for a message'], ['working', 'Working'], ['unknown', 'Unknown'], ['disconnected', 'Disconnected']], '');
+    this.options(this.statusSelect, 'All agents', [['needs_attention', 'Needs attention'],['awaiting_trust','Needs folder trust'], ['attention', 'Awaiting input / approval'], ['ready', 'Ready for a message'], ['working', 'Working'], ['unknown', 'Unknown'], ['disconnected', 'Disconnected']], '');
     this.hostSelect.onchange = () => { this.openedForRead = ''; this.host = this.hostSelect.value; this.project = ''; this.render(); };
     this.projectSelect.onchange = () => { this.openedForRead = ''; this.project = this.projectSelect.value; this.render(); };
     this.statusSelect.onchange = () => { this.openedForRead = ''; this.render(); };
@@ -333,6 +334,7 @@ export class AttentionQueue {
       context.append(document.createTextNode(`${h.name} · ${item.agent} · ${projectName(item.project)}`));
       const background=backgroundLabel(item.background_tasks,stateOf(item)==='disconnected');if(background){for(const parent of [machine,context]){const badge=node('span',background);badge.className='queue-background-count';if(parent===context)parent.prepend(badge,document.createTextNode(' · '));else parent.append(badge);}}
       b.title=`${name.textContent}\n${context.title}\nRight-click or Shift+F10 for agent actions`;
+      if(item.folder_trust){const trust=node('small',item.folder_trust.title);trust.className='queue-card-prompt';b.append(trust);}
       b.append(machine,stateBadge(item.activity,stateOf(item)),name,folder,context,node('small',`${item.session_name} / ${item.window_name} / ${item.pane}`));
       b.dataset.hasPrompt=String(!!item.card?.name&&waiting(item));
       if(item.card?.notes){const note=node('span',item.card.notes);note.className='agent-card-note-preview queue-card-note';note.title=item.card.notes;b.append(note);}if(item.card?.name&&waiting(item)){const prompt=node('span',item.prompt);prompt.className='agent-card-note-preview queue-card-prompt';prompt.title=item.prompt;b.append(prompt);}
@@ -428,6 +430,7 @@ export class AttentionQueue {
     let text = '', busy = false;
     if (!this.chosen()) text = '';
     else if (this.detailUnavailable || activity?.state === 'disconnected') text = 'Live activity unavailable · reconnecting';
+    else if(activity?.state==='awaiting_trust'||this.detailData?.folder_trust) text=this.detailData?.folder_trust?.receipt?.status==='declined'?'Folder trust declined · agent remains blocked':'Waiting for folder trust · review the folder disclosure';
     else if (this.detailData?.approval || activity?.state === 'approval') text = inputSource(activity?.source) ? (this.detailData?.input_request?.token ? 'Waiting for input · choose an answer below' : this.detailData?.input_request?.submitted ? 'Answer sent · waiting for agent activity' : 'Waiting for input · respond in terminal') : 'Waiting for your approval';
     else if (this.submitting) { text = 'Submitting…'; busy = true; }
     else if (activity?.state === 'working') { text = 'Agent is working…'; busy = true; }
@@ -441,6 +444,9 @@ export class AttentionQueue {
   }
   private approvalKey() { return `${this.draftKey()}/${this.detailData?.approval?.id || ''}`; }
   private renderApproval() {
+    const trust=this.detailData?.folder_trust;
+    if(trust){if(this.approvalCard.nextElementSibling!==this.history)this.history.before(this.approvalCard);const chosen=this.chosen();this.approvalCard.hidden=false;this.approvalCard.setAttribute('aria-label','Folder trust');if(chosen)this.trustControls.render(this.approvalCard,{host:chosen.h.id,session:chosen.item.session,window:chosen.item.window,pane:chosen.item.pane,instance:this.detailData?.instance||'',conversation:''},trust,this.submitting||this.detailUnavailable||stateOf(chosen.item)==='disconnected');return;}
+    const form=this.detail.querySelector('form');if(form&&this.approvalCard.nextElementSibling!==form)this.detail.insertBefore(this.approvalCard,form);
     const approval = this.detailData?.approval;
     const question=this.detailData?.input_request || (this.detailData?.activity?.source==='claude_input'?{id:'native-waiting',title:'Claude is waiting for input',context:this.detailData.context.slice(-12000)}:undefined);
     this.approvalCard.hidden = !approval&&!question;
@@ -532,7 +538,7 @@ export class AttentionQueue {
       this.detailUnavailable = false; this.detailData = data; this.readAvailable = before == null;
       this.composer.value = this.drafts.get(this.draftKey()) || ''; this.fitComposer();
       this.context.textContent = data.context;
-      const sendReason = data.provider !== 'pi' && !data.approval && compactClient() && data.send_reason ? (data.attention ? 'Awaiting approval. Respond from a desktop terminal.' : 'Messaging is unavailable here. Use a desktop terminal.') : data.send_reason;
+      const sendReason = data.provider !== 'pi' && !data.approval && !data.folder_trust && compactClient() && data.send_reason ? (data.attention ? 'Awaiting approval. Respond from a desktop terminal.' : 'Messaging is unavailable here. Use a desktop terminal.') : data.send_reason;
       this.detailFeedback.textContent = sendReason || (previous?.instance && previous.instance !== data.instance ? 'Agent process changed. Drafts for the previous process have been kept separately.' : data.activity?.reason || 'Provider status unknown.');
       this.chatNotice.hidden = !!data.approval || !data.send_reason; this.chatNotice.textContent = sendReason || '';
       this.subtitle.textContent = `${h.name} · ${projectName(item.project)}${data.association === 'project' ? ' · Project history' : ''}`;
@@ -563,7 +569,7 @@ export class AttentionQueue {
           detail?.querySelector('summary')?.focus({preventScroll:true});
         }
         if (data.activity_limited) this.history.prepend(node('p', 'Some older activity is omitted from this page. Message history is unchanged.'));
-        if (!entries.length) {const empty=node('p', data.selected ? 'No native conversation messages yet.' : data.conversations.length ? 'Select a conversation to read its history.' : 'No conversation log found for this project. Live terminal context is available below.');empty.className='agent-history-empty';this.history.append(empty);}
+        if (!entries.length) {const empty=node('p', data.folder_trust?'Conversation history will appear after the folder-trust step.':data.selected ? 'No native conversation messages yet.' : data.conversations.length ? 'Select a conversation to read its history.' : 'No conversation log found for this project. Live terminal context is available below.');empty.className='agent-history-empty';this.history.append(empty);}
       }
       if (!data.history_unchanged && !data.selected && data.conversations.length) {
         const choose = node('button', 'Choose conversation'); choose.onclick = () => { this.metadata.hidden = false; this.detailsButton.setAttribute('aria-expanded', 'true'); this.conversationSelect.focus(); }; this.history.append(choose);

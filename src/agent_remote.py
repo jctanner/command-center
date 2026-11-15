@@ -156,6 +156,89 @@ def observe(request):
                 env=env, cwd=cwd, context=text, visible=tmux(request, 'capture-pane', '-p', '-t', target, '-S', '0'), in_mode=info[3] != '0',
                 screen=hashlib.sha256(captured.encode()).hexdigest())
 
+def folder_trust(observation):
+    """Only recognized live native folder disclosures, tied to a CC launch."""
+    if observation.get('kind') not in ('claude','codex') or not observation.get('identity') or observation.get('in_mode'):
+        return None
+    visible=observation.get('visible','').rstrip()
+    if not visible or len(visible)>24000: return None
+    lines=visible.splitlines();plain=' '.join(visible.split());kind=observation['kind']
+    if kind=='claude':
+        heading=any(line.strip()=='Accessing workspace:' or line.strip()=='Do you trust the files in this folder?' for line in lines)
+        question='Quick safety check:' in plain or 'Do you trust the files in this folder?' in plain
+        yes='Yes, I trust this folder';negative=('No, exit','No, exit Claude Code','No, continue without these permissions')
+        footer=re.compile(r'(?i)^(?:enter to confirm(?:.*(?:esc|escape) to cancel)?|(?:esc|escape) to cancel.*enter to confirm)[. ]*$')
+    else:
+        heading=any(line.strip()=='Folder access' or line.strip().startswith('You are in ') for line in lines)
+        question='Trust this folder?' in plain or 'Do you trust the contents of this directory?' in plain
+        yes='Trust and continue' if 'Trust this folder?' in plain else 'Yes, continue'
+        negative=('Quit',) if yes=='Trust and continue' else ('No, quit',)
+        footer=re.compile(r'(?i)^(?:press enter to continue|enter continue [·•] esc quit|enter to confirm.*esc to cancel)[. ]*$')
+    if not heading or not question: return None
+    rows=[]
+    for index,line in enumerate(lines):
+        match=re.fullmatch(r'\s*([›❯>])?\s*([12])[.)]\s+(.+?)\s*',line)
+        if match: rows.append((index,match.group(1),match.group(2),match.group(3)))
+    if len(rows)!=2 or [r[2] for r in rows]!=['1','2'] or rows[0][3]!=yes or rows[1][3] not in negative or sum(bool(r[1]) for r in rows)!=1:
+        return None
+    after=[line.strip() for line in lines[rows[-1][0]+1:] if line.strip()]
+    if len(after)!=1 or not footer.fullmatch(after[0]): return None
+    cwd=observation.get('cwd','');launch=observation.get('env',{}).get('CC_LAUNCH_ID','')
+    if not isinstance(cwd,str) or not os.path.isabs(cwd) or any(ord(c)<32 for c in cwd): return None
+    # Wrapped paths are deliberately unsupported: do not accept truncated scope.
+    if not any(line.strip() in (cwd,'You are in '+cwd) for line in lines[:rows[0][0]]): return None
+    if not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',launch): return None
+    try:
+        raw=tmux(observation,'show-options','-w','-v','-t',observation['target'],'@cc_launch').strip()
+        marker=json.loads(raw)
+        if not isinstance(marker,dict):return None
+        session,rest=observation['target'].split(':',1);window,pane=rest.split('.',1)
+        if any(marker.get(k)!=v for k,v in dict(launch_id=launch,project=cwd,provider=kind,session=session,window=window,pane=pane).items()): return None
+        path,directory=project_directory(cwd)
+        if path!=cwd:return None
+    except (Failure,OSError,ValueError,KeyError):return None
+    # A wider trust target must be shown and validated, never hidden in a click.
+    root=cwd
+    for index,line in enumerate(lines[:rows[0][0]]):
+        text=line.strip()
+        if 'repository root:' in text or 'part of the repository at ' in text:
+            value=text.split('part of the repository at ',1)[1].strip() if 'part of the repository at ' in text else next((v.strip() for v in lines[index+1:rows[0][0]] if v.strip()),'')
+            if not os.path.isabs(value) or os.path.realpath(value)!=value or os.path.commonpath([cwd,value])!=value:return None
+            root=value
+    if any(c.get('linked') for c in conversations(observation)):return None
+    normalized='\n'.join(re.sub(r'^\s*[›❯>]\s*(?=[12][.)])','',line).strip() for line in lines)
+    _,root_identity=project_directory(root)
+    basis=dict(trust_root_identity=root_identity,profile=('claude-folder-v1' if kind=='claude' else 'codex-folder-v2' if yes=='Trust and continue' else 'codex-folder-v1'),disclosure=hashlib.sha256(normalized.encode()).hexdigest(),launch_id=launch,folder=cwd,trust_root=root,directory_identity=directory,provider=kind,labels=[yes,rows[1][3]])
+    identifier=hashlib.sha256(json.dumps(basis,sort_keys=True).encode()).hexdigest()
+    return dict(id=identifier,**basis,selected=next(int(r[2]) for r in rows if r[1]),context=visible,
+                title='Needs folder trust: '+cwd+(' (repository scope: '+root+')' if root!=cwd else ''),screen=hashlib.sha256(visible.encode()).hexdigest())
+
+
+def answer_folder_trust(request, observation):
+    def valid(obs):
+        prompt=folder_trust(obs)
+        return prompt if prompt and obs.get('identity')==request.get('identity') and prompt['id']==request.get('trust_id') and prompt['launch_id']==request.get('launch_id') else None
+    prompt=valid(observation)
+    if not prompt or prompt['screen']!=request.get('screen'):
+        return dict(submitted=False,not_sent=True)
+    fresh=observe(request);current=valid(fresh)
+    if not current or current['screen']!=prompt['screen']:return dict(submitted=False,not_sent=True)
+    if request.get('choice')=='decline':return dict(submitted=False,not_sent=True,declined=True)
+    if request.get('choice')!='trust':fail(400,'Choose trust or decline')
+    # Up only changes a recognized picker selection; revalidate before Enter.
+    # Once any key is attempted, any failure is uncertain and never replayed.
+    if current['selected']==2:
+        tmux(request,'send-keys','-t',fresh['target'],'Up')
+        for _ in range(10):
+            fresh=observe(request);current=valid(fresh)
+            if not current or current['selected']==1:break
+            time.sleep(.025)
+        if not current or current['selected']!=1:fail(502,'Trust selection changed; check terminal, no automatic retry')
+    if current['selected']!=1:fail(502,'Trust selection is uncertain; check terminal')
+    tmux(request,'send-keys','-t',fresh['target'],'Enter')
+    return dict(submitted=True)
+
+
 def approval_menu(observation):
     """Recognize live provider approval menus, never scrollback or arbitrary questions.
     Only single advertised shortcuts (Codex) or numbered Claude choices are sent.
@@ -1186,6 +1269,8 @@ def claude_log_activity(path, session, now):
 
 
 def provider_activity(observation, candidates=None):
+    trust=folder_trust(observation)
+    if trust:return state_result('awaiting_trust','folder_trust',trust['title'],int(time.time()),trust['id'])
     menu = approval_menu(observation)
     if menu:
         return state_result('approval', 'terminal_prompt', 'Recognized live approval menu; explicit human decision required', int(time.time()), menu['id'])
@@ -1530,7 +1615,7 @@ def launch_status(request):
         except (Failure,OSError): pass
     if metadata.get('conversation'):association.setdefault('conversation',metadata['conversation'])
     return dict(found=True,launch_id=identifier,session=row[0],window=row[1],pane=row[2],
-                session_name=fields[5],destination=metadata.get('destination','session'),project=metadata['project'],provider=kind,model=metadata.get('model'),python_venv=metadata.get('python_venv'),approval_policy=metadata.get('approval_policy'),
+                session_name=fields[5],destination=metadata.get('destination','session'),project=metadata['project'],folder_trust=folder_trust(observed) if 'observed' in locals() and observed.get('identity') else None,provider=kind,model=metadata.get('model'),python_venv=metadata.get('python_venv'),approval_policy=metadata.get('approval_policy'),
                 running=row[3]=='0' and kind in row[4].lower(),exited=row[3]=='1',
                 context=tmux(request,'capture-pane','-p','-t',row[2],'-S','0')[-12000:],**association)
 
@@ -1702,6 +1787,7 @@ def execute(request):
     if request.get('action') == 'launch': return launch_agent(request)
     if request.get('action') == 'restart_status': return restart_status(request)
     observation = observe(request)
+    if request.get('action') == 'folder_trust_answer':return answer_folder_trust(request,observation)
     if request.get('action') == 'restart_prepare': return restart_plan(request, observation)
     if request.get('action') == 'restart_agent': return restart_agent(request, observation)
     if request.get('action') == 'close_agent':
@@ -1743,7 +1829,7 @@ def execute(request):
         if not chosen and len(candidates) == 1 and not observation['env'].get('CC_LAUNCH_ID'): chosen = candidates[0]
         return dict(instance=observation['identity'], context=observation['context'],
                     reply=reply_observation(chosen, observation['kind'], request.get('known_reply_version')),
-                    activity=provider_activity(observation, candidates),background_tasks=observed_background_tasks(observation,chosen if len(linked)==1 and chosen is linked[0] else None))
+                    folder_trust=folder_trust(observation),activity=provider_activity(observation, candidates),background_tasks=observed_background_tasks(observation,chosen if len(linked)==1 and chosen is linked[0] else None))
     if request.get('action') == 'outbox_status':
         if request.get('identity') and observation['identity'] != request['identity']:
             fail(409, 'Agent process changed; queued messages were not sent')
@@ -1752,7 +1838,7 @@ def execute(request):
         chosen=linked[0] if len(linked)==1 else None
         result=dict(instance=observation['identity'], screen=observation['screen'], context=observation['context'],
                     activity=provider_activity(observation,candidates), log=None, users=[], pending_pi_session=None,
-                    send_available=bool(observation['identity']) and not observation['in_mode'] and not approval_menu(observation)
+                    send_available=bool(observation['identity']) and not observation['in_mode'] and not folder_trust(observation) and not approval_menu(observation)
                         and not native_input_dialog(observation))
         state=active_message_state(observation)
         result['input_guard']=message_input_guard(observation,state) if state else None
@@ -1787,7 +1873,7 @@ def execute(request):
             fail(400, 'Message must be 1–12000 UTF-8 bytes without control characters')
         if request.get('require_ready') and provider_activity(observation)['state'] != 'ready':
             fail(409, 'Agent is no longer Ready; no message was pasted')
-        if provider_activity(observation)['state'] == 'approval':
+        if provider_activity(observation)['state'] in ('approval','awaiting_trust'):
             fail(409, 'Pi is waiting for input. Respond in the terminal.' if observation['kind']=='pi' else 'Agent is awaiting approval. Respond in the terminal.')
         if observation['kind']=='pi' and re.match(r'^[\s\ufeff]*!',text):
             fail(400,"Pi treats leading ! as shell input. Start with FYI: to send it as chat.")
@@ -1795,7 +1881,7 @@ def execute(request):
         try:
             tmux(request, 'load-buffer', '-b', buffer, '-', input=text.encode())
             fresh = observe(request)
-            if fresh['identity'] != observation['identity'] or fresh['in_mode'] or provider_activity(fresh)['state'] == 'approval' or native_input_dialog(fresh):
+            if fresh['identity'] != observation['identity'] or fresh['in_mode'] or provider_activity(fresh)['state'] in ('approval','awaiting_trust') or native_input_dialog(fresh):
                 fail(409, 'Agent or terminal changed; message was not pasted')
             fresh_state=verify_active_message(request,fresh) if active else None
             fresh_guard=message_input_guard(fresh,fresh_state) if active else fresh['screen']
@@ -1848,6 +1934,9 @@ def execute(request):
     if observation['kind']=='pi' and (pi_dialog(observation) or result['activity']['state']=='approval'):
         result['send_available']=False
         result['send_reason']='Pi is waiting for input in a dialog. Answer it in the terminal before sending a message.'
+    result['folder_trust']=folder_trust(observation)
+    if result['folder_trust']:
+        result['send_available']=False;result['send_reason']='Folder trust requires an explicit human choice.'
     result['background_tasks']=observed_background_tasks(observation,chosen)
     if chosen:
         info, version = transcript_version(chosen)

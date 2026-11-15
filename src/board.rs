@@ -132,6 +132,7 @@ impl Board {
             db.execute_batch("BEGIN IMMEDIATE; ALTER TABLE agent_cards ADD COLUMN color TEXT NOT NULL DEFAULT ''; ALTER TABLE agent_cards ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0,1)); PRAGMA user_version=2; COMMIT;")?;
         }
         crate::questions::init(&db)?;
+        crate::folder_trust::init(&db)?;
         crate::whiteboard::init(&db)?;
         crate::whiteboard_exports::init(&db)?;
         Ok(Self {
@@ -337,10 +338,28 @@ fn safe_result(v: &Value) -> Value {
         "conversation",
         "replacement",
         "destination",
+        "launch_state",
     ] {
         if let Some(v) = v.get(key) {
             result[key] = v.clone();
         }
+    }
+    if v["folder_trust"].is_object() {
+        let mut trust = json!({});
+        for key in [
+            "id",
+            "launch_id",
+            "folder",
+            "trust_root",
+            "provider",
+            "profile",
+            "title",
+        ] {
+            if let Some(value) = v["folder_trust"].get(key) {
+                trust[key] = value.clone();
+            }
+        }
+        result["folder_trust"] = trust;
     }
     result
 }
@@ -812,7 +831,7 @@ async fn activity(State(s): State<Arc<AppState>>) -> Result<Json<Value>, ApiErro
                 && item["attention"]["instance"] == result["identity"]
                 && result["replacement"] != true
         }) {
-            items.insert(id,json!({"state":item["activity"]["state"],"reason":item["activity"]["reason"],"needs_attention":item["attention"]["needs_attention"]}));
+            items.insert(id,json!({"state":item["activity"]["state"],"reason":item["activity"]["reason"],"needs_attention":item["attention"]["needs_attention"],"folder_trust":if item["folder_trust"]["launch_id"]==run.id {item["folder_trust"].clone()}else{Value::Null}}));
         }
     }
     Ok(Json(json!({"items":items})))
@@ -1015,5 +1034,16 @@ mod tests {
         let t = fixture(&b).await;
         assert!(b.claim(t.id.clone(), "stale".into(), run()).await.is_err());
         assert!(b.ticket(t.id).await.unwrap().runs.is_empty());
+    }
+    #[test]
+    fn trust_run_metadata_never_copies_native_screen_or_capabilities() {
+        let result = safe_result(
+            &json!({"launch_state":"awaiting_trust","folder_trust":{"id":"prompt","launch_id":"launch","folder":"/project","trust_root":"/project","context":"PRIVATE SCREEN","screen":"fingerprint","token":"CAPABILITY","directory_identity":"inode"}}),
+        );
+        assert_eq!(result["launch_state"], "awaiting_trust");
+        assert_eq!(result["folder_trust"]["folder"], "/project");
+        for field in ["context", "screen", "token", "directory_identity"] {
+            assert!(result["folder_trust"].get(field).is_none());
+        }
     }
 }

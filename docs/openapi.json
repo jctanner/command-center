@@ -2710,6 +2710,209 @@
           }
         }
       }
+    },
+    "/hosts/{host}/agents/folder-trust": {
+      "post": {
+        "operationId": "answerFolderTrust",
+        "summary": "Record an explicit human folder-trust decision",
+        "description": "Separate from chat, tool approvals and native questions. Persist/claim receipt before IO, serialize with endpoint edits, consume a one-use grant, revalidate exact launch/process/folder/disclosure before confirmation. Decline sends no keys. No pretrust, guessed keys, coordinator auto-answer or uncertain replay. Duplicate same-intent UUID returns original receipt.",
+        "x-human-intent-required": true,
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Exact configured scheme://authority; existing trusted access boundary, not user authentication."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "token",
+                  "choice",
+                  "launch_id",
+                  "trust_id"
+                ],
+                "properties": {
+                  "id": {
+                    "$ref": "#/components/schemas/UUID"
+                  },
+                  "token": {
+                    "type": "string"
+                  },
+                  "choice": {
+                    "type": "string",
+                    "enum": [
+                      "trust",
+                      "decline"
+                    ]
+                  },
+                  "launch_id": {
+                    "$ref": "#/components/schemas/UUID"
+                  },
+                  "trust_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing or newly persisted decision receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "receipt": {
+                      "$ref": "#/components/schemas/FolderTrustReceipt"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/agents/folder-trust/{id}": {
+      "get": {
+        "operationId": "getFolderTrustReceipt",
+        "summary": "Observe an original decision without input or retry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UUID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Original receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "receipt": {
+                      "$ref": "#/components/schemas/FolderTrustReceipt"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/hosts/{host}/agents/launch-status": {
+      "get": {
+        "operationId": "observeAgentLaunch",
+        "summary": "Observe an existing launch without retrying it",
+        "description": "Use the durable launch UUID and original endpoint or current connection_revision. launch_state awaiting_trust means the live CLI needs explicit human review in Agents; running only proves process presence. No new agent is started.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "launch_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endpoint",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Original launch observation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "found": {
+                      "type": "boolean"
+                    },
+                    "launch_state": {
+                      "type": "string",
+                      "enum": [
+                        "starting",
+                        "running",
+                        "awaiting_trust",
+                        "exited"
+                      ]
+                    },
+                    "folder_trust": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/FolderTrust"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3472,7 +3675,8 @@
               "ready",
               "approval",
               "unknown",
-              "disconnected"
+              "disconnected",
+              "awaiting_trust"
             ]
           },
           "source": {
@@ -3597,6 +3801,16 @@
             "anyOf": [
               {
                 "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "folder_trust": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FolderTrust"
               },
               {
                 "type": "null"
@@ -4182,6 +4396,16 @@
               }
             ],
             "description": "Native clarification with optional guarded answer capability. Only supported single-question/single-choice layouts with unique process-linked conversation get a 120-second token. No tool permission is implied. Unsupported layouts remain read-only."
+          },
+          "folder_trust": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FolderTrust"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "description": "Native user/assistant history; no reasoning/tool/system/sidechain messages. Preserve association: project history does not prove live process identity. Returned instance must match fresh queue attention.instance. Keep branch/version while paging; on history_reset discard previous page sequence. Do not expose terminal captures or action tokens to passive inventories.",
@@ -5777,6 +6001,136 @@
           }
         },
         "description": "Intrinsic pixels; product <=8,000,000; dimensions must exactly match the board-owned blob. image elements require this descriptor and empty text; other kinds must omit it."
+      },
+      "FolderTrust": {
+        "type": "object",
+        "description": "Recognized live launch-bound native folder disclosure. Does not require conversation history. Never authorizes automatic coordinator input. Exact full folder/repository scope is shown; unsupported layouts remain terminal-only.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "launch_id": {
+            "$ref": "#/components/schemas/UUID"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "trust_root": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "token": {
+            "type": "string",
+            "description": "120-second one-use capability only on current detail; bound to endpoint, launch, process, directory and disclosure screen."
+          },
+          "submitted": {
+            "type": "boolean"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/FolderTrustReceipt"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "profile": {
+            "type": "string",
+            "description": "Exact recognized native screen profile; unsupported layouts have no capability."
+          }
+        },
+        "required": [
+          "id",
+          "launch_id",
+          "folder",
+          "trust_root",
+          "provider",
+          "title",
+          "context"
+        ]
+      },
+      "FolderTrustReceipt": {
+        "type": "object",
+        "description": "Durable human-decision audit. Actor labels declare explicit human intent under the existing trusted network boundary, not an authenticated named user. Submitted is native input evidence, not confirmed provider acceptance. Declined sends no keys and leaves the native prompt blocked.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "window": {
+            "type": "string"
+          },
+          "pane": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "launch_id": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "trust_root": {
+            "type": "string"
+          },
+          "choice": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "submitting",
+              "submitted",
+              "declined",
+              "rejected",
+              "uncertain"
+            ]
+          },
+          "created_at": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "integer"
+          }
+        }
       }
     },
     "responses": {

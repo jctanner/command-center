@@ -892,6 +892,9 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
             AgentState::Working => {
                 "Queued in CC; waiting for a verified native input boundary. The agent need not finish its turn."
             }
+            AgentState::AwaitingTrust => {
+                "Queued in CC; folder trust requires an explicit human decision in Agents."
+            }
             AgentState::Approval => {
                 "Queued in CC; waiting for the approval or dialog to be resolved."
             }

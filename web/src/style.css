@@ -1057,3 +1057,5 @@ button:disabled { opacity: .5; cursor: default; }
 .question-choices small { font-weight:normal; }
 .agent-approval label { display:flex; flex-direction:column; gap:4px; margin:8px 0; }
 .agent-approval input { min-width:0; width:100%; box-sizing:border-box; }
+
+.agent-state[data-state="awaiting_trust"] { color:var(--cc-yellow); border-color:var(--cc-yellow); }

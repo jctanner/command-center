@@ -1,0 +1,7 @@
+# Bug 0034: Native folder trust is invisible after agent launch (CC-72)
+
+Reported by the human/coordinator: fresh Claude launches CC-63 and CC-70 stalled with Unknown/no history until the human reached the terminal. At CC-dev inspection both had already progressed to working, so their former trust screen was not treated as current evidence and no input was sent. Codex also has a native directory-trust gate.
+
+Fix implemented (not deployed, real-harness validation pending): strict known live Claude/Codex disclosure profiles plus launch/process/directory/root binding; awaiting_trust activity/card/ticket state; separate durable human decision API/control. Decline leaves blocked with no native input. Chat cannot answer trust, no coordinator auto-answer, no trust-file edits, no pretrust. Ambiguous/unsupported layouts remain terminal-only. A claim is shared across all disclosure revisions for one launch/process, so changed error text cannot bypass a submitted/uncertain decision.
+
+Synthetic parser/real transport fixtures demonstrate detection without history, one confirmation, decline/no keys, stale process/prompt/launch rejection, cross-client claims, restart uncertainty and browser lost-response recovery. Screenshot review caught and fixed contradictory mobile desktop-only/Unknown labels. See task0070 for complete validation and remaining authorization gates. Real Claude/Codex tests must not be claimed as passed until separately approved and run.

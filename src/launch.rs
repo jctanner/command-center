@@ -249,6 +249,16 @@ pub(crate) async fn start(
     request["launch_id"] = json!(&id);
     request["conversation"] = json!(start.conversation);
     let mut value = result(machine.transport.agent_request(request).await?)?;
+    value["folder_trust"] = crate::folder_trust::prompt_view(&value["folder_trust"]);
+    value["launch_state"] = json!(if value["folder_trust"].is_object() {
+        "awaiting_trust"
+    } else if value["exited"] == true {
+        "exited"
+    } else if value["running"] == true {
+        "running"
+    } else {
+        "starting"
+    });
     value["host"] = json!(host);
     value["connection_revision"] = json!(revision);
     if let Some(binding) = board {
@@ -301,6 +311,16 @@ pub(crate) async fn status(
             "Machine changed during launch check".into(),
         ));
     }
+    value["folder_trust"] = crate::folder_trust::prompt_view(&value["folder_trust"]);
+    value["launch_state"] = json!(if value["folder_trust"].is_object() {
+        "awaiting_trust"
+    } else if value["exited"] == true {
+        "exited"
+    } else if value["running"] == true {
+        "running"
+    } else {
+        "starting"
+    });
     value["host"] = json!(host);
     value["connection_revision"] = json!(machine.connection_revision);
     Ok(Json(value))

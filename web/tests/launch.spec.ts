@@ -18,7 +18,7 @@ test.beforeAll(async()=>{
  const script=join(dir,'fake-agent.py');writeFileSync(script,String.raw`import os, sys, json, time, subprocess
 if '--help' in sys.argv:
  print('Fixture CLI '+('--approve-for-me' if os.path.exists('FIXTURE_POLICY_SUPPORT') else ''));sys.exit(0)
-record=dict(args=sys.argv[1:],cwd=os.getcwd(),venv=os.environ.get('VIRTUAL_ENV'),path=os.environ.get('PATH'),python_prefix=subprocess.check_output(['python','-c','import sys;print(sys.prefix)'],text=True).strip() if os.environ.get('VIRTUAL_ENV') else None)
+record=dict(launch_id=os.environ.get('CC_LAUNCH_ID'),args=sys.argv[1:],cwd=os.getcwd(),venv=os.environ.get('VIRTUAL_ENV'),path=os.environ.get('PATH'),python_prefix=subprocess.check_output(['python','-c','import sys;print(sys.prefix)'],text=True).strip() if os.environ.get('VIRTUAL_ENV') else None)
 filename=os.path.join('FIXTURE_CALLS_DIRECTORY',str(os.getpid())+'.json')
 with open(filename+'.tmp','w') as f: json.dump(record,f)
 os.replace(filename+'.tmp',filename)
@@ -349,7 +349,7 @@ test('Codex approval policy is explicit, grant-bound, persisted and rejected whe
   const p=await(await options('codex','approve-for-me')).json();expect(p.approval_policy).toBe('approve-for-me');
   // Start cannot override the reviewed policy (or any other grant field).
   expect((await api('/api/v1/hosts/local/agents/launch',{token:p.token,conversation:null,approval_policy:'default'})).status).toBe(422);
-  const n=calls().length;expect((await launch(p)).status).toBe(200);await expect.poll(()=>calls().length).toBe(n+1);expect(calls().at(-1).args).toEqual(['--approve-for-me']);
+  const n=calls().length;expect((await launch(p)).status).toBe(200);await expect.poll(()=>calls().length).toBe(n+1);expect(calls().find(c=>c.launch_id===p.launch_id)?.args).toEqual(['--approve-for-me']);
   expect((await status({...p,revision})).approval_policy).toBe('approve-for-me');
   expect((await launch(p)).status).toBe(410);
   const ticket=await boardTicket('Approval policy ticket');
@@ -395,4 +395,8 @@ test('launcher remembers project venv and ordinary rename preserves it',async({p
  const ticket=await boardTicket('Venv ticket','pi');const ticketPrepared=await boardPrepare(ticket,'pi');expect(ticketPrepared.python_venv).toBe(join(project,'.venv'));expect((await api(`/api/v1/board/tickets/${ticket.id}/launch`,{token:ticketPrepared.token})).status).toBe(200);const recorded=await(await api(`/api/v1/board/tickets/${ticket.id}`)).json();expect(recorded.runs[0].python_venv).toBe(join(project,'.venv'));
  await page.getByRole('button',{name:'Start agent',exact:true}).click();await dialog.getByLabel('Agent project').selectOption(project);await expect(dialog.getByLabel('Python venv',{exact:true})).toHaveValue('.venv');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
  const hosts=await(await api('/api/v1/hosts')).json();const query=new URLSearchParams({connection_revision:hosts.find((h:any)=>h.id==='local').connection_revision,path:project,provider:'pi',python_venv:''});expect((await(await api('/api/v1/hosts/local/agents/launch-options?'+query)).json()).python_venv).toBeNull();
+});
+
+test('shared helper stdin preserves literal filesystem payloads locally and over SSH',async()=>{
+ const hosts=await(await api('/api/v1/hosts')).json();for(const host of hosts){const filename=join(project,`stdin-${host.id} ' literal.md`);writeFileSync(filename,'Original\n');const query=new URLSearchParams({path:filename,connection_revision:host.connection_revision});const read=await api(`/api/v1/hosts/${host.id}/file?${query}`);expect(read.status).toBe(200);const file=await read.json();const text="Literal ' \" $(not-a-command) `also literal` café\n"+'content\n'.repeat(40000);const save=await fetch(base+`/api/v1/hosts/${host.id}/file`,{method:'PUT',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({path:filename,connection_revision:host.connection_revision,version:file.version,text})});expect(save.status,await save.clone().text()).toBe(200);expect(readFileSync(filename,'utf8')).toBe(text);const reread=await(await api(`/api/v1/hosts/${host.id}/file?${query}`)).json();expect(reread.text).toBe(text);}
 });

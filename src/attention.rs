@@ -206,7 +206,11 @@ impl Attention {
             }
             _ => {}
         }
-        if activity.state == AgentState::Approval && !agent.approval_open {
+        if matches!(
+            activity.state,
+            AgentState::Approval | AgentState::AwaitingTrust
+        ) && !agent.approval_open
+        {
             agent.revision += 1;
             agent.approval = agent.revision;
             agent.approval_open = true;

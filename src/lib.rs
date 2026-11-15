@@ -8,6 +8,7 @@ pub mod config;
 mod email;
 mod features;
 mod filesystem;
+mod folder_trust;
 mod jira;
 mod launch;
 mod machines;
@@ -58,6 +59,7 @@ pub struct AppState {
     file_slots: Arc<Semaphore>,
     queue: queue::Queue,
     questions: questions::Questions,
+    folder_trust: folder_trust::Trust,
     features: features::Features,
     slack: slack::Slack,
     email: email::Email,
@@ -101,6 +103,7 @@ impl AppState {
             board,
             queue: queue::Queue::default(),
             questions: questions::Questions::default(),
+            folder_trust: folder_trust::Trust::default(),
             agents,
             outbox: outbox::Outbox::default(),
             launches: launch::Launches::default(),
@@ -140,6 +143,11 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
             post(questions::answer),
         )
         .route("/api/v1/agents/questions/{id}", get(questions::get))
+        .route(
+            "/api/v1/hosts/{host}/agents/folder-trust",
+            post(folder_trust::answer),
+        )
+        .route("/api/v1/agents/folder-trust/{id}", get(folder_trust::get))
         .route(
             "/api/v1/hosts/{host}/agents/message/attachments/prepare",
             post(attachments::prepare),
