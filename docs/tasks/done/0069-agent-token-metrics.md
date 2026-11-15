@@ -2,7 +2,7 @@
 
 Owner: CC dev
 Claimed: 2026-11-14
-State: done (2026-11-15; implementation verified locally, not deployed)
+State: done (2026-11-15; pushed and deployed with human approval)
 
 Read-only provider-reported context usage and cumulative conversation tokens on cards/detail. Codex token_count, Claude usage and pi native usage; unknown when absent, explicit provenance/as-of/completeness. Bounded incremental native-log metadata reads through existing transport and backend numeric-only cache; no transcript copies, repeated whole-file scans, provider configuration/hook changes or token estimates. Keep process/conversation scope and disconnection honesty. API/OpenAPI, Rust/Python/Playwright checks; local commit authorized for this task, no push or disruptive deployment authorized. Report before proceeding to CC-55.
 
@@ -34,3 +34,7 @@ Cards show compact context/session counters and a subtle meter when capacity is 
 ## Handoff
 
 Local commit authorized; no push/deploy. Provider format validation uses native-shaped fixtures, not newly launched real provider agents. Very large sessions warm over several polls or remain unknown at accounting limits; missing native context capacity remains unknown. Report this checkpoint before beginning CC-55. No live Board mutations or coordinator messages performed.
+
+## Approved deployment
+
+Human requested Push and deploy. Pushed implementation84a0875, deployed staged release/assets with existing runtime/environment/listeners, preflight checks for submitting outbox/questions/trust and rendering exports, and private binary/database/assets backup. Four configured access paths and Whiteboard SSE healthy; configuration and original tmux pane/PID snapshots unchanged. Running executable hash and token-metrics OpenAPI fields verified. Read-only Chromium showed metrics on 12 live cards, zero page errors, API writes or terminal sockets. Live native metrics observed for Codex/Claude/pi; larger Claude logs correctly reported incremental warming instead of partial totals. No provider agents launched/restarted or trust prompts answered. Existing unavailable hosts remain unavailable; no SSH trust changes.

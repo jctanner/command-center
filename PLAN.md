@@ -31,7 +31,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
-- [Task 0069: Agent token metrics (CC-2/CC-3)](docs/tasks/done/0069-agent-token-metrics.md) — implemented and verified locally; not pushed/deployed.
+- [Task 0069: Agent token metrics (CC-2/CC-3)](docs/tasks/done/0069-agent-token-metrics.md) — pushed and deployed with approval; live metrics/API/UI verified.
 
 - [Task 0068: Project Python venv](docs/tasks/done/0068-project-python-venv.md) — deployed; personal-assistant default validated and saved.
 
