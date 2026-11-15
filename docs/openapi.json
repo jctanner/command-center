@@ -2675,6 +2675,16 @@
               "maxLength": 4096,
               "description": "Optional literal Python venv directory: project-relative or absolute. Omit/null uses the saved machine/project default; empty string disables it for this launch. Validated pyvenv.cfg and executable bin/python identities are bound into preparation and rechecked before tmux mutation. No activation script is executed."
             }
+          },
+          {
+            "in": "query",
+            "name": "pre_trust",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "description": "Explicit human consent for one guarded native Claude/Codex folder-trust decision during this exact launch. Default off; bound into preparation and durable run. Rejects pi, wider repository scope, changed process/endpoint/directory, prior decisions and unsupported prompts. No CC trust-file edits, bypass flags or retries."
+            }
           }
         ],
         "responses": {
@@ -2699,6 +2709,11 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "pre_trust": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Explicit human consent for one guarded native Claude/Codex folder-trust decision during this exact launch. Default off; bound into preparation and durable run. Rejects pi, wider repository scope, changed process/endpoint/directory, prior decisions and unsupported prompts. No CC trust-file edits, bypass flags or retries."
                     }
                   }
                 }
@@ -3125,6 +3140,15 @@
               "approve-for-me"
             ],
             "description": "Optional Codex-only automatic review policy. Omit/null/default preserves harness defaults; approve-for-me requires the installed Codex to advertise --approve-for-me. Bound at preparation and rechecked before tmux creation; cannot be overridden at Start."
+          },
+          "pre_trust": {
+            "type": "boolean",
+            "default": false,
+            "description": "Explicit human consent for one guarded native Claude/Codex folder-trust decision during this exact launch. Default off; bound into preparation and durable run. Rejects pi, wider repository scope, changed process/endpoint/directory, prior decisions and unsupported prompts. No CC trust-file edits, bypass flags or retries."
+          },
+          "pre_trust_result": {
+            "type": "object",
+            "description": "Guarded preparation-consent outcome; may include its durable public trust receipt. Submission is not verified provider acceptance."
           }
         },
         "description": "Bounded durable launch observation; missing fields mean unavailable, never successful delivery."
@@ -3239,6 +3263,15 @@
               "null"
             ],
             "description": "Canonical venv prepared for this recorded launch."
+          },
+          "pre_trust": {
+            "type": "boolean",
+            "default": false,
+            "description": "Explicit human consent for one guarded native Claude/Codex folder-trust decision during this exact launch. Default off; bound into preparation and durable run. Rejects pi, wider repository scope, changed process/endpoint/directory, prior decisions and unsupported prompts. No CC trust-file edits, bypass flags or retries."
+          },
+          "pre_trust_result": {
+            "type": "object",
+            "description": "Guarded preparation-consent outcome; may include its durable public trust receipt. Submission is not verified provider acceptance."
           }
         },
         "required": [
@@ -3616,6 +3649,11 @@
             ],
             "maxLength": 4096,
             "description": "Optional literal Python venv directory: project-relative or absolute. Omit/null uses the saved machine/project default; empty string disables it for this launch. Validated pyvenv.cfg and executable bin/python identities are bound into preparation and rechecked before tmux mutation. No activation script is executed."
+          },
+          "pre_trust": {
+            "type": "boolean",
+            "default": false,
+            "description": "Explicit human consent for one guarded native Claude/Codex folder-trust decision during this exact launch. Default off; bound into preparation and durable run. Rejects pi, wider repository scope, changed process/endpoint/directory, prior decisions and unsupported prompts. No CC trust-file edits, bypass flags or retries."
           }
         },
         "description": "Explicitly reviewed launch input. Dedicated detached session by default, or a new detached window in target_session. Preparation grants expire after 120 seconds. Never invent flags, shell commands or approval bypasses.",
@@ -6151,6 +6189,10 @@
           },
           "updated_at": {
             "type": "integer"
+          },
+          "preauthorized": {
+            "type": "boolean",
+            "description": "True only for explicit human launch-preparation consent."
           }
         }
       },

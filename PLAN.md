@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task 0070: Native folder trust (CC-72)](docs/tasks/current/0070-native-folder-trust.md) — deployed as 483b14f; real-harness checks still await permission.
+- [Task 0070: Native folder trust (CC-72)](docs/tasks/current/0070-native-folder-trust.md) — completion approved; real tests and scoped preparation consent verified, final release checks.
 
 
 
@@ -236,6 +236,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-15: Native trust completion](docs/notes/2026-11-15-native-trust-completion.md)
 
 - [2026-11-15: Agent token metrics local checkpoint](docs/notes/2026-11-15-agent-token-metrics.md)
 

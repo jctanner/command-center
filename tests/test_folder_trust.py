@@ -12,6 +12,19 @@ class Trust(unittest.TestCase):
   if kind=='claude': text=f'Accessing workspace:\n\n {self.root}\n\nQuick safety check: Is this a project you created or one you trust?\n 1. Yes, I trust this folder\n 2. No, exit\n\n Enter to confirm · Esc to cancel'
   else:text=f'You are in {self.root}\n\nDo you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt injection.\n 1. Yes, continue\n 2. No, quit\n\n Press enter to continue'
   text=text.replace(f' {selected}.',f'❯ {selected}.');obs=dict(self.obs,kind=kind,visible=text);self.marker['provider']=kind;self.tmux.return_value=json.dumps(self.marker);return obs
+ def test_current_claude_refusal_first_picker_has_exact_guarded_down_navigation(self):
+  obs=self.fixture();obs['visible']=obs['visible'].replace('❯ 1. Yes, I trust this folder\n 2. No, exit','❯ No, exit\n  Yes, I trust this folder')
+  prompt=a.folder_trust(obs);self.assertEqual(prompt['profile'],'claude-folder-v2');self.assertEqual(prompt['selected'],1);self.assertEqual(prompt['trust_choice'],2)
+  next_obs=dict(obs,visible=obs['visible'].replace('❯ No, exit','  No, exit').replace('  Yes, I trust this folder','❯ Yes, I trust this folder'))
+  self.assertEqual(a.folder_trust(next_obs)['id'],prompt['id'])
+  request=dict(identity=obs['identity'],trust_id=prompt['id'],launch_id=self.launch,screen=prompt['screen'],choice='trust')
+  with patch.object(a,'observe',side_effect=[obs,next_obs]):
+   self.assertTrue(a.answer_folder_trust(request,obs)['submitted'])
+  keys=[c.args[-1] for c in self.tmux.call_args_list if 'send-keys' in c.args];self.assertEqual(keys,['Down','Enter'])
+ def test_current_codex_back_to_command_center_picker_is_exact(self):
+  obs=self.fixture('codex');obs['visible']=f"Folder access\n{self.root}\n\nTrust this folder? Codex can read, edit, and run files here, subject to your permission settings. Your trust decision will be saved.\n\n› 1. Trust and continue\n  2. Back to Agent Command Center\n\nenter continue · esc back"
+  prompt=a.folder_trust(obs);self.assertEqual(prompt['profile'],'codex-folder-v3');self.assertEqual(prompt['trust_choice'],1);self.assertEqual(prompt['labels'],['Trust and continue','Back to Agent Command Center'])
+  self.assertIsNone(a.folder_trust(dict(obs,visible=obs['visible'].replace('Back to Agent Command Center','Open something else'))))
  def test_recognizes_both_native_profiles_and_binds_full_disclosure(self):
   for kind in ['claude','codex']:
    obs=self.fixture(kind);p=a.folder_trust(obs);self.assertEqual(p['folder'],self.root);self.assertEqual(p['launch_id'],self.launch);self.assertEqual(p['selected'],1)

@@ -14,7 +14,7 @@ test.beforeAll(async()=>{
 #include <unistd.h>
 #include <termios.h>
 int main(int argc,char**argv){
- if(argc>1&&!strcmp(argv[1],"--help")){puts("--approve-for-me --no-daemon");return 0;}
+ if(argc>1&&!strcmp(argv[1],"--help")){puts("--approve-for-me --no-daemon --config");return 0;}
  char cwd[4096];getcwd(cwd,sizeof(cwd));struct termios t;tcgetattr(0,&t);t.c_lflag&=~(ICANON|ECHO);tcsetattr(0,TCSANOW,&t);
  if(strstr(argv[0],"claude"))printf("Accessing workspace:\n\n %s\n\nQuick safety check: Is this a project you created or one you trust?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n\nEnter to confirm · Esc to cancel\n",cwd);
  else printf("You are in %s\n\nDo you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt injection.\n❯ 1. Yes, continue\n  2. No, quit\n\nPress enter to continue\n",cwd);
@@ -61,4 +61,14 @@ test('ticket launch observations and live run detail expose the trust wait',asyn
 
 test('detail transport failure disables a cached trust action',async({page})=>{
  const f=await launch();await page.goto(base+'/#/queue');await page.locator('.queue-card').filter({hasText:f.path.split('/').at(-1)!}).click();const panel=page.getByRole('region',{name:'Folder trust',exact:true});const trust=panel.getByRole('button',{name:/Trust this folder/});await expect(trust).toBeEnabled();await page.route('**/agents/conversation?*',r=>r.abort('failed'));await expect(trust).toBeDisabled({timeout:15000});expect(existsSync(join(f.path,'keys.log'))).toBe(false);
+});
+test('pre-trust is default-off, grant-bound, exact-path and persisted on ticket runs',async()=>{
+ const path=join(dir,'pretrust " literal');mkdirSync(path);const host=(await json('hosts'))[0];const baseQuery={connection_revision:host.connection_revision,path,provider:'codex'};const normal=await json('hosts/fixture/agents/launch-options?'+new URLSearchParams(baseQuery));expect(normal.pre_trust).toBe(false);
+ for(const provider of ['pi'])expect([400,404]).toContain((await api('hosts/fixture/agents/launch-options?'+new URLSearchParams({...baseQuery,provider,pre_trust:'true'}))).status);
+ const create=await api('board/tickets',{id:crypto.randomUUID(),revision:null,title:'Pretrust ticket',description:'Synthetic pretrust',status:'backlog',priority:'normal',context:{host:'fixture',path},host_revision:host.connection_revision,checklist:[]});const ticket=await create.json();const prepare=await api(`board/tickets/${ticket.id}/prepare`,{revision:ticket.revision,host:'fixture',connection_revision:host.connection_revision,path,provider:'codex',pre_trust:true,prompt:'Synthetic task'});expect(prepare.status,await prepare.clone().text()).toBe(200);const p=await prepare.json();expect(p.pre_trust).toBe(true);
+ expect((await api(`board/tickets/${ticket.id}/launch`,{token:p.token,pre_trust:false})).status).toBe(422);const launched=await api(`board/tickets/${ticket.id}/launch`,{token:p.token});expect(launched.status,await launched.clone().text()).toBe(200);const started=await launched.json();const latest=await json(`board/tickets/${ticket.id}`);expect(latest.runs[0].pre_trust).toBe(true);expect(latest.runs[0].project).toBe(path);const meta=JSON.parse(tmux('show-options','-w','-v','-t',started.window,'@cc_launch'));expect(meta.pre_trust).toBe(true);
+ expect(started.pre_trust_result.receipt.status).toBe('submitted');expect(started.pre_trust_result.receipt.preauthorized).toBe(true);expect(readFileSync(join(path,'keys.log'),'utf8')).toBe('10\n');expect((await api(`board/tickets/${ticket.id}/launch`,{token:p.token})).status).not.toBe(200);
+});
+test('launcher exposes explicit pre-trust checkbox and clears it on harness change',async({page})=>{
+ await page.goto(base+'/#/queue');await page.getByRole('button',{name:'Start agent',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Start an agent',exact:true});const option=dialog.getByLabel('Trust exact directory for this launch',{exact:true});await expect(option).not.toBeChecked();await option.check();await dialog.getByRole('button',{name:'Check project',exact:true}).click();await expect(dialog).toContainText('PRE-TRUST:');await dialog.getByLabel('Agent provider').selectOption('pi');await expect(option).not.toBeChecked();await expect(option).toBeDisabled();
 });

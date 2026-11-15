@@ -172,14 +172,25 @@ def folder_trust(observation):
         heading=any(line.strip()=='Folder access' or line.strip().startswith('You are in ') for line in lines)
         question='Trust this folder?' in plain or 'Do you trust the contents of this directory?' in plain
         yes='Trust and continue' if 'Trust this folder?' in plain else 'Yes, continue'
-        negative=('Quit',) if yes=='Trust and continue' else ('No, quit',)
-        footer=re.compile(r'(?i)^(?:press enter to continue|enter continue [·•] esc quit|enter to confirm.*esc to cancel)[. ]*$')
+        negative=('Quit','Back to Agent Command Center') if yes=='Trust and continue' else ('No, quit',)
+        footer=re.compile(r'(?i)^(?:press enter to continue|enter continue [·•] esc (?:quit|back)|enter to confirm.*esc to cancel)[. ]*$')
     if not heading or not question: return None
     rows=[]
     for index,line in enumerate(lines):
         match=re.fullmatch(r'\s*([›❯>])?\s*([12])[.)]\s+(.+?)\s*',line)
         if match: rows.append((index,match.group(1),match.group(2),match.group(3)))
-    if len(rows)!=2 or [r[2] for r in rows]!=['1','2'] or rows[0][3]!=yes or rows[1][3] not in negative or sum(bool(r[1]) for r in rows)!=1:
+    trust_choice=1
+    profile='claude-folder-v1' if kind=='claude' else 'codex-folder-v2' if yes=='Trust and continue' else 'codex-folder-v1'
+    if kind=='claude' and not rows:
+        # Claude 2.1.325: unnumbered picker with refusal first.
+        for index,line in enumerate(lines):
+            match=re.fullmatch(r'\s*([›❯>])?\s*(No, exit|Yes, I trust this folder)\s*',line)
+            if match:rows.append((index,match.group(1),str(len(rows)+1),match.group(2)))
+        trust_choice=2;profile='claude-folder-v2'
+    if kind=='codex' and len(rows)==2 and rows[1][3]=='Back to Agent Command Center':profile='codex-folder-v3'
+    ordered=[r[3] for r in rows]
+    valid_order=ordered==['No, exit',yes] if trust_choice==2 else len(rows)==2 and rows[0][3]==yes and rows[1][3] in negative
+    if len(rows)!=2 or [r[2] for r in rows]!=['1','2'] or not valid_order or sum(bool(r[1]) for r in rows)!=1:
         return None
     after=[line.strip() for line in lines[rows[-1][0]+1:] if line.strip()]
     if len(after)!=1 or not footer.fullmatch(after[0]): return None
@@ -206,9 +217,9 @@ def folder_trust(observation):
             if not os.path.isabs(value) or os.path.realpath(value)!=value or os.path.commonpath([cwd,value])!=value:return None
             root=value
     if any(c.get('linked') for c in conversations(observation)):return None
-    normalized='\n'.join(re.sub(r'^\s*[›❯>]\s*(?=[12][.)])','',line).strip() for line in lines)
+    normalized='\n'.join(re.sub(r'^\s*[›❯>]\s*','',line).strip() for line in lines)
     _,root_identity=project_directory(root)
-    basis=dict(trust_root_identity=root_identity,profile=('claude-folder-v1' if kind=='claude' else 'codex-folder-v2' if yes=='Trust and continue' else 'codex-folder-v1'),disclosure=hashlib.sha256(normalized.encode()).hexdigest(),launch_id=launch,folder=cwd,trust_root=root,directory_identity=directory,provider=kind,labels=[yes,rows[1][3]])
+    basis=dict(trust_root_identity=root_identity,profile=profile,trust_choice=trust_choice,disclosure=hashlib.sha256(normalized.encode()).hexdigest(),launch_id=launch,folder=cwd,trust_root=root,directory_identity=directory,provider=kind,labels=[yes,rows[0 if trust_choice==2 else 1][3]])
     identifier=hashlib.sha256(json.dumps(basis,sort_keys=True).encode()).hexdigest()
     return dict(id=identifier,**basis,selected=next(int(r[2]) for r in rows if r[1]),context=visible,
                 title='Needs folder trust: '+cwd+(' (repository scope: '+root+')' if root!=cwd else ''),screen=hashlib.sha256(visible.encode()).hexdigest())
@@ -225,16 +236,17 @@ def answer_folder_trust(request, observation):
     if not current or current['screen']!=prompt['screen']:return dict(submitted=False,not_sent=True)
     if request.get('choice')=='decline':return dict(submitted=False,not_sent=True,declined=True)
     if request.get('choice')!='trust':fail(400,'Choose trust or decline')
-    # Up only changes a recognized picker selection; revalidate before Enter.
+    # Only navigate within this exact recognized two-choice native picker.
     # Once any key is attempted, any failure is uncertain and never replayed.
-    if current['selected']==2:
-        tmux(request,'send-keys','-t',fresh['target'],'Up')
+    desired=current['trust_choice']
+    if current['selected']!=desired:
+        tmux(request,'send-keys','-t',fresh['target'],'Down' if desired==2 else 'Up')
         for _ in range(10):
             fresh=observe(request);current=valid(fresh)
-            if not current or current['selected']==1:break
+            if not current or current['selected']==desired:break
             time.sleep(.025)
-        if not current or current['selected']!=1:fail(502,'Trust selection changed; check terminal, no automatic retry')
-    if current['selected']!=1:fail(502,'Trust selection is uncertain; check terminal')
+        if not current or current['selected']!=desired:fail(502,'Trust selection changed; check terminal, no automatic retry')
+    if current['selected']!=desired:fail(502,'Trust selection is uncertain; check terminal')
     tmux(request,'send-keys','-t',fresh['target'],'Enter')
     return dict(submitted=True)
 
@@ -1546,6 +1558,12 @@ def codex_launch_flags(executable, approval_policy):
         fail(400, 'Installed Codex does not advertise --approve-for-me; update Codex or explicitly choose harness default')
     return (['--no-daemon'] if supported(b'--no-daemon') else []) + (['--approve-for-me'] if approval_policy else [])
 
+def launch_pre_trust(kind,value):
+    if value is None:value=False
+    if not isinstance(value,bool):fail(400,'pre_trust must be a boolean')
+    if value and kind not in ('codex','claude'):fail(400,'Per-launch folder trust is supported only for Claude and Codex')
+    return value
+
 def launch_destination(request):
     session=request.get('target_session')
     if session is None or session=='':return None,None
@@ -1579,13 +1597,14 @@ def launch_options(request):
     executable,executable_identity,_=launch_executable(kind)
     approval_policy=launch_approval_policy(kind,request.get('approval_policy'))
     if approval_policy: codex_launch_flags(executable,approval_policy)
+    pre_trust=launch_pre_trust(kind,request.get('pre_trust'))
     active=active_launch_sessions(request,kind)
     candidates=[]
     for candidate in launch_candidates(path,kind):
         session=candidate.get('session','')
         if not isinstance(session,str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session): continue
         candidates.append(dict(id=candidate['id'],session=session,timestamp=candidate['timestamp'],title=launch_title(candidate,kind),active=session in active))
-    return dict(python_venv=venv,venv_identity=venv_identity,project=path,directory_identity=identity,provider=kind,model=model,approval_policy=approval_policy,executable=executable,executable_identity=executable_identity,conversations=candidates,target_session=target_session,destination_identity=destination_identity,window_name=window_name,card_name=card_name)
+    return dict(pre_trust=pre_trust,python_venv=venv,venv_identity=venv_identity,project=path,directory_identity=identity,provider=kind,model=model,approval_policy=approval_policy,executable=executable,executable_identity=executable_identity,conversations=candidates,target_session=target_session,destination_identity=destination_identity,window_name=window_name,card_name=card_name)
 
 def launch_status(request):
     identifier=request.get('launch_id','')
@@ -1612,7 +1631,7 @@ def launch_status(request):
     fields,metadata=matches[0];row=fields[:5];session_id=row[0]
     kind=metadata['provider']
     association={}
-    if metadata.get('ticket') and row[3]=='0' and kind in row[4].lower():
+    if (metadata.get('ticket') or metadata.get('pre_trust')) and row[3]=='0' and kind in row[4].lower():
         try:
             observed=observe(dict(request,session=row[0],window=row[1],pane=row[2]))
             if observed.get('identity') and observed['env'].get('CC_LAUNCH_ID')==identifier:
@@ -1623,7 +1642,7 @@ def launch_status(request):
         except (Failure,OSError): pass
     if metadata.get('conversation'):association.setdefault('conversation',metadata['conversation'])
     return dict(found=True,launch_id=identifier,session=row[0],window=row[1],pane=row[2],
-                session_name=fields[5],destination=metadata.get('destination','session'),project=metadata['project'],folder_trust=folder_trust(observed) if 'observed' in locals() and observed.get('identity') else None,provider=kind,model=metadata.get('model'),python_venv=metadata.get('python_venv'),approval_policy=metadata.get('approval_policy'),
+                session_name=fields[5],destination=metadata.get('destination','session'),project=metadata['project'],folder_trust=folder_trust(observed) if 'observed' in locals() and observed.get('identity') else None,provider=kind,model=metadata.get('model'),python_venv=metadata.get('python_venv'),pre_trust=bool(metadata.get('pre_trust')),approval_policy=metadata.get('approval_policy'),
                 running=row[3]=='0' and kind in row[4].lower(),exited=row[3]=='1',
                 context=tmux(request,'capture-pane','-p','-t',row[2],'-S','0')[-12000:],**association)
 
@@ -1675,6 +1694,7 @@ def launch_agent(request):
     command=[executable]
     approval_policy=launch_approval_policy(kind,request.get('approval_policy'))
     if kind=='codex': command += codex_launch_flags(executable,approval_policy)
+    pre_trust=launch_pre_trust(kind,request.get('pre_trust'))
     selected=request.get('conversation')
     if selected:
         allowed=next((c for c in request.get('conversations',[]) if c['id']==selected and not c['active']),None)
@@ -1700,7 +1720,7 @@ def launch_agent(request):
         row=tmux(request,'new-session','-d','-P','-F','#{session_id}\t#{window_id}\t#{pane_id}','-s',name,'-n',kind,'-c',path,'-x','120','-y','36','/bin/sleep','86400').strip().split('\t')
     if len(row)!=3: fail(502,'Launch state uncertain; check the launch before trying again')
     try:
-        metadata=json.dumps(dict(launch_id=identifier,project=path,python_venv=venv,provider=kind,model=model,approval_policy=approval_policy,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,destination='window' if target_session else 'session'))
+        metadata=json.dumps(dict(launch_id=identifier,project=path,python_venv=venv,provider=kind,model=model,pre_trust=pre_trust,approval_policy=approval_policy,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,destination='window' if target_session else 'session'))
         tmux(request,'set-option','-w','-t',row[1],'@cc_launch',metadata)
         if not target_session:tmux(request,'set-option','-t',row[0],'@cc_launch',metadata)
         else:tmux(request,'rename-window','-t',row[1],kind+'-'+identifier[:8])
@@ -1716,6 +1736,16 @@ def launch_agent(request):
             if key in os.environ: environment += ['-e',key+'='+os.environ[key]]
         respawn_launch(request,row[2],path,environment,command)
     except (Failure,subprocess.SubprocessError): fail(502,'Launch setup or delivery uncertain; check the new session before trying again')
+    if pre_trust:
+        # Pin the original pane process while its CLI wrapper finishes exec/startup.
+        native_pid=int(tmux(request,'display-message','-p','-t',row[2],'#{pane_pid}').strip())
+        _,native_start,_=proc(native_pid)
+        for _ in range(20):
+            current_pid=int(tmux(request,'display-message','-p','-t',row[2],'#{pane_pid}').strip())
+            if current_pid!=native_pid or proc(native_pid)[1]!=native_start:fail(409,'Original launch process changed; pre-trust stopped')
+            status=launch_status(request)
+            if status.get('identity'):return status
+            time.sleep(.1)
     return launch_status(request)
 
 def restart_plan(request, observation):

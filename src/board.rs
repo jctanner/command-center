@@ -66,6 +66,8 @@ struct Check {
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct Run {
     #[serde(default)]
+    pub pre_trust: bool,
+    #[serde(default)]
     pub python_venv: Option<String>,
     pub id: String,
     pub host: String,
@@ -339,6 +341,8 @@ fn safe_result(v: &Value) -> Value {
         "replacement",
         "destination",
         "launch_state",
+        "pre_trust",
+        "pre_trust_result",
     ] {
         if let Some(v) = v.get(key) {
             result[key] = v.clone();
@@ -562,6 +566,8 @@ pub(crate) struct Binding {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Prepare {
+    #[serde(default)]
+    pre_trust: bool,
     python_venv: Option<String>,
     revision: String,
     host: String,
@@ -610,6 +616,7 @@ async fn prepare(
         State(s.clone()),
         Path(b.host),
         Query(launch::Prepare {
+            pre_trust: b.pre_trust,
             python_venv: b.python_venv,
             connection_revision: b.connection_revision,
             path: b.path,
@@ -868,6 +875,7 @@ mod tests {
     }
     fn run() -> Run {
         Run {
+            pre_trust: false,
             python_venv: None,
             id: revision(),
             host: "local".into(),

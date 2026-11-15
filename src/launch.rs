@@ -29,6 +29,8 @@ struct Grant {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Prepare {
+    #[serde(default)]
+    pub(crate) pre_trust: bool,
     pub(crate) python_venv: Option<String>,
     pub(crate) connection_revision: String,
     pub(crate) path: String,
@@ -74,7 +76,7 @@ pub(crate) async fn prepare(
         machine
             .transport
             .agent_request(
-                json!({"action":"launch_options", "path":query.path,"provider":query.provider,"model":query.model,"approval_policy":query.approval_policy,"target_session":query.target_session,"window_name":query.window_name,"card_name":query.card_name,"python_venv":query.python_venv,"project_venvs":machine.config.projects.iter().filter_map(|p| p.python_venv.as_ref().map(|v| (p.path.clone(), v.clone()))).collect::<HashMap<_,_>>()}),
+                json!({"action":"launch_options", "pre_trust":query.pre_trust, "path":query.path,"provider":query.provider,"model":query.model,"approval_policy":query.approval_policy,"target_session":query.target_session,"window_name":query.window_name,"card_name":query.card_name,"python_venv":query.python_venv,"project_venvs":machine.config.projects.iter().filter_map(|p| p.python_venv.as_ref().map(|v| (p.path.clone(), v.clone()))).collect::<HashMap<_,_>>()}),
             )
             .await?,
     )?;
@@ -214,6 +216,7 @@ pub(crate) async fn start(
                 binding.ticket.clone(),
                 binding.revision.clone(),
                 crate::board::Run {
+                    pre_trust: prepared["pre_trust"].as_bool().unwrap_or(false),
                     python_venv: prepared["python_venv"].as_str().map(str::to_owned),
                     id: id.clone(),
                     host: host.clone(),
@@ -238,6 +241,7 @@ pub(crate) async fn start(
             )
             .await?;
     }
+    let trust_plan = prepared.clone();
     let mut request = prepared;
     if let Some(binding) = &board {
         request["initial_prompt"] = json!(binding.prompt);
@@ -249,6 +253,26 @@ pub(crate) async fn start(
     request["launch_id"] = json!(&id);
     request["conversation"] = json!(start.conversation);
     let mut value = result(machine.transport.agent_request(request).await?)?;
+    drop(_guard);
+    if trust_plan["pre_trust"] == true {
+        let shared = state.clone();
+        let host_id = host.clone();
+        let rev = revision.clone();
+        let launched = value.clone();
+        let task = tokio::spawn(async move {
+            tokio::time::timeout(
+                Duration::from_secs(12),
+                crate::folder_trust::preauthorized(shared, host_id, trust_plan, launched, rev),
+            )
+            .await
+        });
+        value["pre_trust_result"] = match task.await {
+            Ok(Ok(Ok(v))) => v,
+            _ => {
+                json!({"status":"review_required","note":"Pre-trust did not complete; inspect the receipt or review in Agents. Never retried automatically."})
+            }
+        };
+    }
     value["folder_trust"] = crate::folder_trust::prompt_view(&value["folder_trust"]);
     value["launch_state"] = json!(if value["folder_trust"].is_object() {
         "awaiting_trust"

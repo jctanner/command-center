@@ -29,6 +29,8 @@ struct Grant {
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Receipt {
+    #[serde(default)]
+    preauthorized: bool,
     id: String,
     host: String,
     endpoint: String,
@@ -98,7 +100,7 @@ fn claimed(c: &Connection, key: &str) -> Result<Option<Receipt>, ApiError> {
     id.map(|id| read(c, &id)).transpose().map(Option::flatten)
 }
 fn public(r: &Receipt) -> Value {
-    json!({"id":r.id,"host":r.host,"session":r.target.session,"window":r.target.window,"pane":r.target.pane,"instance":r.instance,"conversation":"","launch_id":r.launch_id,"question":r.question,"folder":r.folder,"trust_root":r.trust_root,"choice":r.choice,"status":r.status,"note":r.note,"actor":"explicit human decision (trusted client)","created_at":r.created_at,"updated_at":r.updated_at})
+    json!({"id":r.id,"host":r.host,"session":r.target.session,"window":r.target.window,"pane":r.target.pane,"instance":r.instance,"conversation":"","launch_id":r.launch_id,"question":r.question,"folder":r.folder,"trust_root":r.trust_root,"choice":r.choice,"status":r.status,"note":r.note,"preauthorized":r.preauthorized,"actor":if r.preauthorized {"explicit human preparation consent (trusted client)"} else {"explicit human decision (trusted client)"},"created_at":r.created_at,"updated_at":r.updated_at})
 }
 pub(crate) fn prompt_view(value: &Value) -> Value {
     if !value.is_object() {
@@ -108,6 +110,7 @@ pub(crate) fn prompt_view(value: &Value) -> Value {
     for key in [
         "screen",
         "selected",
+        "trust_choice",
         "directory_identity",
         "trust_root_identity",
     ] {
@@ -208,6 +211,14 @@ pub(crate) async fn answer(
     Path(host): Path<String>,
     Json(b): Json<Answer>,
 ) -> Result<Json<Value>, ApiError> {
+    answer_with_consent(s, host, b, false).await
+}
+async fn answer_with_consent(
+    s: Arc<AppState>,
+    host: String,
+    b: Answer,
+    preauthorized: bool,
+) -> Result<Json<Value>, ApiError> {
     if !uuid::Uuid::parse_str(&b.id).is_ok_and(|id| id.to_string() == b.id)
         || !matches!(b.choice.as_str(), "trust" | "decline")
     {
@@ -253,6 +264,7 @@ pub(crate) async fn answer(
         return Ok(Json(json!({"receipt":public(&r)})));
     }
     let r = Receipt {
+        preauthorized,
         id: b.id,
         host,
         endpoint: crate::attention::scope(&machine.config, "", "", "").0,
@@ -345,6 +357,7 @@ mod tests {
     use super::*;
     fn fixture() -> Receipt {
         Receipt {
+            preauthorized: false,
             id: uuid::Uuid::new_v4().to_string(),
             host: "fixture".into(),
             endpoint: "endpoint".into(),
@@ -469,5 +482,122 @@ mod tests {
                     .is_none()
             );
         }
+    }
+}
+
+/// One attempt under the explicit, consumed human launch preparation; never recovery polling.
+pub(crate) async fn preauthorized(
+    s: Arc<AppState>,
+    host: String,
+    plan: Value,
+    launched: Value,
+    revision: String,
+) -> Result<Value, ApiError> {
+    if plan["pre_trust"] != true {
+        return Err(error("No explicit preparation consent"));
+    }
+    let expected = launched["identity"]
+        .as_str()
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| error("Initial process unverified; review trust in Agents"))?
+        .to_owned();
+    let target:agents::Target=serde_json::from_value(json!({"session":launched["session"],"window":launched["window"],"pane":launched["pane"],"connection_revision":revision})).map_err(db)?;
+    let machine = s.registry.get(&host).await?;
+    let scope = crate::attention::scope(
+        &machine.config,
+        &target.session,
+        &target.window,
+        &target.pane,
+    )
+    .1;
+    for _ in 0..24 {
+        if s.registry.get(&host).await?.connection_revision != target.connection_revision {
+            return Err(error("Machine changed; pre-trust stopped"));
+        }
+        let mut request = target.request();
+        request["action"] = json!("status");
+        let mut value = agents::result(machine.transport.agent_request(request).await?)?;
+        if value["instance"] != expected {
+            return Err(error("Process changed; pre-trust stopped"));
+        }
+        if value["folder_trust"].is_object() {
+            let p = &value["folder_trust"];
+            if !pre_trust_scope(&plan, &launched, p) {
+                return Err(error(
+                    "Trust scope changed or wider than prepared folder; review in Agents",
+                ));
+            }
+            enrich(&s, &host, &target, &scope, &mut value).await?;
+            let p = &value["folder_trust"];
+            if p["receipt"].is_object() {
+                return Err(error("A human already decided; pre-trust stopped"));
+            }
+            let b = Answer {
+                id: launched["launch_id"].as_str().unwrap_or_default().into(),
+                token: p["token"]
+                    .as_str()
+                    .ok_or_else(|| error("Trust already claimed"))?
+                    .into(),
+                choice: "trust".into(),
+                launch_id: launched["launch_id"].as_str().unwrap_or_default().into(),
+                trust_id: p["id"].as_str().unwrap_or_default().into(),
+            };
+            return Ok(answer_with_consent(s, host, b, true).await?.0);
+        }
+        if matches!(
+            value["activity"]["state"].as_str(),
+            Some("working" | "ready")
+        ) {
+            return Ok(json!({"status":"not_required"}));
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    Ok(
+        json!({"status":"not_observed","note":"No supported trust prompt observed during this launch; later prompts require human review"}),
+    )
+}
+
+fn pre_trust_scope(plan: &Value, launched: &Value, p: &Value) -> bool {
+    plan["pre_trust"] == true
+        && matches!(plan["provider"].as_str(), Some("claude" | "codex"))
+        && ["project", "directory_identity"]
+            .iter()
+            .all(|k| plan[k].as_str().is_some_and(|v| !v.is_empty()))
+        && launched["launch_id"]
+            .as_str()
+            .is_some_and(|v| !v.is_empty())
+        && p["provider"] == plan["provider"]
+        && p["launch_id"] == launched["launch_id"]
+        && p["folder"] == plan["project"]
+        && p["trust_root"] == plan["project"]
+        && p["directory_identity"] == plan["directory_identity"]
+}
+#[cfg(test)]
+mod preparation_tests {
+    use super::*;
+    #[test]
+    fn preparation_never_authorizes_wider_or_changed_scope() {
+        let plan = json!({"pre_trust":true,"provider":"claude","project":"/project/sub","directory_identity":"dev:inode"});
+        let launched = json!({"launch_id":"launch"});
+        let prompt = json!({"provider":"claude","launch_id":"launch","folder":"/project/sub","trust_root":"/project/sub","directory_identity":"dev:inode"});
+        assert!(pre_trust_scope(&plan, &launched, &prompt));
+        for key in [
+            "provider",
+            "launch_id",
+            "folder",
+            "trust_root",
+            "directory_identity",
+        ] {
+            let mut changed = prompt.clone();
+            changed[key] = json!("different");
+            assert!(!pre_trust_scope(&plan, &launched, &changed));
+        }
+        let mut wider = prompt.clone();
+        wider["trust_root"] = json!("/project");
+        assert!(!pre_trust_scope(&plan, &launched, &wider));
+        let mut off = plan.clone();
+        off["pre_trust"] = json!(false);
+        assert!(!pre_trust_scope(&off, &launched, &prompt));
+        assert!(!pre_trust_scope(&json!({}), &json!({}), &json!({})));
     }
 }
