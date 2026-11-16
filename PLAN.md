@@ -22,6 +22,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 
 
+
 - [Task 0054: Whiteboard attachment release and harness check](docs/tasks/pending/0054-whiteboard-attachment-release-and-harness-check.md) — deployment complete; real-harness delivery validation awaits separate authorization.
 
 - [Plan 0003: guarded Whiteboard attachments](docs/plans/0003-whiteboard-attachments.md) — approved, implemented and deployed; real-harness validation pending.
@@ -34,6 +35,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0076: Settings token usage](docs/tasks/done/0076-settings-token-usage.md) — staged; ten browser checks pass.
 
 - [Task 0075: context meter label](docs/tasks/done/0075-context-meter-label.md) — deployed with approval; desktop/mobile tests pass.
 
@@ -252,6 +255,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-16: Settings token usage](docs/notes/2026-11-16-settings-token-usage.md) — current-inventory usage snapshot, staged.
 
 - [2026-11-16: card context meter](docs/notes/2026-11-16-card-context-meter.md) — committed, pushed and deployed without restarting services.
 

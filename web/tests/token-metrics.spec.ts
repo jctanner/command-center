@@ -53,7 +53,7 @@ test('native token metrics cross local/SSH transport without changing activity',
 });
 for(const width of [1440,393])test(`token summaries and details fit ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:850});let sockets=0;page.on('websocket',()=>sockets++);
- await page.goto(base+'/#/queue');const card=page.locator('.queue-card').first();await expect(card).toContainText('Context 142k / 400k (36%)');await expect(card).toContainText('1.42M tokens');await expect(card.getByRole('meter')).toBeVisible();await expect(card.getByRole('meter')).toContainText('Context 142k / 400k (36%)');await expect(card.getByRole('meter')).toHaveAttribute('aria-valuenow','36');await card.click();
+ await page.goto(base+'/#/queue');const card=page.locator('.queue-card').first();await expect(card).toContainText('Context 142k / 400k (36%)');await expect(card).not.toContainText('1.42M tokens');await expect(card.getByRole('meter')).toBeVisible();await expect(card.getByRole('meter')).toContainText('Context 142k / 400k (36%)');await expect(card.getByRole('meter')).toHaveAttribute('aria-valuenow','36');await card.click();
  const metrics=page.locator('.agent-token-detail');await metrics.getByText('Token details',{exact:true}).click();await expect(metrics).toContainText('1,420,000');await expect(metrics).toContainText('includes cache read');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`../test-results/token-metrics-${width}.png`});expect(sockets).toBe(0);
 });
@@ -79,4 +79,31 @@ test('unknown, selected-history and stale counters are labeled honestly',async({
  // Background refresh must preserve the open breakdown and the terminal-specific summary.
  await page.getByRole('button',{name:'Refresh queue',exact:true,includeHidden:true}).evaluate((b:HTMLButtonElement)=>b.click());await expect(panel.locator('details')).toHaveAttribute('open','');await page.getByRole('button',{name:'Details',exact:true}).click();await expect(page.locator('.agent-screen > summary')).toHaveText('Live terminal context');
  metrics.association='process';item.token_metrics={...metrics,stale:true};item.status='disconnected';item.activity={state:'disconnected',source:'transport',reason:'Fixture offline',observed_at:Date.now()/1000};queue.hosts[0].error='Fixture unavailable';await page.getByRole('button',{name:'Refresh queue',exact:true,includeHidden:true}).evaluate((b:HTMLButtonElement)=>b.click());await expect(card).toContainText('Last observed');
+});
+
+for(const width of [1440,393])test(`Settings aggregates verified conversation usage without double counting at ${width}px`,async({page})=>{
+ const queue=await(await fetch(base+'/api/v1/queue')).json();const source=structuredClone(queue.hosts[0].items[0]);
+ source.token_metrics={...source.token_metrics,association:'process',stale:false,complete:false,limited:true};
+ const duplicate=structuredClone(source);duplicate.id='duplicate-pane';duplicate.token_metrics.observed_at=source.token_metrics.observed_at-1;duplicate.token_metrics.session.total=100;
+ const unverified=structuredClone(source);unverified.id='project-history';unverified.token_metrics.association='project';
+ const stale=structuredClone(source);stale.id='stale';stale.token_metrics.stale=true;
+ queue.hosts=[{...queue.hosts[0],id:'one',name:'Machine One',items:[source,duplicate,unverified,stale]},{...queue.hosts[0],id:'two',name:'Machine Two',items:[source]},{...queue.hosts[0],id:'offline',name:'Offline machine',error:'offline',items:[source]}];
+ let failed=false,reads=0,sockets=0;page.on('websocket',()=>sockets++);
+ await page.route('**/api/v1/queue',route=>{reads++;return failed?route.fulfill({status:503,json:{error:'offline'}}):route.fulfill({json:queue});});
+ await page.setViewportSize({width,height:850});await page.goto(base+'/#/settings');
+ await page.getByRole('button',{name:'Token usage',exact:true}).click();
+ const usage=page.getByRole('region',{name:'Token usage',exact:true});
+ await expect(usage.getByRole('status')).toContainText('2.84M reported tokens across 2 unique machine conversations');
+ const machines=usage.locator('.token-usage-machine');await expect(machines).toHaveCount(3);
+ await expect(machines.nth(0)).toContainText('1.42M reported tokens · 1 conversation');
+ await expect(machines.nth(0)).toContainText('2 agents unavailable, unverified or without reported totals');
+ await expect(machines.nth(0)).toContainText('Partial scan');
+ await expect(machines.nth(0).locator('tbody tr')).toHaveCount(1);
+ await expect(machines.nth(2)).toContainText('Machine unavailable');
+ await expect(machines.nth(2).locator('table')).toHaveCount(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:`../test-results/settings-token-usage-${width}.png`});
+ const previousReads=reads;failed=true;await usage.getByRole('button',{name:'Refresh usage',exact:true}).click();await expect(usage.getByRole('status')).toContainText('Usage unavailable');await expect(machines).toHaveCount(0);
+ await page.getByRole('button',{name:'Appearance',exact:true}).click();await expect(usage).toBeHidden();
+ expect(reads).toBe(previousReads+1);expect(sockets).toBe(0);
 });

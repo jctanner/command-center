@@ -1122,4 +1122,13 @@ button:disabled { opacity: .5; cursor: default; }
 .queue-card .agent-context-bar[data-known="true"]::before {content:'';position:absolute;z-index:-1;inset:0 auto 0 0;width:var(--context-fill);background:color-mix(in srgb,var(--cc-accent) 23%,var(--cc-surface));}
 .queue-card .agent-context-bar[data-level="medium"]::before {background:color-mix(in srgb,var(--cc-yellow) 23%,var(--cc-surface));}
 .queue-card .agent-context-bar[data-level="high"]::before {background:color-mix(in srgb,var(--cc-red) 23%,var(--cc-surface));}
-.agent-session-total {display:block;margin-top:1px;}
+
+.token-usage-machine {padding:12px 0;border-top:1px solid var(--cc-border);min-width:0;}
+.token-usage-machine h3 {margin:0 0 6px;}
+.token-usage-table {max-width:100%;overflow-x:auto;}
+.token-usage-table table {border-collapse:collapse;width:100%;font-size:12px;}
+.token-usage-table th,.token-usage-table td {text-align:right;padding:8px;border-bottom:1px solid var(--cc-border);white-space:nowrap;}
+.token-usage-table th:first-child,.token-usage-table td:first-child,.token-usage-table th:nth-child(2),.token-usage-table td:nth-child(2) {text-align:left;}
+.token-usage-table .usage-conversation {white-space:normal;overflow-wrap:anywhere;min-width:100px;max-width:200px;}
+#settings-usage {max-width:1100px;min-width:0;}
+#settings-usage p {font-size:13px;color:var(--cc-muted);line-height:1.5;}
