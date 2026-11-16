@@ -53,7 +53,7 @@ test('native token metrics cross local/SSH transport without changing activity',
 });
 for(const width of [1440,393])test(`token summaries and details fit ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:850});let sockets=0;page.on('websocket',()=>sockets++);
- await page.goto(base+'/#/queue');const card=page.locator('.queue-card').first();await expect(card).toContainText('Context 142k / 400k (36%)');await expect(card).toContainText('1.42M tokens');await expect(card.locator('meter')).toBeVisible();await card.click();
+ await page.goto(base+'/#/queue');const card=page.locator('.queue-card').first();await expect(card).toContainText('Context 142k / 400k (36%)');await expect(card).toContainText('1.42M tokens');await expect(card.getByRole('meter')).toBeVisible();await expect(card.getByRole('meter')).toContainText('Context 142k / 400k (36%)');await expect(card.getByRole('meter')).toHaveAttribute('aria-valuenow','36');await card.click();
  const metrics=page.locator('.agent-token-detail');await metrics.getByText('Token details',{exact:true}).click();await expect(metrics).toContainText('1,420,000');await expect(metrics).toContainText('includes cache read');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`../test-results/token-metrics-${width}.png`});expect(sockets).toBe(0);
 });

@@ -1104,7 +1104,7 @@ button:disabled { opacity: .5; cursor: default; }
 @media (min-width:901px) and (pointer:fine), (min-width:1101px) {
  .queue-body {grid-template-columns:clamp(280px,25vw,340px) minmax(0,1fr);}
  .queue-card {position:relative;padding-bottom:8px;}
- .queue-card .agent-token-metrics meter {position:absolute;bottom:3px;left:10px;width:calc(100% - 20px);height:3px;}
+
 }
 
 .agent-token-metrics .agent-token-summary {font-size:inherit;}
@@ -1116,3 +1116,10 @@ button:disabled { opacity: .5; cursor: default; }
 .agent-token-detail>details>summary {padding:2px 0;cursor:pointer;white-space:nowrap;}
 .agent-token-detail>details[open] {grid-column:1/-1;grid-row:3;}
 .agent-token-detail dt,.agent-token-detail dd {min-width:0;overflow-wrap:anywhere;}
+
+/* The context label and fill share one track; text stays above the tinted fill. */
+.queue-card .agent-context-bar {display:block;position:relative;isolation:isolate;overflow:hidden;padding:2px 6px;border:1px solid var(--cc-border);border-radius:4px;background:var(--cc-surface);color:var(--cc-text);line-height:1.5;}
+.queue-card .agent-context-bar[data-known="true"]::before {content:'';position:absolute;z-index:-1;inset:0 auto 0 0;width:var(--context-fill);background:color-mix(in srgb,var(--cc-accent) 23%,var(--cc-surface));}
+.queue-card .agent-context-bar[data-level="medium"]::before {background:color-mix(in srgb,var(--cc-yellow) 23%,var(--cc-surface));}
+.queue-card .agent-context-bar[data-level="high"]::before {background:color-mix(in srgb,var(--cc-red) 23%,var(--cc-surface));}
+.agent-session-total {display:block;margin-top:1px;}
