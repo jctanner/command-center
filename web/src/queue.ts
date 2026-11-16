@@ -5,7 +5,7 @@ import {AgentRestarter} from './agent-restart';
 import {AgentCloser} from './agent-close';
 import {chatMarkdown} from './chat-markdown';
 import {AgentOutbox,OutboxSendError,type OutboxEntry} from './agent-outbox';
-import { activityElement, type AgentActivityEntry } from './agent-activity';
+import { groupActivityRuns, activityElement, type AgentActivityEntry } from './agent-activity';
 import {AgentCardEditor,type AgentCard,type CardTarget} from './agent-card-editor';
 import { AgentNotifications } from './notifications';
 import { AgentLauncher, type LaunchedAgent } from './agent-launch';
@@ -62,6 +62,7 @@ export class AttentionQueue {
   private hostSelect = node('select');
   private projectSelect = node('select');
   private statusSelect = node('select');
+  private search=node('input');private searchStatus=node('span');
   private title = node('h2');
   private location = node('p');
   private detailFeedback = node('p');
@@ -72,7 +73,7 @@ export class AttentionQueue {
   private lastDetailPoll = 0;
   private pendingReplies = new Map<string, { at: number; reply: string; activity: string }>();
   private history = node('div');
-  private outbox!: AgentOutbox;
+  private outbox!: AgentOutbox;private agentOutboxes:HTMLButtonElement[]=[];
   private outboxDrafts=new Map<string,{key:string;text:string}>();
   private outboxMessages = node('div');
   private context = node('pre');
@@ -101,6 +102,7 @@ export class AttentionQueue {
   private detailsButton = node('button', 'Details');
   private subtitle = node('p');
   private chatNotice = node('p');
+  private cardTokens=new Map<string,AgentTokenMetrics>();
   private tokenMetrics=new AgentTokenMetrics(true);
   private trustControls=new QuestionControls(value=>{this.submitting=value;this.updateSend();},()=>{void this.loadDetail(true);},'folder-trust');
   private approvalCard = node('section');
@@ -118,6 +120,8 @@ export class AttentionQueue {
     document.addEventListener('pointerdown',e=>{if(!this.cardMenu.contains(e.target as Node))this.cardMenu.hidden=true;});
     this.cardMenu.onkeydown=e=>{const buttons=[...this.cardMenu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];let index=buttons.indexOf(document.activeElement as HTMLButtonElement);if(e.key==='Escape'){this.cardMenu.hidden=true;e.preventDefault();}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();buttons[(index+(e.key==='ArrowDown'?1:buttons.length-1))%buttons.length]?.focus();}};
     this.outbox=new AgentOutbox(()=>this.renderOutbox(),entry=>this.reconcileOutboxDraft(entry));
+    const agentOutbox=()=>{const button=this.outbox.button('Agent outbox',()=>{const c=this.chosen();return c?.item.attention?.instance?{host:c.h.id,session:c.item.session,window:c.item.window,pane:c.item.pane,instance:c.item.attention.instance}:undefined;});button.title='Receipts for this exact agent process';this.agentOutboxes.push(button);return button;};
+
     this.outboxMessages.className='agent-outbox-messages';
     this.outboxMessages.setAttribute('aria-label','Pending and submitted messages');
     this.cardEditor=new AgentCardEditor((target,card)=>{const id=`${target.host}/${target.connection_revision}/${target.session}/${target.window}/${target.pane}`;this.cardVersions.set(`${id}/${target.instance}`,card);for(const h of this.snapshot?.hosts||[])for(const item of h.items)if(item.id===id&&item.attention?.instance===target.instance)item.card=card;this.render();});
@@ -151,18 +155,27 @@ export class AttentionQueue {
     const launcher = new AgentLauncher(agent => this.openLaunched(agent));
     const startAgent = node('button', 'Start agent'); startAgent.className = 'queue-start-agent primary'; startAgent.onclick = () => { void launcher.open(this.host || this.chosen()?.h.id); };
     const filters = node('div'); filters.className = 'queue-filters';
+    this.search.type='search';this.search.className='queue-search';this.search.placeholder='Find agents (/)';this.search.setAttribute('aria-label','Search agents');this.search.autocomplete='off';this.search.maxLength=240;
+    this.searchStatus.className='queue-search-status';this.searchStatus.setAttribute('role','status');
+    this.search.oninput=()=>this.render();this.search.onkeydown=event=>{
+      if(event.isComposing)return;
+      if(event.key==='Escape'){event.preventDefault();this.search.value='';this.render();}
+      else if(event.key==='ArrowDown'||event.key==='ArrowUp'||event.key==='Enter'){const cards=[...this.list.querySelectorAll<HTMLButtonElement>('.queue-card')];const card=event.key==='ArrowUp'?cards.at(-1):cards[0];if(card){event.preventDefault();card.focus();if(event.key==='Enter')card.click();}}
+    };
+    document.addEventListener('keydown',event=>{const target=event.target as HTMLElement|null;if(this.visible&&!(compactClient()&&this.body.dataset.detail==='true')&&event.key==='/'&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.isComposing&&!target?.closest('input,textarea,select,[contenteditable="true"],dialog')){event.preventDefault();this.search.focus();this.search.select();}});
+
     this.hostSelect.setAttribute('aria-label', 'Queue machine'); this.projectSelect.setAttribute('aria-label', 'Queue project');
     this.statusSelect.setAttribute('aria-label', 'Agent status');
     this.options(this.statusSelect, 'All agents', [['needs_attention', 'Needs attention'],['awaiting_trust','Needs folder trust'], ['attention', 'Awaiting input / approval'], ['ready', 'Ready for a message'], ['working', 'Working'], ['unknown', 'Unknown'], ['disconnected', 'Disconnected']], '');
     this.hostSelect.onchange = () => { this.openedForRead = ''; this.host = this.hostSelect.value; this.project = ''; this.render(); };
     this.projectSelect.onchange = () => { this.openedForRead = ''; this.project = this.projectSelect.value; this.render(); };
     this.statusSelect.onchange = () => { this.openedForRead = ''; this.render(); };
-    const refresh = node('button', 'Refresh queue'); refresh.onclick = () => { void this.refresh(); if (this.selected) void this.loadDetail(); };
+    const refresh = node('button', 'Refresh'); refresh.setAttribute('aria-label','Refresh queue'); refresh.onclick = () => { void this.refresh(); if (this.selected) void this.loadDetail(); };
     const done = node('button', 'Done'); done.className = 'queue-filters-done'; done.onclick = () => { this.filterPanel.open = false; };
     filters.append(this.statusSelect, this.hostSelect, this.projectSelect, refresh, done);
     this.filterPanel.className = 'queue-filter-panel'; this.filterPanel.open = !compactClient();
     document.addEventListener('pointerdown', event => { if (compactClient() && this.filterPanel.open && !this.filterPanel.contains(event.target as Node)) this.filterPanel.open = false; });
-    this.filterPanel.append(node('summary', 'Filters'), filters); heading.append(title, this.outbox.button(), startAgent, this.filterPanel);
+    this.filterPanel.append(node('summary', 'Filters'), filters); heading.append(title, this.outbox.button('All outboxes'), startAgent, this.search, this.filterPanel, this.searchStatus);
     this.inboxControls.className = 'queue-inbox-controls';
     for (const [value, label] of [['', 'All agents'], ['needs_attention', 'Needs attention']]) {
       const b = node('button', label); b.dataset.filter = value; b.onclick = () => { this.statusSelect.value = value; this.openedForRead = ''; this.render(); }; this.inboxControls.append(b);
@@ -179,7 +192,7 @@ export class AttentionQueue {
     updateTerminalLink(); compactViewport.addEventListener('change', updateTerminalLink);
     openButton.onclick = () => { if (compactClient()) return; const entry = this.chosen(); if (entry) void this.open({ host: entry.h.id, connection: entry.h.connection_revision, session: entry.item.session, window: entry.item.window, pane: entry.item.pane }); };
     const createTicket=node('button','Create ticket');createTicket.onclick=()=>{const c=this.chosen();if(c)document.dispatchEvent(new CustomEvent('cc-create-ticket',{detail:{host:c.h.id,session:c.item.session,session_name:c.item.session_name,window:c.item.window,window_name:c.item.window_name,pane:c.item.pane,path:c.item.project,provider:c.item.agent,conversation:this.detailData?.conversations.find(v=>v.id===this.detailData?.selected)?.session||''}}));};
-    const actions = node('div'); actions.className = 'queue-detail-actions'; actions.append(back, this.activityBadge, this.outbox.button(), this.detailsButton, openButton);
+    const actions = node('div'); actions.className = 'queue-detail-actions'; actions.append(back, this.activityBadge, agentOutbox(), this.detailsButton, openButton);
     this.detailsButton.className = 'queue-details-button'; this.detailsButton.setAttribute('aria-controls', 'queue-agent-metadata');
     this.detailsButton.onclick = () => { this.metadata.hidden = !this.metadata.hidden; this.detailsButton.setAttribute('aria-expanded', String(!this.metadata.hidden)); };
     this.metadata.id = 'queue-agent-metadata'; this.metadata.className = 'queue-agent-metadata'; this.metadata.hidden = true;
@@ -217,7 +230,7 @@ export class AttentionQueue {
     this.deliveryReview.onclick = () => { this.uncertain.delete(this.draftKey()); this.deliveryReview.hidden = true; this.sendFeedback.textContent = ''; void this.loadDetail(); };
     form.append(this.deliveryReview);
     const chatHeader = node('div'); chatHeader.className = 'queue-chat-header'; chatHeader.append(actions, this.title, this.subtitle);
-    this.cardNotes.className='agent-card-notes';this.metadata.append(this.outbox.button(),this.editCard,this.restartAgent,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
+    this.cardNotes.className='agent-card-notes';this.metadata.append(agentOutbox(),this.editCard,this.restartAgent,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
     this.history.append(this.older);
     this.approvalCard.className = 'agent-approval'; this.approvalCard.setAttribute('aria-label', 'Tool approval'); this.approvalCard.hidden = true;
     this.liveActivity.className = 'agent-live-activity'; this.liveActivity.setAttribute('role', 'status'); this.liveActivity.setAttribute('aria-live', 'polite');
@@ -283,7 +296,8 @@ export class AttentionQueue {
   private options(select: HTMLSelectElement, all: string, entries: [string, string][], selected: string) {
     select.replaceChildren(...[['', all], ...entries].map(([value, label]) => { const o = node('option', label); o.value = value; return o; })); select.value = selected;
   }
-  private entries() { return (this.snapshot?.hosts || []).flatMap(h => h.items.map(item => ({ h, item }))).filter(({ h, item }) => (!this.host || h.id === this.host) && (!this.project || JSON.stringify([h.id, item.project]) === this.project) && (!this.statusSelect.value || (this.statusSelect.value === 'needs_attention' ? needsAttention(item) : this.statusSelect.value === 'attention' ? waiting(item) : stateOf(item) === this.statusSelect.value))); }
+  private entries() {const terms=this.search.value.slice(0,240).trim().toLocaleLowerCase().split(/\s+/).filter(Boolean).slice(0,16);return (this.snapshot?.hosts || []).flatMap(h => h.items.map(item => ({ h, item }))).filter(({ h, item }) => (!this.host || h.id === this.host) && (!this.project || JSON.stringify([h.id, item.project]) === this.project) && (!this.statusSelect.value || (this.statusSelect.value === 'needs_attention' ? needsAttention(item) : this.statusSelect.value === 'attention' ? waiting(item) : stateOf(item) === this.statusSelect.value))&&terms.every(term=>[item.card?.name,item.card?.notes,h.name,h.id,item.agent,item.project,item.window_name,item.session_name].filter(Boolean).join(' ').toLocaleLowerCase().includes(term))); }
+
   private chosen() { return (this.snapshot?.hosts || []).flatMap(h => h.items.map(item => ({ h, item }))).find(e => e.item.id === this.selected); }
   private clearRecall(){if(this.recall)this.drafts.set(this.recall.key,this.recall.draft);this.recall=undefined;}
   private recallMessage(event:KeyboardEvent){
@@ -319,11 +333,14 @@ export class AttentionQueue {
     for (const h of hosts.filter(h => !this.host || h.id === this.host)) for (const item of h.items) projects.set(JSON.stringify([h.id, item.project]), `${h.name} · ${item.project}`);
     this.options(this.projectSelect, 'All projects', [...projects], this.project);
     const entries = this.entries().sort((a, b) => Number(!!b.item.card?.pinned)-Number(!!a.item.card?.pinned) || Number(needsAttention(b.item)) - Number(needsAttention(a.item)) || rank[stateOf(a.item)] - rank[stateOf(b.item)] || a.h.name.localeCompare(b.h.name) || a.item.id.localeCompare(b.item.id));
-    if (!entries.some(e => e.item.id === this.selected) && !(this.openedForRead === this.selected && this.chosen())) this.selected = entries[0]?.item.id || '';
+    if (!entries.some(e => e.item.id === this.selected) && !(this.openedForRead === this.selected && this.chosen())&&!(this.search.value.trim()&&this.chosen())) this.selected = entries[0]?.item.id || '';
+    const focusedCard=this.list.contains(document.activeElement)?(document.activeElement as HTMLElement).closest<HTMLElement>('.queue-card')?.dataset.agentId:undefined;
+    this.searchStatus.textContent=this.search.value.trim()?`${entries.length} matching agent${entries.length===1?'':'s'}`:'';
     const scroll = this.list.scrollTop;
+    this.cardTokens.clear();
     this.list.replaceChildren(...entries.map(({ h, item }) => {
-      const b = node('button'); b.className = item.id === this.selected ? 'queue-card selected' : 'queue-card'; b.setAttribute('aria-pressed', String(item.id === this.selected)); b.classList.toggle('needs-attention', needsAttention(item));
-      b.oncontextmenu=event=>{event.preventDefault();this.openCardActions(h,item,event.clientX,event.clientY);};b.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();const rect=b.getBoundingClientRect();this.openCardActions(h,item,rect.left,rect.bottom);}};b.title='Right-click or Shift+F10 for agent actions';
+      const b = node('button'); b.className = item.id === this.selected ? 'queue-card selected' : 'queue-card'; b.dataset.agentId=item.id;b.setAttribute('aria-pressed', String(item.id === this.selected)); b.classList.toggle('needs-attention', needsAttention(item));
+      b.oncontextmenu=event=>{event.preventDefault();this.openCardActions(h,item,event.clientX,event.clientY);};b.onkeydown=event=>{if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const cards=[...this.list.querySelectorAll<HTMLButtonElement>('.queue-card')],i=cards.indexOf(b);cards[event.key==='Home'?0:event.key==='End'?cards.length-1:(i+(event.key==='ArrowDown'?1:cards.length-1))%cards.length]?.focus();}else if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();const rect=b.getBoundingClientRect();this.openCardActions(h,item,rect.left,rect.bottom);}};b.title='Right-click or Shift+F10 for agent actions';
       const folder = node('span', compactClient() ? projectName(item.project) : item.project); folder.title = item.project; folder.hidden = compactClient() && agentTitle(item) === projectName(item.project);
       b.classList.toggle('pinned',!!item.card?.pinned);
       if(item.card?.color&&/^#[0-9a-f]{6}$/i.test(item.card.color)){b.classList.add('has-custom-color');b.style.setProperty('--agent-card-color',item.card.color);}
@@ -337,7 +354,7 @@ export class AttentionQueue {
       const background=backgroundLabel(item.background_tasks,stateOf(item)==='disconnected');if(background){for(const parent of [machine,context]){const badge=node('span',background);badge.className='queue-background-count';if(parent===context)parent.prepend(badge,document.createTextNode(' · '));else parent.append(badge);}}
       b.title=`${name.textContent}\n${context.title}\nRight-click or Shift+F10 for agent actions`;
       if(item.folder_trust){const trust=node('small',item.folder_trust.title);trust.className='queue-card-prompt';b.append(trust);}
-      const tokens=new AgentTokenMetrics();tokens.update(item.token_metrics,!!h.error||stateOf(item)==='disconnected');
+      const tokens=new AgentTokenMetrics();this.cardTokens.set(item.id,tokens);tokens.update(item.token_metrics,!!h.error||stateOf(item)==='disconnected');
       b.append(machine,stateBadge(item.activity,stateOf(item)),name,folder,context,node('small',`${item.session_name} / ${item.window_name} / ${item.pane}`),tokens.element);
       b.dataset.hasPrompt=String(!!item.card?.name&&waiting(item));
       if(item.card?.notes){const note=node('span',item.card.notes);note.className='agent-card-note-preview queue-card-note';note.title=item.card.notes;b.append(note);}if(item.card?.name&&waiting(item)){const prompt=node('span',item.prompt);prompt.className='agent-card-note-preview queue-card-prompt';prompt.title=item.prompt;b.append(prompt);}
@@ -357,12 +374,14 @@ export class AttentionQueue {
         });
       }; return b;
     }));
+    if(focusedCard)[...this.list.querySelectorAll<HTMLButtonElement>('.queue-card')].find(b=>b.dataset.agentId===focusedCard)?.focus({preventScroll:true});
     this.list.scrollTop = scroll;
     if (!entries.length) this.list.append(node('p', this.snapshot ? 'No agents match these filters.' : 'Checking machines…'));
     this.syncPresentation();
     this.root.querySelector('h1')!.textContent = compactClient() ? 'Agents' : 'AI Queue';
     for (const b of this.inboxControls.querySelectorAll('button')) b.setAttribute('aria-pressed', String(this.statusSelect.value === b.dataset.filter));
     const chosen = this.chosen();
+    for(const button of this.agentOutboxes)button.disabled=!chosen?.item.attention?.instance;
     this.restartAgent.disabled=this.closeAgent.disabled=this.editCard.disabled=!chosen?.item.attention?.instance||stateOf(chosen.item)==='disconnected';this.cardNotes.textContent=chosen?.item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;
     this.mute.hidden = !chosen?.item.attention;
     if (chosen?.item.attention) { this.mute.textContent = this.notifications.isMuted(JSON.stringify([chosen.item.attention.key, chosen.item.attention.instance])) ? 'Unmute notifications' : 'Mute notifications'; }
@@ -426,7 +445,20 @@ export class AttentionQueue {
     return activity ? `${activity.state}/${activity.source}/${activity.transition || activity.evidence_at || ''}` : '';
   }
   private renderActivity() {
-    const chosen=this.chosen();const metrics=this.detailKey===this.selected&&this.detailData?.instance===chosen?.item.attention?.instance?this.detailData?.token_metrics:chosen?.item.token_metrics;this.tokenMetrics.element.hidden=!chosen;this.tokenMetrics.update(metrics,this.detailUnavailable||stateOf(chosen?.item||({} as Item))==='disconnected'||!!chosen?.h.error);
+    const chosen=this.chosen(),data=this.detailKey===this.selected?this.detailData:undefined;
+    const sameProcess=!!chosen?.item.attention?.instance&&data?.instance===chosen.item.attention.instance;
+    let metrics=sameProcess?data?.token_metrics:chosen?.item.token_metrics;
+    if(sameProcess&&data?.association==='process'&&chosen?.item.attention?.history_id&&chosen.item.attention.history_id!==data.selected)metrics=undefined;
+    if(chosen&&sameProcess&&data?.association==='process'&&data.selected&&metrics?.association==='process'&&metrics.instance===data.instance&&metrics.conversation===data.selected&&metrics.provider===chosen.item.agent&&(!chosen.item.attention?.history_id||chosen.item.attention.history_id===metrics.conversation)&&!this.detailUnavailable&&!chosen.h.error&&stateOf(chosen.item)!=='disconnected'){
+      const old=chosen.item.token_metrics;
+      if((!!old||metrics.observed_at>=(this.snapshot?.checked_at||0))&&(!old||old.instance===metrics.instance&&old.conversation===metrics.conversation)){
+        if(old&&old.observed_at>metrics.observed_at)metrics=old;
+        else chosen.item.token_metrics=metrics;
+        this.cardTokens.get(chosen.item.id)?.update(metrics);
+      }
+    }
+    this.tokenMetrics.element.hidden=!chosen;this.tokenMetrics.update(metrics,this.detailUnavailable||!!chosen&&stateOf(chosen.item)==='disconnected'||!!chosen?.h.error);
+
 
     const selected=this.chosen();const detailed=this.detailKey===this.selected&&this.detailData?.instance===selected?.item.attention?.instance?this.detailData?.background_tasks:undefined;const queued=selected?.item.background_tasks;const background=detailed&&(!queued||detailed.observed_at>=queued.observed_at)?detailed:queued;this.backgroundTasks.update(background,this.detailUnavailable||this.currentActivity()?.state==='disconnected');
     const activity = this.currentActivity(), key = this.draftKey(), pending = this.pendingReplies.get(key);
@@ -553,12 +585,17 @@ export class AttentionQueue {
       this.older.hidden = data.older_cursor == null;
       const top = this.history.scrollTop, height = this.history.scrollHeight;
       const nearBottom = height - top - this.history.clientHeight < 60;
+      const historyBounds=this.history.getBoundingClientRect();
+      const visibleMessage=[...this.history.querySelectorAll<HTMLElement>('.agent-message[data-message-id]')].find(n=>{const r=n.getBoundingClientRect();return r.bottom>historyBounds.top&&r.top<historyBounds.bottom;});
+      const anchor=visibleMessage?{id:visibleMessage.dataset.messageId,offset:visibleMessage.getBoundingClientRect().top-historyBounds.top}:undefined;
       if (!data.history_unchanged) {
         const sameConversation = previous?.selected === data.selected && previous?.instance === data.instance && this.detailKey === key && !data.history_reset;
         const expanded = new Set(sameConversation ? [...this.history.querySelectorAll<HTMLDetailsElement>('.agent-activity[open]')].map(n => n.dataset.activityId) : []);
+        const groupMembers=new Set<string>();if(sameConversation)for(const group of this.history.querySelectorAll<HTMLDetailsElement>('.agent-activity-run[open]')){try{for(const id of JSON.parse(group.dataset.members||'[]'))groupMembers.add(id);}catch{/* Ignore obsolete view state. */}}
         const focused = document.activeElement instanceof HTMLElement && this.history.contains(document.activeElement)
-          ? document.activeElement.closest<HTMLDetailsElement>('.agent-activity')?.dataset.activityId : undefined;
-        const entries: {position: number; order: number; element: HTMLElement}[] = data.messages.map(message => {
+          ? document.activeElement.closest<HTMLDetailsElement>('.agent-activity,.agent-activity-run')?.dataset.activityId : undefined;
+        if(focused&&!focused.startsWith('run:'))groupMembers.add(focused);
+        const entries: {position: number; order: number; element: HTMLElement;activity?:AgentActivityEntry}[] = data.messages.map(message => {
           const article = node('article'); article.className = `agent-message ${message.role}`; article.dataset.messageId=message.id;
           const body=message.role === 'assistant' ? chatMarkdown(message.text,{project:data.project||item.project,machine:h.name,openFile:path=>this.openFile({host:h.id,connection:h.connection_revision,path})}) : node('div', message.text);
           if(message.role==='user')body.classList.add('agent-user-text');
@@ -566,11 +603,12 @@ export class AttentionQueue {
           if (message.truncated) article.append(node('small', 'Message shortened for this view. Open the CLI for the full text.'));
           return {position: Number(message.id), order: message.order ?? -1, element: article};
         });
-        for (const activity of data.activities || []) entries.push({position: activity.position, order: activity.order, element: activityElement(activity, expanded.has(activity.id))});
+        for (const activity of data.activities || []) entries.push({position: activity.position, order: activity.order, activity, element: activityElement(activity, expanded.has(activity.id))});
         entries.sort((a,b) => a.position - b.position || a.order - b.order);
-        this.history.replaceChildren(...entries.map(e => e.element));
+        this.history.replaceChildren(...groupActivityRuns(entries,groupMembers));
         if (sameConversation && focused) {
-          const detail = [...this.history.querySelectorAll<HTMLDetailsElement>('.agent-activity')].find(n => n.dataset.activityId === focused);
+          const details=[...this.history.querySelectorAll<HTMLDetailsElement>('.agent-activity,.agent-activity-run')];
+          const detail=details.find(n=>n.dataset.activityId===focused)||details.find(n=>n.classList.contains('agent-activity-run')&&focused.startsWith('run:')&&JSON.parse(n.dataset.members||'[]').includes(focused.slice(4)));
           detail?.querySelector('summary')?.focus({preventScroll:true});
         }
         if (data.activity_limited) this.history.prepend(node('p', 'Some older activity is omitted from this page. Message history is unchanged.'));
@@ -588,6 +626,7 @@ export class AttentionQueue {
         requestAnimationFrame(() => { if (request === this.detailRequest && key === this.selected) { this.history.scrollTop = this.history.scrollHeight; void this.acknowledge(); } });
       }
       else this.history.scrollTop = top;
+      if(!reset&&!nearBottom&&anchor){const current=[...this.history.querySelectorAll<HTMLElement>('.agent-message[data-message-id]')].find(n=>n.dataset.messageId===anchor.id);if(current)this.history.scrollTop+=current.getBoundingClientRect().top-this.history.getBoundingClientRect().top-anchor.offset;}
       this.updateSend(); this.markRead.hidden = !unread(data.read_state);
       if (before == null) void this.acknowledge();
     } catch (error) {

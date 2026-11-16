@@ -10,9 +10,12 @@ export class AgentTokenMetrics{
   stale=stale||!!data?.stale;
   const used=data?.context?.used,window=data?.context?.window,percent=valid(used)&&valid(window)&&window>0?Math.round(used/window*100):null;
   const prefix=stale?'Last observed · ':data?.association==='project'?'Selected history · ':'';
-  this.summary.textContent=`${prefix}Context ${tokenNumber(used)} / ${tokenNumber(window)}${percent!==null?` (${percent}%)`:''} · Tokens ${tokenNumber(data?.session?.total)}`;
+  const context=valid(used)?`Context ${tokenNumber(used)}${valid(window)&&window>0?` / ${tokenNumber(window)} (${percent}%)`:''}`:'';
+  const total=valid(data?.session?.total)?`${tokenNumber(data?.session.total)} tokens`:'';
+  this.summary.textContent=prefix+([context,total].filter(Boolean).join(' · ')||'Usage unreported');
+  this.summary.setAttribute('aria-label',`${prefix}${context||'Context usage unreported'}; ${total||'Session total unreported'}${valid(used)&&!valid(window)?'; context capacity unreported':''}`);
   this.element.dataset.stale=String(stale);this.meter.hidden=percent===null;this.meter.value=Math.min(100,percent||0);this.meter.title=percent===null?'Context window not reported':`${percent}% of the provider-reported window (last reported request)`;
-  this.element.title=stale?'Connection unavailable; these are last-observed counters.':data?.note||'No provider-reported token metrics available for this agent.';
+  this.element.title=stale?'Connection unavailable; these are last-observed counters.':[data?.note||'No provider-reported token metrics available for this agent.',valid(used)&&!valid(window)?'Context capacity is unreported; no limit is inferred.':''].filter(Boolean).join(' ');
   const counts=data?.session;const values:[string,unknown][]=[['Session total',counts?.total],['Input'+(data?.input_includes_cache?' (includes cache read)':''),counts?.input],['Output',counts?.output],['Cache read'+(data?.input_includes_cache?' (included in input)':''),counts?.cached_input],['Cache write',counts?.cache_write],['Reasoning (included in output)',counts?.reasoning_output]];
   this.rows.replaceChildren(...values.flatMap(([label,value])=>[el('dt',label),el('dd',valid(value)?value.toLocaleString():'unknown')]));
   const reported=data?.context?.reported_at;this.note.textContent=`${data?.association==='project'?'These counters describe selected project history, not a verified live conversation. ':''}${stale?'Last observed while connected. ':''}${data?.note||'Metrics unknown: no verified native usage record.'}${data?.model?` Reported model: ${data.model}.`:''}${reported&&Number.isFinite(Date.parse(reported))?` Last reported: ${new Date(reported).toLocaleString()}.`:''}${data?.source?` Source: ${data.source}.`:''}`;

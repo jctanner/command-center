@@ -24,7 +24,7 @@ export class AgentOutbox {
  private activeActions=new Set<string>();
  private notice=element('p');
  private dialog=element('dialog');
- private content=element('div');
+ private content=element('div');private heading=element('h2');private scopeNote=element('p');private selectedScope?:OutboxTarget;
  private bulkBusy=false;private bulkFeedback='';private cancelAll=element('button','Cancel all queued');private archiveAll=element('button','Archive all receipts');
  constructor(private changed:()=>void,private receipt:(entry:OutboxEntry)=>void=()=>{}){
   try{
@@ -39,7 +39,7 @@ export class AgentOutbox {
   this.cancelAll.type=this.archiveAll.type='button';this.cancelAll.onclick=()=>{void this.bulk('cancel');};this.archiveAll.onclick=()=>{void this.bulk('archive');};
   const bulk=element('div');bulk.className='outbox-bulk-actions';bulk.append(this.cancelAll,this.archiveAll);
   this.notice.setAttribute('role','status');this.content.className='agent-outbox-list';
-  this.dialog.append(element('h2','Agent outbox'),element('p','Messages stay here until their delivery is resolved. Submitted input is never retried automatically.'),close,refresh,bulk,this.notice,this.content);
+  this.dialog.append(this.heading,this.scopeNote,element('p','Messages stay here until their delivery is resolved. Submitted input is never retried automatically.'),close,refresh,bulk,this.notice,this.content);
   document.body.append(this.dialog);
  }
  entries(){const ids=new Set(this.server.map(r=>r.id));return [...this.server,...this.local.filter(r=>!ids.has(r.id))].sort((a,b)=>a.created_at-b.created_at);}
@@ -90,8 +90,9 @@ export class AgentOutbox {
    }catch(error){this.notice.textContent=`Outbox unavailable: ${String(error)}. Existing message receipts were kept.`;}
   })().finally(()=>{this.running=undefined;});return this.running;
  }
- open(){this.renderDialog();this.dialog.showModal();void this.refresh();}
- button(){const button=element('button','Outbox');button.type='button';button.className='queue-outbox-button';button.onclick=()=>this.open();return button;}
+ open(scope?:OutboxTarget){if(this.bulkBusy)return;this.selectedScope=scope?{...scope}:undefined;this.bulkFeedback='';if(!this.storageError)this.notice.textContent='';this.renderDialog();this.dialog.showModal();void this.refresh();}
+ button(label='All outboxes',scope?:()=>OutboxTarget|undefined){const button=element('button',label);button.type='button';button.className='queue-outbox-button';button.onclick=()=>{if(scope){const target=scope();if(target)this.open(target);}else this.open();};return button;}
+
  ingest(entries:OutboxEntry[]){
   const known=new Map(this.server.map(e=>[e.id,e]));
   for(const entry of entries){const old=known.get(entry.id);if(!old||old.revision<=entry.revision){known.set(entry.id,entry);this.receipt(entry);}}
@@ -132,7 +133,11 @@ export class AgentOutbox {
   return receipt?receipt.text:text;
  }
  private renderDialog(){
-  const entries=this.entries().filter(e=>e.status!=='archived').reverse();
+  const scope=this.selectedScope;
+  const label=scope?'Agent outbox':'All outboxes';this.heading.textContent=label;this.dialog.setAttribute('aria-label',label);
+  this.scopeNote.textContent=scope?`This agent process only · ${scope.host} · ${scope.session}:${scope.window}.${scope.pane}. Global bulk actions are available in All outboxes.`:'Receipts across all machines and agent processes. Bulk actions below apply globally.';
+  this.cancelAll.hidden=this.archiveAll.hidden=!!scope;
+  const entries=this.entries().filter(e=>e.status!=='archived'&&(!scope||['host','session','window','pane','instance'].every(k=>e[k as keyof OutboxEntry]===scope[k as keyof OutboxTarget]))).reverse();
   this.cancelAll.disabled=this.archiveAll.disabled=this.bulkBusy||this.activeActions.size>0;
   if(this.bulkFeedback)this.notice.textContent=this.bulkFeedback;
   this.content.replaceChildren(...entries.map(r=>this.row(r,true,false)));
@@ -170,7 +175,7 @@ export class AgentOutbox {
   row.append(actions);const error=this.actionErrors.get(r.id);if(error){const note=element('p',error);note.setAttribute('role','status');row.append(note);}return row;
  }
  private async bulk(action:'cancel'|'archive'){
-  if(this.bulkBusy||this.activeActions.size)return;
+  if(this.selectedScope||this.bulkBusy||this.activeActions.size)return;
   this.bulkBusy=true;this.bulkFeedback='Checking all stored receipts…';this.update();
   try{
    const response=await fetch(`/api/v1/agents/outbox/bulk?action=${action}`,{cache:'no-store',signal:AbortSignal.timeout(10000)});const preview=await response.json();

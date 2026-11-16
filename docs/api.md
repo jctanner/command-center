@@ -183,3 +183,7 @@ GET `/agents/folder-trust/{id}` observes the exact original receipt. States: sub
 ## Agent token metrics
 
 Queue items and conversation details expose nullable `token_metrics`: native cumulative counters, last reported context usage/capacity, provenance, completeness and stale flags. Counts never determine live activity or message delivery. See [Agent token metrics](reference/agent-token-metrics.md) for harness-specific cache semantics, bounds and unknown values, and `AgentTokenMetrics`/`TokenCounts` in the OpenAPI contract.
+
+## Claude mid-turn human steering
+
+Claude may record a busy-time human message as a consumed `queued_command` attachment rather than an ordinary user message. CC projects only its original prompt after matching a preceding same-session queue removal with `reason: absorbed_mid_turn`, exact prompt and command/delivery UUIDs, plus an external CLI human-origin envelope with `humanTurn:true`. Rendered system text and API request blobs remain hidden. Queue-only, cancelled, sidechain, mismatched and ambiguous records do not confirm delivery. Normal receipt process/conversation/inode/post-baseline/one-use guards still apply; input is never resent. Claude visible history uses `claude-visible-v4:` to invalidate older display pages without changing native reply cursors.

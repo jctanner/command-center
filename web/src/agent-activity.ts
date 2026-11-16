@@ -33,3 +33,19 @@ export function activityElement(entry: AgentActivityEntry, open = false) {
   }
   return details;
 }
+
+export type HistoryEntry={position:number;order:number;element:HTMLElement;activity?:AgentActivityEntry};
+/** Only finished adjacent activity is folded; live/error/background entries stay independent. */
+export function groupActivityRuns(entries:HistoryEntry[],openMembers:ReadonlySet<string>=new Set()):HTMLElement[]{
+ const result:HTMLElement[]=[];let run:HistoryEntry[]=[];
+ const flush=()=>{
+  if(run.length<2){result.push(...run.map(e=>e.element));run=[];return;}
+  const details=document.createElement('details');details.className='agent-activity-run';details.dataset.activityId='run:'+run[0].activity!.id;
+  details.dataset.members=JSON.stringify(run.map(e=>e.activity!.id));details.open=run.some(e=>openMembers.has(e.activity!.id)||(e.element as HTMLDetailsElement).open);
+  const tools=run.filter(e=>e.activity!.kind==='tool').length,thinking=run.length-tools;
+  const summary=document.createElement('summary');summary.textContent=[tools?`${tools} completed ${tools===1?'tool call':'tool calls'}`:'',thinking?`${thinking} thinking ${thinking===1?'entry':'entries'}`:''].filter(Boolean).join(' · ');
+  details.append(summary,...run.map(e=>e.element));result.push(details);run=[];
+ };
+ for(const entry of entries){const a=entry.activity;if(a&&(a.status==='completed'||a.kind==='thinking'&&a.status==='recorded'))run.push(entry);else{flush();result.push(entry.element);}}
+ flush();return result;
+}

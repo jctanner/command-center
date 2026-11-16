@@ -1359,6 +1359,39 @@ def message_text(content):
         return ''
     return '\n'.join(c.get('text', '') for c in content if isinstance(c, dict) and c.get('type') in ('text', 'input_text', 'output_text') and isinstance(c.get('text'), str))
 
+def claude_consumed_prompts(records, session):
+    """Only exact native human queue deliveries; never rendered system text or request blobs."""
+    identifier=re.compile(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}')
+    valid=lambda value:isinstance(value,str) and identifier.fullmatch(value) is not None
+    if not valid(session):return {}
+    removals={}
+    for offset,record in records:
+        if (record.get('type')!='queue-operation' or record.get('operation')!='remove'
+            or record.get('reason')!='absorbed_mid_turn' or record.get('sessionId')!=session
+            or record.get('isSidechain') or record.get('isMeta')
+            or not valid(record.get('commandUuid')) or not valid(record.get('deliveryId'))
+            or not isinstance(record.get('content'),str)):continue
+        key=(record['commandUuid'],record['deliveryId'])
+        value=(offset,record['content'])
+        if key in removals and (removals[key] is None or removals[key][1]!=value[1]):removals[key]=None
+        elif key not in removals:removals[key]=value
+    prompts={};used=set();seen_uuids=set()
+    for offset,record in records:
+        att=record.get('attachment');origin=att.get('origin') if isinstance(att,dict) else None
+        if (record.get('type')!='attachment' or record.get('isSidechain') is not False or record.get('isMeta')
+            or record.get('sessionId')!=session or record.get('session_id')!=session
+            or record.get('userType')!='external' or record.get('entrypoint')!='cli' or record.get('renderedRole')!='system'
+            or not valid(record.get('uuid')) or not valid(record.get('parentUuid'))
+            or not isinstance(att,dict) or att.get('type')!='queued_command' or att.get('commandMode')!='prompt'
+            or att.get('humanTurn') is not True or not isinstance(origin,dict) or origin.get('kind')!='human'
+            or not valid(att.get('source_uuid')) or not valid(att.get('delivery_id'))
+            or not isinstance(att.get('prompt'),str) or not att['prompt'].strip() or len(att['prompt'].encode('utf-8'))>24000):continue
+        key=(att['source_uuid'],att['delivery_id']);removed=removals.get(key)
+        if not removed or removed[0]>=offset or removed[1]!=att['prompt'] or key in used or record['uuid'] in seen_uuids:continue
+        used.add(key);seen_uuids.add(record['uuid']);prompts[offset]=att['prompt']
+    return prompts
+
+
 def history(path, kind, before=None, known_branch=None, active_leaf=False, include_activity=True):
     if kind == 'pi': return pi_history(path,before,known_branch,active_leaf,include_activity)
     # Read only a tail/page, never a growing multi-GB transcript into memory.
@@ -1381,6 +1414,9 @@ def history(path, kind, before=None, known_branch=None, active_leaf=False, inclu
                 if isinstance(record, dict): records.append((offset, record))
             except (ValueError, UnicodeError):
                 pass
+    session=Path(path).stem if kind=='claude' else None
+    if kind=='claude' and not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',session):session=metadata(path,'claude')[1]
+    consumed=claude_consumed_prompts(records,session) if kind=='claude' else {}
     messages, events = [], []
     for offset, record in records:
         if kind == 'codex':
@@ -1397,10 +1433,13 @@ def history(path, kind, before=None, known_branch=None, active_leaf=False, inclu
                 continue
             else: continue
         else:
-            if record.get('type') not in ('user', 'assistant') or record.get('isMeta') or record.get('isSidechain') or claude_internal_user(record): continue
-            payload = record.get('message', {})
-            if not isinstance(payload, dict): continue
-            role, text = payload.get('role'), message_text(payload.get('content'))
+            if offset in consumed:
+                role,text='user',consumed[offset];payload={'content':text}
+            else:
+                if record.get('type') not in ('user', 'assistant') or record.get('isMeta') or record.get('isSidechain') or claude_internal_user(record): continue
+                payload = record.get('message', {})
+                if not isinstance(payload, dict): continue
+                role, text = payload.get('role'), message_text(payload.get('content'))
         if role not in ('user', 'assistant') or not text.strip(): continue
         messages.append((offset, dict(id=str(offset), cursor=hashlib.sha256(f'{offset}:{text}'.encode()).hexdigest(), role=role, input_hash=native_input_hash(text,kind) if role=='user' else None, text=text[:16000], truncated=len(text)>16000, order=message_order(payload.get('content')), timestamp=record.get('timestamp', ''))))
     if not messages: messages = events
@@ -1980,18 +2019,18 @@ def execute(request):
     result['background_tasks']=observed_background_tasks(observation,chosen)
     if chosen:
         info, version = transcript_version(chosen)
-        prefix = {'claude':'claude-visible-v3:', 'codex':'codex-visible-v2:'}.get(observation['kind'], '')
+        prefix = {'claude':'claude-visible-v4:', 'codex':'codex-visible-v2:'}.get(observation['kind'], '')
         history_version = prefix + version
         result['history_version'] = history_version
         if request.get('before') is None and request.get('known_version') == history_version:
             result['history_unchanged'] = True
         else:
             result.update(history(chosen['path'], observation['kind'], request.get('before'), request.get('known_branch'), chosen.get('leaf_id',False)))
-        if (observation['kind']=='codex' and isinstance(request.get('known_version'), str)
+        if (observation['kind'] in ('codex','claude') and isinstance(request.get('known_version'), str)
             and not request['known_version'].startswith(prefix)):
             # A filter change must also discard older cached pages in open clients.
             result['history_reset'] = True
-            result['history_notice'] = 'Conversation display updated to exclude harness-generated context.'
+            result['history_notice'] = 'Conversation display updated to include verified native human steering.' if observation['kind']=='claude' else 'Conversation display updated to exclude harness-generated context.'
         if request.get('before') is None and chosen.get('linked') and not result.get('history_unchanged'):
             result['_outbox_observation']=dict(log=dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size),users=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in result.get('messages',[]) if message['role']=='user' and message.get('input_hash')])
             if observation['kind']=='pi': result['_outbox_observation']['pi_session']=chosen['session']
