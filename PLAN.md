@@ -35,7 +35,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
-- [Task 0075: context meter label](docs/tasks/done/0075-context-meter-label.md) — staged; desktop/mobile tests pass.
+- [Task 0075: context meter label](docs/tasks/done/0075-context-meter-label.md) — deployed with approval; desktop/mobile tests pass.
 
 - [Task 0074: tmux view maximize](docs/tasks/done/0074-tmux-view-maximize.md) — deployed with approval; build and three browser tests pass.
 
@@ -253,7 +253,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Handoff
 
-- [2026-11-16: card context meter](docs/notes/2026-11-16-card-context-meter.md) — staged, not deployed.
+- [2026-11-16: card context meter](docs/notes/2026-11-16-card-context-meter.md) — committed, pushed and deployed without restarting services.
 
 - [2026-11-16: tmux maximize](docs/notes/2026-11-16-tmux-maximize.md) — committed, pushed and deployed; backend and pane processes unchanged.
 
