@@ -36,7 +36,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
-- [Task 0076: Settings token usage](docs/tasks/done/0076-settings-token-usage.md) — staged; ten browser checks pass.
+- [Task 0076: Settings token usage](docs/tasks/done/0076-settings-token-usage.md) — deployed with approval; ten browser checks pass.
 
 - [Task 0075: context meter label](docs/tasks/done/0075-context-meter-label.md) — deployed with approval; desktop/mobile tests pass.
 
@@ -256,7 +256,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Handoff
 
-- [2026-11-16: Settings token usage](docs/notes/2026-11-16-settings-token-usage.md) — current-inventory usage snapshot, staged.
+- [2026-11-16: Settings token usage](docs/notes/2026-11-16-settings-token-usage.md) — current-inventory usage snapshot deployed without restart.
 
 - [2026-11-16: card context meter](docs/notes/2026-11-16-card-context-meter.md) — committed, pushed and deployed without restarting services.
 
