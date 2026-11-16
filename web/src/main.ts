@@ -30,6 +30,16 @@ el('confirm-app-reload').onclick = () => window.location.reload();
 
 const clipboardSettings = new ClipboardSettings(() => { if (terminalAvailable()) terminal?.focus(); });
 const terminalElement = el('terminal'), empty = el('empty'), paneControls = el('panes'), menu = el('context-menu');
+let tmuxMaximized=false;
+function setTmuxMaximized(maximized:boolean){
+  tmuxMaximized=maximized;
+  document.documentElement.classList.toggle('tmux-maximized',maximized);
+  const button=el('maximize-tmux');
+  button.setAttribute('aria-pressed',String(maximized));
+  button.textContent=maximized?'Restore tmux':'Maximize tmux';
+  button.title=maximized?'Show navigation and machine tabs':'Hide navigation and machine tabs';
+}
+el('maximize-tmux').onclick=()=>{if(terminalAvailable()){setTmuxMaximized(!tmuxMaximized);terminal?.focus();}};
 let hostsReady=false;
 let hosts: Host[] = [], hostId = '', sessions: Session[] = [], viewer: Session | undefined;
 let terminal: TerminalView | undefined, socket: WebSocket | undefined;
@@ -408,6 +418,7 @@ function fileContext(): FileContext {
 function showQueue(visible: boolean) {
   if(visible){settingsVisible=false;settingsWorkspace.setVisible(false);slackVisible=false;slack.setVisible(false);emailVisible=false;email.setVisible(false);jiraVisible=false;jira.setVisible(false);boardVisible=false;board.setVisible(false);whiteboardVisible=false;fileWorkspaceVisible=false;}
   queueVisible=visible;const overlay=settingsVisible||visible||slackVisible||emailVisible||jiraVisible||boardVisible||whiteboardVisible||fileWorkspaceVisible;
+  if(overlay||compactClient())setTmuxMaximized(false);
   settingsWorkspace.setVisible(settingsVisible);el('open-settings').setAttribute('aria-pressed',String(settingsVisible));
   el('whiteboard-pane').hidden=!whiteboardVisible;el('show-whiteboard').setAttribute('aria-pressed',String(whiteboardVisible));const frame=el('whiteboard-frame') as HTMLIFrameElement;if(whiteboardVisible&&!frame.getAttribute('src')){frame.src='/whiteboard.html?embedded';frame.onload=()=>frame.contentWindow?.postMessage({type:'cc-whiteboard-visible',visible:whiteboardVisible},location.origin);}frame.contentWindow?.postMessage({type:'cc-whiteboard-visible',visible:whiteboardVisible},location.origin);
   el('board-pane').hidden=!boardVisible;el('show-board').setAttribute('aria-pressed',String(boardVisible));

@@ -8,6 +8,8 @@ button:hover { background: var(--cc-hover); border-color: var(--cc-dim); }
 button:focus-visible, select:focus-visible { outline: 2px solid var(--cc-accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 #app { height: 100dvh; display: flex; flex-direction: column; }
+.tmux-maximized #app > header, .tmux-maximized #machines { display:none; }
+#maximize-tmux { font-size:11px; }
 header { min-height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid var(--cc-hover); background: var(--cc-surface); gap: 12px; }
 .brand { font-size: 12px; font-weight: 700; letter-spacing: 2px; display: flex; align-items: center; gap: 12px; }
 .brand-mark { color: var(--cc-accent); font-size: 28px; font-weight: 400; }

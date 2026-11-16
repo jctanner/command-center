@@ -397,3 +397,42 @@ test('closing the last window reports session removal and returns to a usable te
 test('an uncertain close response is never retried automatically',async({page})=>{
  const sid=tmux('new-session','-d','-P','-F','#{session_id}','-s','close-uncertain','-n','uncertain','/bin/sleep','86400');const keep=tmux('new-window','-d','-P','-F','#{window_id}','-t',sid,'-n','keep','/bin/sleep','86400');await page.goto(base);await expect(page.locator('#connection')).toHaveText('Attached');await page.getByLabel('Session',{exact:true}).selectOption(sid);let attempts=0;await page.route('**/windows/close',async route=>{if(route.request().method()==='POST'){attempts++;await route.fetch();await route.abort();}else await route.continue();});await page.locator('#windows button').filter({hasText:/uncertain$/}).click({button:'right'});await page.getByRole('button',{name:'Close window…',exact:true}).click();const d=page.getByRole('dialog',{name:'Close tmux window',exact:true});await expect(d.getByRole('button',{name:'Close window',exact:true})).toBeEnabled();await d.getByRole('button',{name:'Close window',exact:true}).click();await expect(d).toContainText('will not be retried');await expect(d.getByRole('button',{name:'Close window',exact:true})).toBeDisabled();expect(attempts).toBe(1);expect(tmux('list-windows','-t',sid,'-F','#{window_id}')).toBe(keep);
 });
+
+test('maximize tmux hides navigation, preserves the viewer and restores on navigation or compact layout',async({page})=>{
+  const sockets:string[]=[];page.on('websocket',socket=>sockets.push(socket.url()));
+  await page.goto(`${base}/#/terminal`);
+  await expect(page.locator('#connection')).toHaveText('Attached');
+  const identity=()=>tmux('list-panes','-s','-t','project','-F','#{session_id}/#{window_id}/#{pane_id}/#{pane_pid}');
+  const before=identity();
+  const zoom=tmux('display-message','-p','-t','project:0','#{window_zoomed_flag}');
+  const selection=await page.locator('#sessions').inputValue();
+  const height=(await page.locator('#terminal').boundingBox())!.height;
+  const connections=sockets.length;
+  await page.getByRole('button',{name:'Maximize tmux',exact:true}).click();
+  await expect(page.locator('#app > header')).toBeHidden();
+  await expect(page.locator('#machines')).toBeHidden();
+  await expect(page.locator('.workspace-bar')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Restore tmux',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect.poll(async()=>(await page.locator('#terminal').boundingBox())!.height).toBeGreaterThan(height+100);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button',{name:'Restore tmux',exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.fullscreenElement===null)).toBe(true);
+  await page.getByRole('button',{name:'Restore tmux',exact:true}).click();
+  await expect(page.locator('#app > header')).toBeVisible();
+  await expect.poll(async()=>(await page.locator('#terminal').boundingBox())!.height).toBe(height);
+  expect(await page.locator('#sessions').inputValue()).toBe(selection);
+  expect(identity()).toBe(before);
+  expect(tmux('display-message','-p','-t','project:0','#{window_zoomed_flag}')).toBe(zoom);
+  expect(sockets.length).toBe(connections);
+  await page.getByRole('button',{name:'Maximize tmux',exact:true}).click();
+  await page.evaluate(()=>{location.hash='#/queue';});
+  await expect(page.locator('#app > header')).toBeVisible();
+  await page.getByRole('button',{name:'Tmux',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Maximize tmux',exact:true})).toHaveAttribute('aria-pressed','false');
+  await page.getByRole('button',{name:'Maximize tmux',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('#terminal-pane')).toBeHidden();
+  await expect(page.locator('html')).not.toHaveClass(/tmux-maximized/);
+  await expect(page.locator('#show-queue')).toBeVisible();
+  expect(identity()).toBe(before);
+});

@@ -20,6 +20,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 
 
+
 - [Task 0054: Whiteboard attachment release and harness check](docs/tasks/pending/0054-whiteboard-attachment-release-and-harness-check.md) — deployment complete; real-harness delivery validation awaits separate authorization.
 
 - [Plan 0003: guarded Whiteboard attachments](docs/plans/0003-whiteboard-attachments.md) — approved, implemented and deployed; real-harness validation pending.
@@ -32,6 +33,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task 0074: tmux view maximize](docs/tasks/done/0074-tmux-view-maximize.md) — staged; build and three browser tests pass.
 
 - [Task 0073: CC-75 outbox sync](docs/tasks/done/0073-cc75-outbox-sync.md) — deployed with approval; original receipt Seen once, no resend.
 
@@ -246,6 +249,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-16: tmux maximize](docs/notes/2026-11-16-tmux-maximize.md) — implemented and validated; not deployed.
 
 - [2026-11-15: CC-75 absorbed input](docs/notes/2026-11-15-cc75-absorbed-input.md) — approved deployment verified; original message Seen without resend.
 
