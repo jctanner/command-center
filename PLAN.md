@@ -34,7 +34,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Completed work
 
-- [Task 0074: tmux view maximize](docs/tasks/done/0074-tmux-view-maximize.md) — staged; build and three browser tests pass.
+- [Task 0074: tmux view maximize](docs/tasks/done/0074-tmux-view-maximize.md) — deployed with approval; build and three browser tests pass.
 
 - [Task 0073: CC-75 outbox sync](docs/tasks/done/0073-cc75-outbox-sync.md) — deployed with approval; original receipt Seen once, no resend.
 
@@ -250,7 +250,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Handoff
 
-- [2026-11-16: tmux maximize](docs/notes/2026-11-16-tmux-maximize.md) — implemented and validated; not deployed.
+- [2026-11-16: tmux maximize](docs/notes/2026-11-16-tmux-maximize.md) — committed, pushed and deployed; backend and pane processes unchanged.
 
 - [2026-11-15: CC-75 absorbed input](docs/notes/2026-11-15-cc75-absorbed-input.md) — approved deployment verified; original message Seen without resend.
 

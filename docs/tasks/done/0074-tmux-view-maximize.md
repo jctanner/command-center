@@ -2,7 +2,7 @@
 
 Owner: CC dev
 Claimed: 2026-11-16
-State: done (staged; not deployed)
+State: done (committed, pushed and deployed with human approval)
 
 Add a browser-local maximize/restore button hiding global navigation and machine tabs. Keep session/window controls and restore accessible. Preserve the terminal viewer, selection, pane zoom, processes and native Escape behavior. Clear the mode on workspace exit or compact viewport. No browser Fullscreen API. Validate with isolated tmux/Playwright and staged frontend build; no live deployment authorized.
 
@@ -16,3 +16,7 @@ The session/window toolbar now contains Maximize tmux / Restore tmux. CSS hides 
 - Initial test incorrectly included the private viewer session in its process snapshot; compact detachment correctly removes it. Scoped the snapshot to the real project session and reran successfully.
 
 No live deployment, commit or push performed. Staged assets are in ignored web/dist-next.
+
+## Approved release
+
+Human requested commit, push and deploy. Implementation commit `93074b8` pushed to main. Frontend-only publication succeeded at 2026-11-16T18:36:20Z: all four configured access paths serve the new index and healthy backend. Backend PID/start/executable, configuration hashes and canonical tmux pane/PID snapshots unchanged; no service restart. Prior frontend retained in a private backup; metadata-only verification in ignored `.local/reviews/tmux-maximize-publish.json`. Reload the client once to load the control.
