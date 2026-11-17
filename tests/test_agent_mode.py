@@ -40,10 +40,10 @@ class NativeIdleGuards(unittest.TestCase):
 
 
 class ClaudeBrokerMapping(unittest.TestCase):
-    def run_observation(self, candidates=None, continuation='continued-thread', tools=None, receipts=None):
+    def run_observation(self, candidates=None, continuation='continued-thread', tools=None, receipts=None, command_running=False):
         request = dict(identity='source', broker_instance='instance', session='$1', window='@1', pane='%1')
         snapshot = dict(provider='claude', handoff_supported=True, state='ready',
-                        permissions=[], tools=tools or [], receipts=receipts or [], session_id='original-thread', path='/project')
+                        command_running=command_running, permissions=[], tools=tools or [], receipts=receipts or [], session_id='original-thread', path='/project')
         a = {'provider_home': lambda _: '/private/claude',
              'claude_current_session': lambda *args: continuation,
              'conversations': lambda _: candidates or [],
@@ -75,6 +75,13 @@ class ClaudeBrokerMapping(unittest.TestCase):
         for state in ('queued','claimed','uncertain','blocked'):
             with self.subTest(state=state),self.assertRaisesRegex(ValueError,'receipts'):
                 self.run_observation(receipts=[dict(kind='prompt',state=state)])
+
+    def test_local_command_and_queued_shell_receipts_block_handoff(self):
+        with self.assertRaisesRegex(ValueError,'local command'):
+            self.run_observation(command_running=True)
+        for state in ('queued','submitted','blocked','uncertain'):
+            with self.subTest(state=state), self.assertRaisesRegex(ValueError,'receipts'):
+                self.run_observation(receipts=[dict(kind='local_command',state=state)])
 
     def test_in_progress_tools_block_before_mapping_or_handoff(self):
         with self.assertRaisesRegex(ValueError, 'tools to finish'):

@@ -43,6 +43,10 @@ class BrokerTests(unittest.TestCase):
 
     def tearDown(self):
         self.broker.closed = True
+        command=self.broker.active_command
+        if command:
+            with self.broker.lock:self.broker.stop_local_command(command)
+            command["thread"].join(timeout=4)
         self.broker.agent.terminate()
         self.broker.agent.wait(timeout=5)
         self.broker.server.close()
@@ -50,6 +54,76 @@ class BrokerTests(unittest.TestCase):
 
     def action(self, **kwargs):
         return dict(instance=self.broker.instance, id=str(uuid.uuid4()), **kwargs)
+
+    def completed_command(self,text):
+        request=self.action(action='local_command',text=text)
+        self.broker.dispatch(request)
+        wait(lambda:self.broker.dispatch(request)['state']in ('completed','cancelled','failed','uncertain'))
+        return request,self.broker.dispatch(request)
+
+    def test_local_command_runs_in_pinned_directory_without_model_prompt(self):
+        original=self.broker.rpc
+        self.broker.rpc=Mock(wraps=original)
+        request,receipt=self.completed_command('!pwd')
+        self.assertEqual('completed',receipt['state']);self.assertEqual(0,receipt['exit_code'])
+        output=next(m for m in self.broker.messages if m.get('kind')=='command_output')
+        self.assertEqual(str(self.root)+'\n\n[Exit 0]',output['text'])
+        self.broker.rpc.assert_not_called();self.assertEqual('ready',self.broker.state)
+        self.assertIsNone(self.broker.snapshot()['usage'])
+        self.assertNotIn(str(self.root),json.dumps(receipt))
+
+    def test_local_command_output_exit_and_uuid_are_literal_and_idempotent(self):
+        request,receipt=self.completed_command("!printf '<img src=x>' ; printf 'error' >&2; echo x >> marker; exit 7")
+        self.assertEqual(7,receipt['exit_code'])
+        text=next(m['text']for m in self.broker.messages if m.get('kind')=='command_output')
+        self.assertIn('<img src=x>',text);self.assertIn('stderr:\nerror',text)
+        self.assertEqual(receipt,self.broker.dispatch(request));self.assertEqual('x\n',(self.root/'marker').read_text())
+        with self.assertRaisesRegex(ValueError,'reused'):self.broker.dispatch(dict(request,text='!echo again'))
+        with self.assertRaises(ValueError):self.broker.dispatch(dict(request,instance=str(uuid.uuid4())))
+
+    def test_local_command_waits_for_approval_and_can_be_cancelled_before_dispatch(self):
+        self.hold_turn()
+        cancelled=self.action(action='local_command',text='!touch cancelled')
+        command=self.action(action='local_command',text='!touch after')
+        self.assertEqual('queued',self.broker.dispatch(cancelled)['state'])
+        self.assertEqual('queued',self.broker.dispatch(command)['state'])
+        self.broker.dispatch(self.action(action='cancel_queued',prompt=cancelled['id']))
+        self.assertFalse((self.root/'after').exists());self.assertEqual('approval',self.broker.state)
+        self.finish_permission()
+        wait(lambda:self.broker.dispatch(command)['state']=='completed')
+        self.assertTrue((self.root/'after').exists());self.assertFalse((self.root/'cancelled').exists())
+
+    def test_local_command_cancel_is_exact_and_blocks_handoff(self):
+        request=self.action(action='local_command',text='!sleep 30')
+        self.broker.dispatch(request);wait(lambda:self.broker.snapshot()['command_running'])
+        with self.assertRaisesRegex(ValueError,'no longer running'):self.broker.dispatch(self.action(action='cancel_command',command=str(uuid.uuid4())))
+        with self.assertRaisesRegex(ValueError,'idle'):self.broker.dispatch(self.action(action='handoff'))
+        queued=self.action(action='local_command',text='!echo next')
+        self.assertEqual('queued',self.broker.dispatch(queued)['state'])
+        self.broker.dispatch(self.action(action='cancel_command',command=request['id']))
+        wait(lambda:self.broker.dispatch(request)['state']=='cancelled')
+        wait(lambda:self.broker.dispatch(queued)['state']=='completed')
+        self.assertFalse(self.broker.snapshot()['command_running'])
+
+    def test_local_command_timeout_and_output_limit(self):
+        from unittest.mock import patch
+        with patch.object(MOD,'COMMAND_TIMEOUT',.2):
+            _,receipt=self.completed_command('!yes x | head -c 70000; sleep 30')
+        self.assertTrue(receipt['timed_out']);self.assertTrue(receipt['output_truncated'])
+        text=next(m['text']for m in self.broker.messages if m.get('kind')=='command_output')
+        self.assertLess(len(text),MOD.COMMAND_OUTPUT_BYTES+150)
+        self.assertIn('[Command timed out]',text)
+
+    def test_local_command_directory_replacement_and_container_host_denial(self):
+        self.broker.directory_identity=(0,0)
+        _,receipt=self.completed_command('!touch should-not-exist')
+        self.assertEqual('failed',receipt['state']);self.assertFalse((self.root/'should-not-exist').exists())
+        self.broker.host_commands=False
+        self.assertFalse(self.broker.snapshot()['local_commands'])
+        with self.assertRaisesRegex(ValueError,'unavailable'):self.broker.dispatch(self.action(action='local_command',text='!pwd'))
+        request=self.action(action='prompt',text='!pwd');self.broker.dispatch(request)
+        wait(lambda:self.broker.dispatch(request)['state']=='completed')
+        self.assertTrue(any('Fixture reply' in m['text']for m in self.broker.messages))
 
     def test_usage_updates_are_context_snapshots_not_totals_and_do_not_change_activity(self):
         self.assertIsNone(self.broker.snapshot()['usage'])

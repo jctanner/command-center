@@ -110,6 +110,7 @@ export class AgentOutbox {
   for(const id of this.awaitingNative)if(!ids.has(id))this.awaitingNative.delete(id);
   return entries.filter(r=>{
    if(r.host!==target.host||r.session!==target.session||r.window!==target.window||r.pane!==target.pane||r.status==='archived'){this.awaitingNative.delete(r.id);return false;}
+   if(r.status==='command'&&this.matches(r,target)&&r.command_message!=null&&renderedUserIds.has(String(r.command_message))){this.awaitingNative.delete(r.id);return false;}
    if(r.status!=='seen'){
     if(this.matches(r,target)&&['queued','submitting','submitted','uncertain'].includes(r.status))this.awaitingNative.add(r.id);
     return true;

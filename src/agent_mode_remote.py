@@ -31,11 +31,12 @@ def broker_observation(request,a,b):
     value=b['call'](dict(request,action='call',command={'action':'snapshot'}))
     if value.get('provider')not in ('codex','claude') or not value.get('handoff_supported'):
         raise ValueError('This broker does not support this provider handoff; existing brokers are not modified automatically')
+    if value.get('command_running'):raise ValueError('Wait for the local command to finish before switching')
     if value.get('state')!='ready' or any(not p.get('expired') for p in value.get('permissions',[])):
         raise ValueError('Wait for ACP Ready with no pending permission')
     if any(t.get('status')in ('pending','in_progress')for t in value.get('tools',[])):
         raise ValueError('Wait for ACP tools to finish before switching')
-    if any(r.get('state')in ('claimed','uncertain') or r.get('kind')=='prompt' and r.get('state')not in ('completed','cancelled','expired') for r in value.get('receipts',[])):
+    if any(r.get('state')in ('claimed','uncertain') or r.get('kind')=='prompt' and r.get('state')not in ('completed','cancelled','expired') or r.get('kind')=='local_command' and r.get('state')not in ('completed','cancelled','expired','failed') for r in value.get('receipts',[])):
         raise ValueError('Check unresolved ACP receipts before switching')
     session=value.get('session_id');b['canonical_uuid'](session)
     env={}

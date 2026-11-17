@@ -76,6 +76,12 @@ enum Action {
     Prompt {
         text: String,
     },
+    LocalCommand {
+        text: String,
+    },
+    CancelCommand {
+        command: String,
+    },
     Permission {
         permission: String,
         revision: String,
@@ -249,8 +255,9 @@ async fn command(
     uuid(&request.id)?;
     uuid(&request.instance)?;
     let mut action = json!({"id":request.id,"instance":request.instance});
+    let local_command = matches!(&request.action, Action::LocalCommand { .. });
     match request.action {
-        Action::Prompt { text } => {
+        Action::Prompt { text } | Action::LocalCommand { text } => {
             if text.trim().is_empty()
                 || text.len() > 12000
                 || text
@@ -259,8 +266,17 @@ async fn command(
             {
                 return Err(ApiError(StatusCode::BAD_REQUEST, "Invalid prompt".into()));
             }
-            action["action"] = json!("prompt");
+            action["action"] = json!(if local_command {
+                "local_command"
+            } else {
+                "prompt"
+            });
             action["text"] = json!(text);
+        }
+        Action::CancelCommand { command } => {
+            uuid(&command)?;
+            action["action"] = json!("cancel_command");
+            action["command"] = json!(command);
         }
         Action::Permission {
             permission,
@@ -491,8 +507,11 @@ pub(crate) async fn enrich(
     {
         let mut observed = state.acp.observed.lock().await;
         let fingerprint = format!(
-            "{phase}/{}/{}/{}",
-            value["reply_cursor"], value["approval_cursor"], value["usage"]
+            "{phase}/{}/{}/{}/{}",
+            value["reply_cursor"],
+            value["approval_cursor"],
+            value["usage"],
+            value["command_running"]
         );
         let scope = format!("{key}/{identity}");
         if observed.get(&scope) != Some(&fingerprint) {
@@ -566,6 +585,18 @@ mod tests {
         assert_eq!(metrics["context"]["window"], 400000);
         assert_eq!(metrics["stale"], true);
         assert!(metrics["model"].is_null());
+    }
+    #[test]
+    fn local_commands_have_no_client_shell_directory_or_environment_overrides() {
+        let input = json!({"connection_revision":"r","instance":uuid::Uuid::new_v4().to_string(),"id":uuid::Uuid::new_v4().to_string(),"action":"local_command","text":"!pwd"});
+        assert!(serde_json::from_value::<Command>(input.clone()).is_ok());
+        for key in ["cwd", "shell", "env", "pid", "flags"] {
+            let mut invalid = input.clone();
+            invalid[key] = json!("untrusted override");
+            assert!(serde_json::from_value::<Command>(invalid).is_err());
+        }
+        let cancel = json!({"connection_revision":"r","instance":uuid::Uuid::new_v4().to_string(),"id":uuid::Uuid::new_v4().to_string(),"action":"cancel_command","command":uuid::Uuid::new_v4().to_string()});
+        assert!(serde_json::from_value::<Command>(cancel).is_ok());
     }
     #[test]
     fn commands_are_typed_and_do_not_accept_cli_flags() {

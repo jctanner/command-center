@@ -528,7 +528,20 @@ async fn confirm_observed(
         let command = if chat.is_none() && r.text.trim_start().starts_with('!') {
             let mut evidence = observation.clone();
             evidence["users"] = observation["commands"].clone();
-            matching_receipt(r, &evidence, &used)
+            if observation["provider"] == "claude" {
+                let mut normalized = r.clone();
+                normalized.digest = digest(&format!(
+                    "!{}",
+                    r.text
+                        .trim_start()
+                        .strip_prefix('!')
+                        .unwrap_or("")
+                        .trim_start()
+                ));
+                matching_receipt(&normalized, &evidence, &used)
+            } else {
+                matching_receipt(r, &evidence, &used)
+            }
         } else {
             None
         };
@@ -550,7 +563,7 @@ async fn confirm_observed(
                 s,
                 updated,
                 if command.is_some() { "command" } else { "seen" },
-                if command.is_some() { "Pi interpreted this input as a native shell command, not a user chat message. No resend was made." } else { "Seen in the process-linked conversation." },
+                if command.is_some() { if observation["provider"]=="claude" { "Claude executed this input as a native local command. Output is shown in command history. No resend was made." } else { "Pi interpreted this input as a native shell command, not a user chat message. No resend was made." } } else { "Seen in the process-linked conversation." },
             )
             .await?
             {
@@ -1385,6 +1398,43 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .push(json!({"position":130,"digest":digest("!12 was merged")}));
+        confirm_observed(&state, &mut rows, &observation)
+            .await
+            .unwrap();
+        assert_eq!(rows[1].status, "command");
+        assert_eq!(rows[1].command_message, Some(130));
+        assert_eq!(rows[1].seen_message, None);
+    }
+    #[tokio::test]
+    async fn claude_local_command_receipts_normalize_bang_spacing_without_reuse() {
+        let state =
+            AppState::new(serde_json::from_value(json!({"hosts":[]})).unwrap(), 8080).unwrap();
+        let mut first = fixture();
+        first.text = "! pwd".into();
+        first.digest = digest(&first.text);
+        let mut second = first.clone();
+        second.id = uuid::Uuid::new_v4().to_string();
+        let mut rows = vec![first, second];
+        let stored_rows = rows.clone();
+        state.board.with(move |c| {
+            for r in stored_rows {
+                c.execute("INSERT INTO agent_outbox(id,scope,phase,revision,data) VALUES(?1,?2,?3,?4,?5)",params![r.id,r.scope,r.status,r.revision,serde_json::to_string(&r).map_err(storage)?]).map_err(storage)?;
+            }
+            Ok(())
+        }).await.unwrap();
+        let mut observation = json!({"provider":"claude","log":{"conversation":"conversation","device":1,"inode":2,"size":200},"users":[],"commands":[{"position":110,"digest":digest("!pwd")}]});
+        confirm_observed(&state, &mut rows, &observation)
+            .await
+            .unwrap();
+        assert_eq!(rows[0].status, "command");
+        assert_eq!(rows[0].command_message, Some(110));
+        assert_eq!(rows[0].seen_message, None);
+        assert!(rows[0].note.contains("Claude executed"));
+        assert_eq!(rows[1].status, "submitted");
+        observation["commands"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"position":130,"digest":digest("!pwd")}));
         confirm_observed(&state, &mut rows, &observation)
             .await
             .unwrap();

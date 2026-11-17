@@ -1299,8 +1299,10 @@ def claude_log_activity(path, session, now):
     except OSError: return state_result('unknown','claude_events','Process-linked Claude event log is unavailable')
     if records is None: return state_result('unknown','claude_events','Claude event update is incomplete')
     state,stamp,event=None,None,None
+    local,_=claude_local_commands(list(enumerate(records)),session)
     background={r.get('id') for r in records if r.get('type')=='api-request' and r.get('querySource') not in (None,'repl_main_thread') and isinstance(r.get('id'),str)}
-    for record in records:
+    for index,record in enumerate(records):
+        if index in local:continue
         if record.get('sessionId')!=session or record.get('isSidechain') or record.get('isMeta'): continue
         if record.get('serverClassifierRequest') is True or (isinstance(record.get('requestRef'),str) and record['requestRef'] in background): continue
         kind=record.get('type');message=record.get('message',{})
@@ -1434,6 +1436,43 @@ def claude_consumed_prompts(records, session):
     return prompts
 
 
+def claude_local_commands(records, session):
+    """Native bash envelopes need a linked pair, never XML text alone."""
+    valid=lambda v:isinstance(v,str)and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',v)is not None
+    if not valid(session):return {},[]
+    by_uuid={};ambiguous=set()
+    for offset,record in records:
+        uid=record.get('uuid')
+        if not valid(uid):continue
+        if uid in by_uuid:ambiguous.add(uid)
+        else:by_uuid[uid]=(offset,record)
+    def envelope(record):
+        return (record.get('type')=='user'and record.get('sessionId')==session and record.get('isSidechain')is False and not record.get('isMeta')and not claude_internal_user(record)
+            and record.get('userType')=='external'and record.get('entrypoint')=='cli'and valid(record.get('promptId'))and valid(record.get('uuid'))and valid(record.get('parentUuid'))
+            and record.get('uuid')not in ambiguous and isinstance(record.get('message'),dict)and record['message'].get('role')=='user'and isinstance(record['message'].get('content'),str))
+    mapped={};commands=[];used=set()
+    for output_offset,output in records:
+        if not envelope(output)or output.get('turnOrigin')!='human' or not isinstance(output.get('turnPosition'),dict):continue
+        parent=by_uuid.get(output['parentUuid'])
+        if not parent:continue
+        input_offset,input_record=parent
+        if not envelope(input_record)or input_record.get('turnOrigin')is not None or input_offset>=output_offset or input_offset in used or input_record['promptId']!=output['promptId']:continue
+        text=input_record['message']['content'];result=output['message']['content']
+        # Full native wrappers only; no mixed blocks or markup-based provenance.
+        command=re.fullmatch(r'<bash-input>([\s\S]*)</bash-input>',text)
+        streams=re.fullmatch(r'<bash-stdout>([\s\S]*)</bash-stdout><bash-stderr>([\s\S]*)</bash-stderr>',result)
+        if not command or not streams or not command[1].strip() or '<bash-input>'in command[1]or '</bash-input>'in command[1]:continue
+        if any(tag in streams[1]+streams[2]for tag in ('<bash-stdout>','</bash-stdout>','<bash-stderr>','</bash-stderr>')):continue
+        used.add(input_offset)
+        input_text='!'+command[1]
+        out=streams[1];err=streams[2]
+        output_text=out+('\n'if out and err else'')+('stderr:\n'+err if err else'')
+        mapped[input_offset]=dict(role='user',text=input_text,kind='command')
+        mapped[output_offset]=dict(role='assistant',text=output_text or '(command produced no output)',kind='command_output')
+        commands.append(dict(position=input_offset,digest=input_hash('!'+command[1].lstrip())))
+    return mapped,commands[-100:]
+
+
 def history(path, kind, before=None, known_branch=None, active_leaf=False, include_activity=True):
     if kind == 'pi': return pi_history(path,before,known_branch,active_leaf,include_activity)
     # Read only a tail/page, never a growing multi-GB transcript into memory.
@@ -1459,6 +1498,7 @@ def history(path, kind, before=None, known_branch=None, active_leaf=False, inclu
     session=Path(path).stem if kind=='claude' else None
     if kind=='claude' and not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',session):session=metadata(path,'claude')[1]
     consumed=claude_consumed_prompts(records,session) if kind=='claude' else {}
+    local_commands,command_receipts=claude_local_commands(records,session)if kind=='claude'else({},[])
     messages, events = [], []
     for offset, record in records:
         if kind == 'codex':
@@ -1475,6 +1515,8 @@ def history(path, kind, before=None, known_branch=None, active_leaf=False, inclu
                 continue
             else: continue
         else:
+            if offset in local_commands:
+                local=local_commands[offset];text=local['text'];messages.append((offset,dict(id=str(offset),cursor=hashlib.sha256(f'{offset}:{text}'.encode()).hexdigest(),role=local['role'],text=text[:16000],kind=local['kind'],truncated=len(text)>16000,timestamp=record.get('timestamp',''))));continue
             if offset in consumed:
                 role,text='user',consumed[offset];payload={'content':text}
             else:
@@ -1496,7 +1538,7 @@ def history(path, kind, before=None, known_branch=None, active_leaf=False, inclu
     cursor = page[0][0] if len(messages) > 100 else records[0][0] if start and records else start
     activities, activity_limited = history_activities(records, kind, page[0][0] if len(messages)>100 else 0) if include_activity else ([],False)
     if activity_limited and not page: cursor=activities[0]['position']
-    return dict(messages=[m for _, m in page], activities=activities, activity_limited=activity_limited, older_cursor=cursor if cursor > 0 else None,
+    return dict(messages=[m for _, m in page],commands=command_receipts, activities=activities, activity_limited=activity_limited, older_cursor=cursor if cursor > 0 else None,
                 limited=start > 0 or len(messages) > 100 or activity_limited)
 
 def transcript_version(chosen):
@@ -1956,7 +1998,7 @@ def execute(request):
         candidates=conversations(observation)
         linked=[candidate for candidate in candidates if candidate.get('linked')]
         chosen=linked[0] if len(linked)==1 else None
-        result=dict(instance=observation['identity'], screen=observation['screen'], context=observation['context'],
+        result=dict(provider=observation['kind'],instance=observation['identity'], screen=observation['screen'], context=observation['context'],
                     activity=provider_activity(observation,candidates), log=None, users=[], pending_pi_session=None,pending_codex_session=codex_pending_session(observation,candidates),
                     pending_codex_input_available=codex_first_input_available(observation,candidates),
                     send_available=bool(observation['identity']) and not observation['in_mode'] and not folder_trust(observation) and not approval_menu(observation)
@@ -2071,7 +2113,7 @@ def execute(request):
     result['background_tasks']=observed_background_tasks(observation,chosen)
     if chosen:
         info, version = transcript_version(chosen)
-        prefix = {'claude':'claude-visible-v4:', 'codex':'codex-visible-v2:'}.get(observation['kind'], '')
+        prefix = {'claude':'claude-visible-v5:', 'codex':'codex-visible-v2:'}.get(observation['kind'], '')
         history_version = prefix + version
         result['history_version'] = history_version
         if request.get('before') is None and request.get('known_version') == history_version:

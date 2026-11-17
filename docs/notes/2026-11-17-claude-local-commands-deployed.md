@@ -1,0 +1,3 @@
+# Native Claude local-command fix deployed
+
+Approved deployment2026-11-17T17:10:16Z verified four access paths/SSE/full contract/index/release binary, exact args/env/config and unchanged local tmux pane PIDs. Original CC-73 !pwd receipt reconciled to command; process association, matching position, one command row, literal output and v5 cache verified by read-only API. No input/resend/manual receipt rewrite/agent restart. ACP text behavior unchanged, composer now explains ! semantics. Reload frontend once. No commit/push. Goose remains pending task0102. See task0103 and private deployment/live-proof receipts.

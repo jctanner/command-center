@@ -9,6 +9,16 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0105: release ACP local commands](docs/tasks/current/0105-release-acp-local-commands.md) — commit/push/deploy requested; preserve live agent processes.
+
+- [Task0104: ACP local commands](docs/tasks/done/0104-acp-local-command-execution.md) — implemented/tested locally; deployment and explicit existing-broker upgrade pending.
+
+- [Task0103: deploy native Claude command fix](docs/tasks/done/0103-deploy-native-claude-command-fix.md) — deployed; CC-73 original receipt confirmed without resend; Goose remains pending.
+
+- [Task0102 / CC-100: container-managed Goose ACP](docs/tasks/pending/0102-container-managed-goose-acp.md) — deferred by human; design note first after current command fix, Goose container-only.
+
+- [Task0101: native Claude local commands](docs/tasks/done/0101-claude-local-command-history.md) — deployed; original command receipt/output verified; no resend or agent restart.
+
 - [Task0100: release ACP usage and coordinator upgrade](docs/tasks/done/0100-release-acp-usage-and-upgrade-coordinator.md) — deployed d0dd999; coordinator upgraded/Ready; usage reader verified.
 
 - [Task0099: ACP usage metrics](docs/tasks/done/0099-acp-usage-update-metrics.md) — deployed; coordinator reader upgraded; context shown when adapter reports, totals unknown.

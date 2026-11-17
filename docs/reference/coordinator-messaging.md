@@ -141,3 +141,12 @@ Unresolved receipts pin their internal source bytes beyond the public export's 2
 ### Claude named tmux targets
 
 Claude may record native process metadata as a literal session name plus stable window/pane IDs rather than the observed numeric session ID. CC resolves that name with exact-session targeting and verifies membership on the same configured tmux socket, alongside existing PID/start/domain/cwd/session checks. A suffix match alone does not establish identity; missing/renamed/unrelated named sessions fail closed. The recognition fix is deployed (task 0061). Unknown activity still holds queued intents; do not force-submit or archive them just to bypass missing evidence.
+
+## Leading ! and native local commands
+
+Native Claude may interpret leading `!` as its own local shell mode. CC matches a native local command only from a root, process-linked input/output envelope pair with exact session/prompt/UUID parent linkage and native provenance; literal or ambiguous XML remains chat text. This yields a `command` receipt, not a chat `seen` receipt, without resend. Recognized command input/output are labeled and rendered literally. Pi's existing command safeguards remain unchanged.
+
+ACP `session/prompt` sends text, including `!pwd`, to the model. It does not activate the provider TUI's shell mode; the agent may choose a tool in response, under its normal permissions. CC adds no shell executor or command translation. Existing submitted `!` messages must be checked against the actual native/ACP receipt, never resubmitted merely because the responses differ.
+
+
+ACP leading `!` is an explicit local command only on brokers advertising `local_commands`; the human composer labels **Run command** with the machine and directory. The typed API action is `local_command` (original bang-prefixed text), with the usual endpoint, instance and durable UUID guards. Commands share the FIFO and produce literal output/exit receipts, never model replies. `prompt` always remains model text, including a literal `!`. Never substitute a shell command for a requested message, bypass trust/tool approval, execute without scoped human authority, or retry uncertain receipts. See [ACP local commands](acp-broker.md#explicit-local-commands).

@@ -1,0 +1,5 @@
+# Native Claude command fix ready; Goose deferred
+
+CC-73 native !pwd ran but receipt/output mapping ignored native command envelopes. Exact paired provenance now yields command receipt and literal labeled output, never chat Seen or resend; v5 history invalidation and inline dedup included. CC-75 ACP !pwd was literal model input, so new contextual composer text explains expected behavior without adding shell execution.37 history/95 Rust/34 browser/4 outbox/6 API checks and build/Clippy passed. Original CC-73 evidence verified read-only, no receipt update/input/restart/deploy/commit/push. Backend release needed; no agent/broker restart necessary for this fix.
+
+Human deferred CC-100 Goose container work until current work finishes. Backlog task0102 preserves container-only rule, rhlaptop references/SELinux/secret constraints, short-design-first and real-container testing requirements. Only three pre-deferral text references were retrieved via CC file API into ignored local review cache; no Goose install, container launch or design/implementation work performed.

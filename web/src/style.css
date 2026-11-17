@@ -1152,3 +1152,9 @@ button:disabled { opacity: .5; cursor: default; }
 
 .acp-message-delivery { display:flex;align-items:center;gap:6px;flex-wrap:wrap; }
 .acp-message-delivery button { font-size:11px;padding:4px 8px; }
+
+.agent-command-text { white-space:pre-wrap;overflow-wrap:anywhere;font-family:ui-monospace,monospace;font-size:13px;margin:0; }
+
+@media (max-width:900px), (pointer:coarse) and (max-width:1100px) {
+ .agent-composer .composer-input>button[data-command=true]::before {content:'>_';font-size:16px;}
+}

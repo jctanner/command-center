@@ -5289,6 +5289,14 @@
                 },
                 "truncated": {
                   "type": "boolean"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "command",
+                    "command_output"
+                  ],
+                  "description": "Verified native local command envelope pair. Render text literally as command/output, never model chat or Markdown/HTML. Missing for ordinary messages."
                 }
               },
               "required": [
@@ -7562,6 +7570,70 @@
               "action",
               "prompt"
             ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connection_revision": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "const": "local_command"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12000,
+                "description": "Explicit user shell input including leading !. Noninteractive /bin/sh -c in the immutable broker project directory; never forwarded to the model. Capability-gated; queues in FIFO with prompts."
+              }
+            },
+            "required": [
+              "connection_revision",
+              "instance",
+              "id",
+              "action",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connection_revision": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "const": "cancel_command"
+              },
+              "command": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "connection_revision",
+              "instance",
+              "id",
+              "action",
+              "command"
+            ]
           }
         ]
       },
@@ -7639,11 +7711,25 @@
               "permission",
               "cancel",
               "close",
-              "cancel_queued"
+              "cancel_queued",
+              "local_command",
+              "cancel_command"
             ]
           },
           "at": {
             "type": "number"
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "timed_out": {
+            "type": "boolean"
+          },
+          "output_truncated": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -7712,6 +7798,13 @@
                 },
                 "text": {
                   "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "command",
+                    "command_output"
+                  ]
                 }
               }
             }
@@ -7840,6 +7933,28 @@
                 "type": "null"
               }
             ]
+          },
+          "local_commands": {
+            "type": "boolean",
+            "description": "Explicit host-local command capability; false/missing on old brokers or container profiles. No model/native fallback."
+          },
+          "command_running": {
+            "type": "boolean"
+          },
+          "command_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "command_timeout": {
+            "type": "integer",
+            "const": 120
+          },
+          "command_output_limit": {
+            "type": "integer",
+            "const": 32768
           }
         }
       },

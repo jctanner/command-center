@@ -24,6 +24,31 @@ class AgentHistory(unittest.TestCase):
     def write(self, records):
         self.log.write_text(''.join(json.dumps(r) + '\n' for r in records))
 
+    def local_command(self):
+        session='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';self.log=self.root/(session+'.jsonl')
+        common=dict(type='user',sessionId=session,isSidechain=False,userType='external',entrypoint='cli',promptId='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',timestamp='2026-11-17T16:00:00Z')
+        command=dict(common,uuid='cccccccc-cccc-cccc-cccc-cccccccccccc',parentUuid='dddddddd-dddd-dddd-dddd-dddddddddddd',message=dict(role='user',content='<bash-input>pwd</bash-input>'))
+        output=dict(common,uuid='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',parentUuid=command['uuid'],turnOrigin='human',turnPosition=dict(promptIndex=1,turnIndex=2),message=dict(role='user',content='<bash-stdout>/fixture & <img src=x onerror=alert(1)></bash-stdout><bash-stderr>warning</bash-stderr>'))
+        return session,command,output
+
+    def test_native_claude_command_pair_is_command_evidence_and_literal_output(self):
+        session,command,output=self.local_command();self.write([command,output])
+        page=agent.history(self.log,'claude');self.assertEqual(['command','command_output'],[m['kind']for m in page['messages']]);self.assertEqual('!pwd',page['messages'][0]['text']);self.assertIn('<img src=x',page['messages'][1]['text']);self.assertIn('stderr:\nwarning',page['messages'][1]['text']);self.assertEqual(agent.input_hash('!pwd'),page['commands'][0]['digest']);self.assertNotIn('input_hash',page['messages'][0]);self.assertEqual(0,page['commands'][0]['position'])
+        self.assertEqual('unknown',agent.claude_log_activity(self.log,session,int(time.time()))['state'])
+
+    def test_local_command_xml_without_exact_native_pair_stays_literal(self):
+        for change in ('missing','prompt','parent','sidechain','human-input','mixed','duplicate'):
+            session,command,output=self.local_command()
+            if change=='prompt':output['promptId']='ffffffff-ffff-ffff-ffff-ffffffffffff'
+            if change=='parent':output['parentUuid']='ffffffff-ffff-ffff-ffff-ffffffffffff'
+            if change=='sidechain':output['isSidechain']=True
+            if change=='human-input':command['turnOrigin']='human'
+            if change=='mixed':command['message']['content']='Literal '+command['message']['content']
+            records=[command]if change=='missing'else[command,output]
+            if change=='duplicate':records.append(dict(command))
+            self.write(records);page=agent.history(self.log,'claude')
+            with self.subTest(change=change):self.assertFalse(page['commands']);self.assertFalse(any(m.get('kind')for m in page['messages']));self.assertEqual(command['message']['content'],page['messages'][0]['text'])
+
     def test_claude_excludes_tool_results_meta_sidechains_and_reasoning(self):
         self.write([
             {'type':'user','message':{'role':'user','content':'Hello'}},

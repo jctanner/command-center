@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import signal
+import selectors
 import socket
 import sqlite3
 import stat
@@ -21,6 +22,8 @@ MAX_EVENTS = 256
 MAX_HISTORY = 128
 MAX_QUEUED = 16
 QUEUE_TTL = 24 * 60 * 60
+COMMAND_TIMEOUT = 120
+COMMAND_OUTPUT_BYTES = 32768
 
 def start_identity(pid):
     with open('/proc/%d/stat' % pid) as f:
@@ -65,6 +68,10 @@ class Broker:
         self.state, self.session = 'starting', None
         self.turn = None
         self.failure = None
+        self.active_command = None
+        directory_stat=os.stat(cwd)
+        self.directory_identity=(directory_stat.st_dev,directory_stat.st_ino)
+        self.host_commands = True
         self.provider = 'claude'
         self.resume_session = None
         self.prompt_session_ready = False
@@ -75,7 +82,9 @@ class Broker:
             private(intent_path)
             with open(intent_path) as initial_file:
                 intent = json.load(initial_file)
-            self.provider = intent.get('prepared', {}).get('provider', 'claude')
+            prepared=intent.get('prepared',{})
+            self.host_commands=not any(key in prepared for key in ('profile','container','container_profile'))
+            self.provider = prepared.get('provider', 'claude')
             if self.provider not in ('claude', 'codex'):
                 raise ValueError('Unsupported ACP provider')
             self.resume_session = intent.get('resume_session')
@@ -150,7 +159,7 @@ class Broker:
             self.expire_queue()
             queued=self.db.execute('select count(*) from prompt_queue').fetchone()[0]
             blocked=bool(queued and(self.state in ('failed','exited')or self.unresolved_sends()))
-            return dict(usage=self.usage,queue_blocked=blocked,prompt_queue=self.prompt_session_ready,queued_prompts=queued,queue_limit=MAX_QUEUED,instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
+            return dict(local_commands=self.host_commands and self.prompt_session_ready,command_running=bool(self.active_command),command_id=self.active_command['id']if self.active_command else None,command_timeout=COMMAND_TIMEOUT,command_output_limit=COMMAND_OUTPUT_BYTES,usage=self.usage,queue_blocked=blocked,prompt_queue=self.prompt_session_ready,queued_prompts=queued,queue_limit=MAX_QUEUED,instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
                         messages=list(self.messages), tools=list(self.tools.values()), permissions=list(self.permissions.values()), receipts=self.receipt_snapshot())
 
     def receipt_snapshot(self):
@@ -333,12 +342,12 @@ class Broker:
             self.finish_receipt(value,'expired')
 
     def unresolved_sends(self):
-        return any(r.get('state')in ('claimed','uncertain')or r.get('kind')=='prompt'and r.get('state')in ('submitted','failed','blocked')for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
+        return any(r.get('state')in ('claimed','uncertain')or r.get('kind')in ('prompt','local_command')and r.get('state')in ('submitted','blocked')or r.get('kind')=='prompt'and r.get('state')=='failed'for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
 
     def drain_queue(self,raise_io=False):
         # Always called under the dispatcher lock, never concurrent session/prompt.
         self.expire_queue()
-        if self.state!='ready' or self.permissions or self.closed:return
+        if self.state!='ready' or self.permissions or self.closed or self.active_command:return
         if self.unresolved_sends():return
         row=self.db.execute('select id,instance,session,text from prompt_queue order by rowid limit 1').fetchone()
         if not row:return
@@ -350,6 +359,8 @@ class Broker:
         # reply is never a reason to replay this intent.
         self.db.execute('delete from prompt_queue where id=?',(ident,))
         self.finish_receipt(value,'claimed')
+        if value['kind']=='local_command':
+            self.start_local_command(value,text);return
         self.state='working';self.turn=ident
         def completed(reply):
             with self.lock:
@@ -365,6 +376,101 @@ class Broker:
             self.finish_receipt(value,'uncertain');self.state='failed';self.emit()
             if raise_io:raise
 
+    def trim_messages(self):
+        self.messages=self.messages[-MAX_HISTORY:]
+        while len(json.dumps(self.messages).encode())>256000 and len(self.messages)>1:del self.messages[0]
+
+    def stop_local_command(self,command):
+        process=command.get('process')
+        command['cancelled']=True;command['cancel_at']=time.monotonic()
+        if process is not None:
+            if process.poll() is None and command.get('start') is not None and start_identity(process.pid)!=command['start']:raise ValueError('Local command process changed')
+            try:os.killpg(process.pid,signal.SIGTERM)
+            except ProcessLookupError:pass
+
+    def start_local_command(self,value,text):
+        command=dict(id=value['id'],process=None,cancelled=False);self.active_command=command
+        try:
+            directory=os.open(self.cwd,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+            try:
+                st=os.fstat(directory)
+                if (st.st_dev,st.st_ino)!=self.directory_identity:raise ValueError('Project directory changed')
+                process=subprocess.Popen(['/bin/sh','-c',text.lstrip()[1:].lstrip()],cwd='/proc/self/fd/'+str(directory),pass_fds=(directory,),env={**os.environ,'PWD':self.cwd},stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+            finally:os.close(directory)
+            command['process']=process;command['start']=start_identity(process.pid)
+            command['output_id']=str(uuid.uuid4())
+            self.messages.append(dict(id=command['output_id'],role='assistant',kind='command_output',turn=value['id'],text='Running command…'));self.trim_messages()
+            self.finish_receipt(value,'submitted')
+        except Exception:
+            if command.get('process') is not None:
+                self.stop_local_command(command)
+                try:command['process'].wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    try:os.killpg(command['process'].pid,signal.SIGKILL)
+                    except ProcessLookupError:pass
+                    command['process'].wait(timeout=3)
+                for stream in (command['process'].stdout,command['process'].stderr):stream.close()
+                self.finish_receipt(value,'uncertain')
+            else:self.finish_receipt(value,'failed')
+            self.messages.append(dict(id=str(uuid.uuid4()),role='assistant',kind='command_output',turn=value['id'],text='Local command could not start; project directory or shell unavailable. No retry made.'))
+            self.active_command=None;self.trim_messages();self.emit()
+            if value['state']!='uncertain':self.drain_queue()
+            return
+        worker=threading.Thread(target=self.run_local_command,args=(command,value),daemon=True);command['thread']=worker;worker.start()
+
+    def run_local_command(self,command,value):
+        process=command['process'];selector=selectors.DefaultSelector();output={'stdout':bytearray(),'stderr':bytearray()};total=0;truncated=False;timed_out=False;uncertain=False
+        deadline=time.monotonic()+COMMAND_TIMEOUT;last_emit=0;killed=False;kill_at=None
+        try:
+            for name in output:selector.register(getattr(process,name),selectors.EVENT_READ,name)
+            while selector.get_map() or process.poll() is None:
+                now=time.monotonic()
+                if not killed and(now>=deadline or command.get('cancelled')and now-command.get('cancel_at',now)>2):
+                    killed=True;kill_at=now
+                    timed_out=not command.get('cancelled');
+                    try:os.killpg(process.pid,signal.SIGKILL)
+                    except ProcessLookupError:pass
+                    deadline=float('inf')
+                if kill_at is not None and now-kill_at>2:
+                    truncated=True
+                    break
+                if not selector.get_map():time.sleep(.05)
+                for key,_ in selector.select(.1):
+                    data=os.read(key.fileobj.fileno(),4096)
+                    if not data:selector.unregister(key.fileobj);continue
+                    allowed=min(len(data),max(0,COMMAND_OUTPUT_BYTES-total));output[key.data].extend(data[:allowed]);total+=allowed;truncated|=allowed<len(data)
+                    if time.monotonic()-last_emit>=.1:
+                        with self.lock:
+                            stdout=bytes(output['stdout']).decode('utf-8','replace');stderr=bytes(output['stderr']).decode('utf-8','replace')
+                            text=stdout+('\n'if stdout and stderr else'')+('stderr:\n'+stderr if stderr else'')
+                            message=next((m for m in self.messages if m['id']==command['output_id']),None)
+                            if message is not None:message['text']=text or 'Running command…'
+                            self.trim_messages();self.emit()
+                        last_emit=time.monotonic()
+            process.wait(timeout=3)
+        except Exception:
+            uncertain=True
+            try:os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=3)
+            except (ProcessLookupError,subprocess.TimeoutExpired):pass
+        finally:
+            selector.close();process.stdout.close();process.stderr.close()
+            with self.lock:
+                stdout=bytes(output['stdout']).decode('utf-8','replace');stderr=bytes(output['stderr']).decode('utf-8','replace')
+                text=stdout+('\n'if stdout and stderr else'')+('stderr:\n'+stderr if stderr else'')
+                if not text:text='(command produced no output)'
+                if truncated:text+='\n[Output truncated]'
+                if timed_out:text+='\n[Command timed out]'
+                if command.get('cancelled'):text+='\n[Command cancelled]'
+                text+='\n[Exit '+str(process.returncode)+']'
+                try:display('\n'+text,flush=True)
+                except OSError:pass
+                message=next((m for m in self.messages if m['id']==command['output_id']),None)
+                if message is not None:message['text']=text
+                else:self.messages.append(dict(id=command['output_id'],role='assistant',kind='command_output',turn=value['id'],text=text))
+                value.update(exit_code=process.returncode,timed_out=timed_out,output_truncated=truncated)
+                self.finish_receipt(value,'uncertain'if uncertain else'cancelled'if command.get('cancelled')else'completed')
+                self.active_command=None;self.trim_messages();self.emit();self.drain_queue()
+
     def dispatch(self, request):
         with self.lock:
             action = request.get('action')
@@ -375,8 +481,8 @@ class Broker:
             ident = request.get('id', '')
             if action == 'handoff':
                 if self.db.execute('select id from receipts where id=?',(ident,)).fetchone():return self.receipt(ident,request)[0]
-                unresolved=any(r.get('state')in ('claimed','uncertain')or r.get('kind')=='prompt'and r.get('state')not in ('completed','cancelled','expired')for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
-                if self.provider not in ('codex','claude') or self.state!='ready' or self.permissions or unresolved or any(t.get('status')in ('pending','in_progress')for t in self.tools.values()):
+                unresolved=any(r.get('state')in ('claimed','uncertain')or r.get('kind')=='prompt'and r.get('state')not in ('completed','cancelled','expired')or r.get('kind')=='local_command'and r.get('state')not in ('completed','cancelled','expired','failed')for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
+                if self.provider not in ('codex','claude') or self.state!='ready' or self.permissions or self.active_command or unresolved or any(t.get('status')in ('pending','in_progress')for t in self.tools.values()):
                     raise ValueError('Handoff requires an idle agent with no unresolved receipts')
                 value,_=self.receipt(ident,request);self.state='switching';self.emit()
                 try:
@@ -386,10 +492,11 @@ class Broker:
                 except Exception:
                     self.finish_receipt(value,'uncertain');raise
                 return value
-            if action == 'prompt':
+            if action in ('prompt','local_command'):
                 text = request.get('text')
                 if not isinstance(text, str) or not text.strip() or len(text.encode()) > 12000 or any(ord(c) < 32 and c not in '\n\t' for c in text):
                     raise ValueError('Prompt must be 1–12000 UTF-8 bytes without control characters')
+                if action=='local_command'and(not self.host_commands or not text.lstrip().startswith('!')or not text.lstrip()[1:].strip()):raise ValueError('Direct local commands unavailable or empty; nothing executed')
                 row=self.db.execute('select id from receipts where id=?',(ident,)).fetchone()
                 self.expire_queue()
                 if not row:
@@ -400,10 +507,19 @@ class Broker:
                 value['state']='queued'
                 self.db.execute('insert into prompt_queue values(?,?,?,?,?)',(ident,self.instance,self.session,text,time.time()+QUEUE_TTL))
                 self.db.execute('update receipts set data=? where id=?',(json.dumps(value),ident));self.db.commit()
-                self.messages.append(dict(id=ident,role='user',text=text));self.messages=self.messages[-MAX_HISTORY:]
+                self.messages.append(dict(id=ident,role='user',text=text,**({'kind':'command'}if action=='local_command'else{})));self.messages=self.messages[-MAX_HISTORY:]
                 while len(json.dumps(self.messages).encode())>256000 and len(self.messages)>1:del self.messages[0]
                 self.emit();self.drain_queue(raise_io=True)
                 return json.loads(self.db.execute('select data from receipts where id=?',(ident,)).fetchone()[0])
+            if action=='cancel_command':
+                if self.db.execute('select id from receipts where id=?',(ident,)).fetchone():return self.receipt(ident,request)[0]
+                command=self.active_command
+                if not command or command['id']!=request.get('command'):raise ValueError('Local command is no longer running')
+                value,_=self.receipt(ident,request)
+                try:
+                    self.stop_local_command(command);self.finish_receipt(value,'completed')
+                except Exception:self.finish_receipt(value,'uncertain');raise
+                return value
             if action == 'cancel_queued':
                 if self.db.execute('select id from receipts where id=?',(ident,)).fetchone():return self.receipt(ident,request)[0]
                 queued=request.get('prompt')
@@ -503,8 +619,18 @@ class Broker:
         def stop(*_):
             self.closed = True
             with self.lock:
+                closing_command=self.active_command
+                if closing_command:self.stop_local_command(closing_command)
                 for (ident,) in self.db.execute('select id from prompt_queue').fetchall():
                     value=json.loads(self.db.execute('select data from receipts where id=?',(ident,)).fetchone()[0]);self.db.execute('delete from prompt_queue where id=?',(ident,));self.finish_receipt(value,'cancelled')
+            if closing_command and closing_command.get('process')is not None:
+                process=closing_command['process']
+                try:process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    try:os.killpg(process.pid,signal.SIGKILL)
+                    except ProcessLookupError:pass
+                    process.wait(timeout=3)
+                if closing_command.get('thread'):closing_command['thread'].join(timeout=3)
             if self.agent.poll() is None:
                 try:os.killpg(self.agent.pid, signal.SIGTERM)
                 except ProcessLookupError:pass
@@ -539,7 +665,7 @@ class Broker:
                     if prompt:
                         self.terminal_action(dict(action='permission', permission=parts[1], revision=prompt['revision'], option=parts[2]))
             elif text.strip():
-                self.terminal_action(dict(action='prompt', text=text))
+                self.terminal_action(dict(action='local_command'if text.lstrip().startswith('!')else'prompt', text=text))
 
     def terminal_action(self, request):
         try:
@@ -548,7 +674,7 @@ class Broker:
             display(str(error), flush=True)
 
     def cancel_terminal(self):
-        self.terminal_action(dict(action='cancel'))
+        self.terminal_action(dict(action='cancel_command',command=self.active_command['id'])if self.active_command else dict(action='cancel'))
 
 if __name__ == '__main__':
     Broker(sys.argv[1], sys.argv[2], sys.argv[3]).run()

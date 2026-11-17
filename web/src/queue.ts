@@ -17,10 +17,10 @@ type AgentState = 'working' | 'ready' | 'approval' | 'awaiting_trust' | 'unknown
 type Activity = { state: AgentState; source: string; reason: string; evidence_at?: number; observed_at: number; transition?: string };
 export type AgentFileTarget={host:string;connection:string;path:string};
 export type QueueTarget = { instance?:string|null;host: string; connection: string; session: string; window: string; pane: string };
-type Item = {acp?:{broker:string;instance:string;endpoint?:string;conversation?:string};token_metrics?:TokenMetrics|null; folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
+type Item = {acp?:{command_running?:boolean;broker:string;instance:string;endpoint?:string;conversation?:string};token_metrics?:TokenMetrics|null; folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
 type Host = { id: string; name: string; connection_revision: string; error?: string; limited: boolean; items: Item[] };
 type Snapshot = { checked_at: number; hosts: Host[] };
-type Message = { id: string; role: 'user' | 'assistant'; text: string; timestamp: string; order?: number; truncated?: boolean };
+type Message = { kind?:'command'|'command_output'; id: string; role: 'user' | 'assistant'; text: string; timestamp: string; order?: number; truncated?: boolean };
 type Conversation = { id: string; session: string; timestamp: string; linked: boolean };
 type Approval = { id: string; title: string; context: string; choices: { id: string; label: string }[]; token?: string; submitted?: boolean };
 type InputRequest = InputQuestion;
@@ -285,7 +285,7 @@ export class AttentionQueue {
     this.selected = id; this.openedForRead = id; this.body.dataset.detail = 'true'; this.render();
   }
   private acpTarget(host:Host,item:Item):AcpTarget{return{host:host.id,connection_revision:host.connection_revision,endpoint:item.acp!.endpoint||host.connection_revision,broker:item.acp!.broker,instance:item.acp!.instance,label:agentTitle(item),machine:host.name,path:item.project,session:item.session,window:item.window,pane:item.pane,disconnected:!!host.error||stateOf(item)==='disconnected',muted:item.attention?this.notifications.isMuted(JSON.stringify([item.attention.key,item.attention.instance])):false};}
-  private observeAcp(snapshot:AcpSnapshot){const chosen=this.chosen();if(!chosen?.item.acp||chosen.item.acp.instance!==snapshot.instance)return;const before=JSON.stringify([chosen.item.activity?.state,chosen.item.attention]);chosen.item.token_metrics=snapshot.token_metrics;this.cardTokens.get(chosen.item.id)?.update(snapshot.token_metrics,!!chosen.h.error||stateOf(chosen.item)==='disconnected');chosen.item.activity=snapshot.activity;chosen.item.status=snapshot.activity?.state==='approval'?'attention':snapshot.activity?.state==='disconnected'?'disconnected':'live';chosen.item.attention=snapshot.read_state as ReadState;chosen.item.acp.conversation=snapshot.session_id;if(snapshot.card&&snapshot.card_instance)this.mergeCard(chosen.item,snapshot.card_instance,snapshot.card);if(before!==JSON.stringify([chosen.item.activity?.state,chosen.item.attention]))this.render();}
+  private observeAcp(snapshot:AcpSnapshot){const chosen=this.chosen();if(!chosen?.item.acp||chosen.item.acp.instance!==snapshot.instance)return;const before=JSON.stringify([chosen.item.activity?.state,chosen.item.attention,chosen.item.acp.command_running]);chosen.item.acp.command_running=!!snapshot.command_running;chosen.item.token_metrics=snapshot.token_metrics;this.cardTokens.get(chosen.item.id)?.update(snapshot.token_metrics,!!chosen.h.error||stateOf(chosen.item)==='disconnected');chosen.item.activity=snapshot.activity;chosen.item.status=snapshot.activity?.state==='approval'?'attention':snapshot.activity?.state==='disconnected'?'disconnected':'live';chosen.item.attention=snapshot.read_state as ReadState;chosen.item.acp.conversation=snapshot.session_id;if(snapshot.card&&snapshot.card_instance)this.mergeCard(chosen.item,snapshot.card_instance,snapshot.card);if(before!==JSON.stringify([chosen.item.activity?.state,chosen.item.attention,chosen.item.acp.command_running]))this.render();}
   private mergeCard(item:Item,instance:string,card:AgentCard){const key=`${item.id}/${instance}`,old=this.cardVersions.get(key);if(old&&old.revision>card.revision)item.card=old;else{item.card=card;this.cardVersions.set(key,card);}if(this.cardVersions.size>512)this.cardVersions.delete(this.cardVersions.keys().next().value!);}
   private openModeSwitch(host:Host,item:Item){
     const instance=item.attention?.instance;if(!instance||!['codex','claude'].includes(item.agent)||stateOf(item)==='disconnected')return;
@@ -368,6 +368,7 @@ export class AttentionQueue {
       const attention=[item.attention?.finished?'Finished':'',item.attention?.new_approval?(inputSource(item.activity?.source)?'New input request':'New approval'):'',item.attention?.unread_reply?'Unread reply':''].filter(Boolean);
       if(attention.length){const dot=node('span');dot.className='queue-card-unread';dot.setAttribute('role','img');dot.setAttribute('aria-label',attention.join(' · '));dot.title=attention.join(' · ');context.append(dot);}
       context.append(document.createTextNode(`${h.name} · ${item.agent} · ${projectName(item.project)}`));
+      if(item.acp?.command_running){const command=node('span','Command running');command.className='queue-background-count';context.append(command);}
       const background=backgroundLabel(item.background_tasks,stateOf(item)==='disconnected');if(background){for(const parent of [machine,context]){const badge=node('span',background);badge.className='queue-background-count';if(parent===context)parent.prepend(badge,document.createTextNode(' · '));else parent.append(badge);}}
       b.title=`${name.textContent}\n${context.title}\nRight-click or Shift+F10 for agent actions`;
       if(item.folder_trust){const trust=node('small',item.folder_trust.title);trust.className='queue-card-prompt';b.append(trust);}
@@ -628,9 +629,9 @@ export class AttentionQueue {
         if(focused&&!focused.startsWith('run:'))groupMembers.add(focused);
         const entries: {position: number; order: number; element: HTMLElement;activity?:AgentActivityEntry}[] = data.messages.map(message => {
           const article = node('article'); article.className = `agent-message ${message.role}`; article.dataset.messageId=message.id;
-          const body=message.role === 'assistant' ? chatMarkdown(message.text,{project:data.project||item.project,machine:h.name,openFile:path=>this.openFile({host:h.id,connection:h.connection_revision,path})}) : node('div', message.text);
-          if(message.role==='user')body.classList.add('agent-user-text');
-          article.append(node('small', `${message.role === 'user' ? 'You' : 'Agent'}${message.timestamp ? ` · ${new Date(message.timestamp).toLocaleString()}` : ''}`), body);
+          const body=message.kind?node('pre',message.text):message.role === 'assistant' ? chatMarkdown(message.text,{project:data.project||item.project,machine:h.name,openFile:path=>this.openFile({host:h.id,connection:h.connection_revision,path})}) : node('div', message.text);
+          if(message.kind)body.classList.add('agent-command-text');else if(message.role==='user')body.classList.add('agent-user-text');
+          article.append(node('small', `${message.kind==='command'?'Command':message.kind==='command_output'?'Command output':message.role === 'user' ? 'You' : 'Agent'}${message.timestamp ? ` · ${new Date(message.timestamp).toLocaleString()}` : ''}`), body);
           if (message.truncated) article.append(node('small', 'Message shortened for this view. Open the CLI for the full text.'));
           return {position: Number(message.id), order: message.order ?? -1, element: article};
         });
