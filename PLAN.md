@@ -9,6 +9,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0098: coordinator ACP queue upgrade](docs/tasks/done/0098-upgrade-coordinator-acp-broker.md) — complete; same conversation, ACP Ready and queue capability enabled; no chat input.
+
 - [Task0097: release ACP queue](docs/tasks/done/0097-release-acp-prompt-queue.md) — deployed f1ce21c; four access paths/contract/PIDs verified.
 
 - [Task0096: ACP busy prompt queue](docs/tasks/done/0096-acp-busy-prompt-queue.md) — deployed; new brokers support busy FIFO; live brokers require explicit upgrade/restart.

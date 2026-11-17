@@ -1,0 +1,3 @@
+# Coordinator ACP queue capability enabled
+
+Human approved cc-coordinator ACP→native→ACP upgrade. Guarded API handoffs completed with original conversation and target/card metadata retained; other local pane PIDs unchanged. One native-startup preflight rejection proved not_sent and was retained; a fresh grant after stable screen completed without replay. Final real-Claude ACP snapshot Ready, prompt_queue true, queue limit16, zero queued prompts. No chat input or approvals; queue dispatch/image pixel tests were not performed. Private journal .local/reviews/coordinator-queue-upgrade.json. No backend deploy/install/commit/push. See task0098.
