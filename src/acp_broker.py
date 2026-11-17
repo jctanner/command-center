@@ -61,6 +61,7 @@ class Broker:
         self.state, self.session = 'starting', None
         self.turn = None
         self.failure = None
+        self.provider = 'claude'
         self.initial_prompt = None
         self.initial_message_id = None
         intent_path = os.path.join(root, 'intent.json')
@@ -68,6 +69,9 @@ class Broker:
             private(intent_path)
             with open(intent_path) as initial_file:
                 intent = json.load(initial_file)
+            self.provider = intent.get('prepared', {}).get('provider', 'claude')
+            if self.provider not in ('claude', 'codex'):
+                raise ValueError('Unsupported ACP provider')
             prompt = intent.pop('initial_prompt', None)
             if prompt:
                 if not isinstance(prompt, str) or len(prompt.encode()) > 12000:
@@ -97,7 +101,7 @@ class Broker:
             self.agent = subprocess.Popen([executable], cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
             with open('/proc/sys/kernel/random/boot_id') as boot_file:
                 boot = boot_file.read().strip()
-            meta = dict(instance=self.instance, pid=os.getpid(), start=start_identity(os.getpid()), boot=boot, agent_pid=self.agent.pid, path=cwd, protocol='acp', provider='claude')
+            meta = dict(instance=self.instance, pid=os.getpid(), start=start_identity(os.getpid()), boot=boot, agent_pid=self.agent.pid, path=cwd, protocol='acp', provider=self.provider)
             with os.fdopen(fd, 'w') as f:
                 json.dump(meta, f)
         except Exception:
@@ -125,7 +129,7 @@ class Broker:
 
     def snapshot(self):
         with self.lock:
-            return dict(instance=self.instance, sequence=self.sequence, protocol='acp', provider='claude', path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
+            return dict(instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
                         messages=list(self.messages), tools=list(self.tools.values()), permissions=list(self.permissions.values()), receipts=[json.loads(r[0]) for r in self.db.execute('select data from receipts order by rowid desc limit 40')])
 
     def rpc(self, method, params, callback):

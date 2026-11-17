@@ -28,7 +28,7 @@ type Detail = {token_metrics?:TokenMetrics|null;folder_trust?:InputQuestion|null
 const node = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] => { const n = document.createElement(tag); n.textContent = text; return n; };
 const stateOf = (item: Item): AgentState => item.activity?.state || (item.status === 'disconnected' ? 'disconnected' : item.status === 'attention' || (!item.status && item.prompt !== 'Live agent') ? 'approval' : 'unknown');
 const projectName = (path: string) => path.split('/').filter(Boolean).at(-1) || '/';
-const agentTitle = (item: Item) => item.card?.name || (item.acp&&item.window_name==='Claude ACP'?projectName(item.project):compactClient() && ['claude','codex','pi','pi-coding-agent'].includes(item.window_name.toLowerCase()) ? projectName(item.project) : item.window_name);
+const agentTitle = (item: Item) => item.card?.name || (item.acp&&['Claude ACP','Codex ACP'].includes(item.window_name)?projectName(item.project):compactClient() && ['claude','codex','pi','pi-coding-agent'].includes(item.window_name.toLowerCase()) ? projectName(item.project) : item.window_name);
 const waiting = (item: Item) => ['approval','awaiting_trust'].includes(stateOf(item));
 const unread = (state?: ReadState) => !!state && (state.finished || state.new_approval || state.unread_reply);
 const needsAttention = (item: Item) => waiting(item) || unread(item.attention);

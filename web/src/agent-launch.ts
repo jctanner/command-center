@@ -9,7 +9,7 @@ async function request<T>(url: string, body?: unknown): Promise<T> {
   const value = await response.json(); if (!response.ok) throw new Error(value.error || `Request failed (${response.status})`); return value;
 }
 export class AgentLauncher {
-  private dialog = element('dialog');private protocol=element('select');private nativeProvider='codex';private acpReceipt?:{host:string;connection_revision:string;broker:string;endpoint:string};
+  private dialog = element('dialog');private protocol=element('select');private nativeProvider='codex';private acpReceipt?:{host:string;connection_revision:string;broker:string;endpoint:string;provider?:string};
   private machine = element('select');
   private project = element('select');
   private path = element('input');
@@ -56,7 +56,7 @@ export class AgentLauncher {
     this.provider.setAttribute('aria-label', 'Agent provider'); this.conversation.setAttribute('aria-label', 'Start or resume');this.destination.setAttribute('aria-label','Agent tmux destination');
     for (const value of ['codex', 'claude', 'pi']) { const o = element('option', value === 'codex' ? 'Codex' : value === 'pi' ? 'pi' : 'Claude'); o.value = value; this.provider.append(o); }
     this.pin.type = 'checkbox'; this.name.placeholder = 'Optional project name'; this.name.setAttribute('aria-label', 'Pinned project name');
-    const protocol=this.protocol;protocol.setAttribute('aria-label','Agent connection protocol');protocol.append(new Option('Native tmux (default)','native'),new Option('ACP broker · Claude','acp'));label('Connection protocol',protocol);protocol.onchange=()=>{this.invalidate();if(protocol.value==='acp'){this.nativeProvider=this.provider.value;this.provider.value='claude';this.conversation.replaceChildren(new Option('New conversation',''));this.model.value='';this.preTrust.checked=false;this.approvalPolicy.value='';}else this.provider.value=this.nativeProvider;this.update();if(!this.projects&&this.host())void this.loadProjects();else if(protocol.value==='native'&&this.path.value)void this.prepare();};
+    const protocol=this.protocol;protocol.setAttribute('aria-label','Agent connection protocol');protocol.append(new Option('Native tmux (default)','native'),new Option('ACP broker · Claude','acp'),new Option('ACP broker · Codex','acp-codex'));label('Connection protocol',protocol);protocol.onchange=()=>{this.invalidate();if(protocol.value.startsWith('acp')){if(!this.provider.closest('label')!.hidden)this.nativeProvider=this.provider.value;this.provider.value=protocol.value==='acp-codex'?'codex':'claude';this.conversation.replaceChildren(new Option('New conversation',''));this.model.value='';this.preTrust.checked=false;this.approvalPolicy.value='';}else this.provider.value=this.nativeProvider;this.update();if(!this.projects&&this.host())void this.loadProjects();else if(protocol.value==='native'&&this.path.value)void this.prepare();};
     label('Machine', this.machine); label('Project', this.project); label('Directory', this.path); label('Agent', this.provider); label('Model (optional)', this.model);
     this.venv.setAttribute('aria-label','Python venv');this.venv.placeholder='None, .venv or /absolute/venv';this.venv.maxLength=4096;label('Python venv (optional)',this.venv);this.rememberVenv.type='checkbox';const remember=element('label','Remember venv for this project');remember.className='agent-launch-pin';remember.prepend(this.rememberVenv);fields.append(remember,element('small','Uses the venv for commands the agent runs. Does not source activation scripts. Remembering a venv also pins the project.'));
     fields.append(element('small', 'Enter a model name or alias, or leave blank for no override.'));
@@ -91,7 +91,7 @@ export class AgentLauncher {
     this.another.onclick = () => { if (!this.busy && this.checkedReceipt) { const host = this.receipt?.host; this.clearReceipt();this.acpReceipt=undefined;localStorage.removeItem('cc.acp.launch.v1'); this.checkedReceipt = false; this.invalidate(); this.dialog.close(); void this.open(host); } };
     this.dialog.addEventListener('cancel', e => { if (this.busy) e.preventDefault(); });
     try{const saved=JSON.parse(localStorage.getItem('cc.acp.launch.v1')||'null');if(saved&&typeof saved.host==='string'&&typeof saved.connection_revision==='string'&&typeof saved.broker==='string'&&typeof saved.endpoint==='string')this.acpReceipt=saved;}catch{}
-    if(this.acpReceipt&&!this.receipt)this.protocol.value='acp';
+    if(this.acpReceipt&&!this.receipt)this.protocol.value=this.acpReceipt.provider==='codex'?'acp-codex':'acp';
     this.update();
   }
   private saveReceipt() {
@@ -118,7 +118,7 @@ export class AgentLauncher {
   private host() { return this.hosts.find(h => h.id === this.machine.value); }
   private url(host: string, action: string) { return `/api/v1/hosts/${encodeURIComponent(host)}/agents/${action}`; }
   private update() {
-    const acp=this.protocol.value==='acp',locked = this.busy || !!this.receipt||!!this.acpReceipt;this.protocol.disabled=locked;
+    const acp=this.protocol.value.startsWith('acp'),locked = this.busy || !!this.receipt||!!this.acpReceipt;this.protocol.disabled=locked;
     for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.venv, this.rememberVenv, this.approvalPolicy, this.preTrust, this.destination, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
     this.preTrust.disabled=locked||!this.projects||!['codex','claude'].includes(this.provider.value);
     this.approvalPolicy.disabled = locked || !this.projects || this.provider.value !== 'codex';
@@ -136,9 +136,9 @@ export class AgentLauncher {
     for(const field of [this.provider,this.model,this.venv,this.rememberVenv,this.preTrust,this.approvalPolicy,this.destination,this.conversation]){field.closest('label')!.hidden=acp;if(acp)field.disabled=true;}
     for(const small of this.dialog.querySelectorAll('.agent-launch-fields>small'))(small as HTMLElement).hidden=acp&&small!==this.promptHelp;
     this.pin.closest('label')!.hidden=acp||!!this.projects?.projects.find(p=>p.path===this.project.value&&p.pinned);this.name.hidden=acp||!this.pin.checked;
-    if(acp){this.check.hidden=true;this.start.hidden=!!this.acpReceipt;this.start.disabled=locked||!this.projects||!this.path.value.trim()||tooLong;this.initialPrompt.disabled=locked||!this.projects;this.promptHelp.textContent=tooLong?'ACP initial prompt is limited to12,000 UTF-8 bytes.':'New Claude ACP conversation in a dedicated tmux session. Preparation runs automatically when you start. Model/resume/venv/pre-trust overrides are not yet supported.';}
+    if(acp){this.check.hidden=true;this.start.hidden=!!this.acpReceipt;this.start.disabled=locked||!this.projects||!this.path.value.trim()||tooLong;this.initialPrompt.disabled=locked||!this.projects;this.promptHelp.textContent=tooLong?'ACP initial prompt is limited to12,000 UTF-8 bytes.':'New '+(this.provider.value==='codex'?'Codex':'Claude')+' ACP conversation in a dedicated tmux session. Preparation runs automatically when you start. Model/resume/venv/pre-trust overrides are not yet supported.';}
 
-    this.start.textContent = acp?'Start Claude (ACP)':`${this.conversation.value ? 'Resume' : 'Start'} ${this.provider.value === 'pi' ? 'pi' : this.provider.value === 'claude' ? 'Claude' : 'Codex'}`;
+    this.start.textContent = acp?`Start ${this.provider.value==='codex'?'Codex':'Claude'} (ACP)`:`${this.conversation.value ? 'Resume' : 'Start'} ${this.provider.value === 'pi' ? 'pi' : this.provider.value === 'claude' ? 'Claude' : 'Codex'}`;
   }
   private async loadProjects() {
     this.invalidate(); this.projects = undefined; this.path.value = '';this.venv.value='';this.rememberVenv.checked=false; this.model.value = ''; this.approvalPolicy.value = ''; this.pin.checked = false; this.project.replaceChildren();this.destination.replaceChildren(new Option('New dedicated session','')); this.feedback.textContent = 'Loading projects…'; this.update();
@@ -176,7 +176,7 @@ export class AgentLauncher {
     finally { if (generation === this.generation) { this.checking = false; this.update(); } }
   }
   private async launch() {
-    if(this.protocol.value==='acp'){await this.launchAcp();return;}
+    if(this.protocol.value.startsWith('acp')){await this.launchAcp();return;}
     const prepared = this.prepared, host = this.host(), projects = this.projects;
     if (!prepared || !host || !projects || this.busy || this.receipt) return;
     this.busy = true; this.update(); this.feedback.textContent = 'Starting agent…';
@@ -200,10 +200,10 @@ export class AgentLauncher {
     finally { this.busy = false; this.update(); }
   }
   private async launchAcp(){
-    const host=this.host();if(!host||this.busy||this.acpReceipt||this.receipt||this.start.disabled)return;this.busy=true;this.invalidate();this.update();this.feedback.textContent='Preparing and starting Claude ACP…';
+    const host=this.host();if(!host||this.busy||this.acpReceipt||this.receipt||this.start.disabled)return;this.busy=true;this.invalidate();this.update();this.feedback.textContent='Preparing and starting ACP…';
     try{
-      const prepared=await request<{token:string;broker:string;endpoint:string;path:string}>(`/api/v1/hosts/${host.id}/acp/prepare`,{connection_revision:host.connection_revision,path:this.path.value});
-      this.acpReceipt={host:host.id,connection_revision:host.connection_revision,broker:prepared.broker,endpoint:prepared.endpoint};
+      const prepared=await request<{token:string;broker:string;endpoint:string;path:string;provider:string}>(`/api/v1/hosts/${host.id}/acp/prepare`,{connection_revision:host.connection_revision,path:this.path.value,provider:this.provider.value});
+      this.acpReceipt={host:host.id,connection_revision:host.connection_revision,broker:prepared.broker,endpoint:prepared.endpoint,provider:prepared.provider};
       try{localStorage.setItem('cc.acp.launch.v1',JSON.stringify(this.acpReceipt));}catch{this.acpReceipt=undefined;throw Error('Cannot persist recovery identity; nothing launched.');}
       await request(`/api/v1/hosts/${host.id}/acp/start`,{token:prepared.token,initial_prompt:this.initialPrompt.value.trim()?this.initialPrompt.value:null});
       for(let i=0;i<6;i++){try{await this.openAcpReceipt();return;}catch{await new Promise(resolve=>setTimeout(resolve,400));}}
@@ -214,9 +214,9 @@ export class AgentLauncher {
   private async openAcpReceipt(){
     const receipt=this.acpReceipt;if(!receipt)return;const hosts=await request<Host[]>('/api/v1/hosts');const host=hosts.find(h=>h.id===receipt.host);if(!host)throw Error('Machine unavailable');
     const scope=new URLSearchParams({connection_revision:host.connection_revision});const inventory=await request<{endpoint:string}>(`/api/v1/hosts/${host.id}/acp?${scope}`);if(inventory.endpoint!==receipt.endpoint)throw Error('Machine endpoint changed; inspect the original broker before any new launch');
-    const result=await request<{instance:string;state:string;path:string;target:{session:string;window:string;pane:string;session_name:string}}>(`/api/v1/hosts/${host.id}/acp/${receipt.broker}?${scope}`);
+    const result=await request<{instance:string;provider?:string;state:string;path:string;target:{session:string;window:string;pane:string;session_name:string}}>(`/api/v1/hosts/${host.id}/acp/${receipt.broker}?${scope}`);
     if(['failed','exited'].includes(result.state)){this.checkedReceipt=true;throw Error('ACP agent failed/exited; inspect its tmux broker before another launch');}
-    await this.opened({host:host.id,connection_revision:host.connection_revision,launch_id:receipt.broker,session:result.target.session,window:result.target.window,pane:result.target.pane,session_name:result.target.session_name,provider:'claude',project:result.path,running:true,found:true,exited:false,context:'',acp:{broker:receipt.broker,instance:result.instance,endpoint:receipt.endpoint}});
+    await this.opened({host:host.id,connection_revision:host.connection_revision,launch_id:receipt.broker,session:result.target.session,window:result.target.window,pane:result.target.pane,session_name:result.target.session_name,provider:result.provider||'claude',project:result.path,running:true,found:true,exited:false,context:'',acp:{broker:receipt.broker,instance:result.instance,endpoint:receipt.endpoint}});
     this.acpReceipt=undefined;localStorage.removeItem('cc.acp.launch.v1');this.initialPrompt.value='';this.dialog.close();
   }
   private async checkAcp(){if(!this.acpReceipt||this.busy)return;this.busy=true;this.update();try{await this.openAcpReceipt();}catch(e){this.feedback.textContent=`${e} No additional agent was started.`;}finally{this.busy=false;this.update();}}

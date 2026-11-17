@@ -54,6 +54,7 @@ pub(crate) struct Scope {
 pub(crate) struct Prepare {
     connection_revision: String,
     path: String,
+    provider: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -150,9 +151,16 @@ async fn prepare(
         .try_acquire()
         .map_err(|_| ApiError(StatusCode::TOO_MANY_REQUESTS, "Host operations busy".into()))?;
     let m = machine(&state, &host, &request.connection_revision).await?;
+    let provider = request.provider.as_deref().unwrap_or("claude");
+    if !matches!(provider, "claude" | "codex") {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "Unsupported ACP provider".into(),
+        ));
+    }
     let prepared = result(
         m.transport
-            .acp_request(json!({"action":"prepare","path":request.path}))
+            .acp_request(json!({"action":"prepare","path":request.path,"provider":provider}))
             .await?,
     )?;
     machine(&state, &host, &request.connection_revision).await?;
@@ -177,7 +185,7 @@ async fn prepare(
         },
     );
     Ok(Json(
-        json!({"token":token,"broker":broker,"protocol":"acp","provider":"claude","path":prepared["path"],"executable":prepared["executable"],"endpoint":crate::attention::scope(&m.config,"","","").0,"notice":"Experimental ACP broker in a dedicated tmux session. No native TUI, resume, model override, pre-trust or automatic permissions. Native mode remains default."}),
+        json!({"token":token,"broker":broker,"protocol":"acp","provider":provider,"path":prepared["path"],"executable":prepared["executable"],"endpoint":crate::attention::scope(&m.config,"","","").0,"notice":"Experimental ACP broker in a dedicated tmux session. No native TUI, resume, model override, pre-trust or automatic permissions. Native mode remains default."}),
     ))
 }
 async fn start(

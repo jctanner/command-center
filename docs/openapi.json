@@ -2975,8 +2975,8 @@
     "/hosts/{host}/acp/prepare": {
       "post": {
         "operationId": "prepareAcpAgent",
-        "summary": "Prepare a new Claude ACP broker; no installation or launch",
-        "description": "Experimental opt-in Claude ACP broker. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. ",
+        "summary": "Prepare a new Claude or Codex ACP broker; no installation or launch",
+        "description": "Experimental opt-in Claude/Codex ACP broker. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. ",
         "parameters": [
           {
             "name": "host",
@@ -6937,6 +6937,15 @@
           "path": {
             "type": "string",
             "maxLength": 4096
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex"
+            ],
+            "default": "claude",
+            "description": "Allowlisted adapter bound into one-use grant; omitted preserves Claude clients."
           }
         },
         "required": [
@@ -7110,7 +7119,11 @@
             "const": "acp"
           },
           "provider": {
-            "const": "claude"
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex"
+            ]
           },
           "path": {
             "type": "string"

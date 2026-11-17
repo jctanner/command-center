@@ -9,6 +9,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0083: Codex ACP](docs/tasks/done/0083-codex-acp.md) — implemented and fixture-verified; not deployed, real-provider test permission pending.
+
 - [Task0082: integrated ACP agents](docs/tasks/done/0082-integrated-acp-agents.md) — deployed with approval; regular cards/chat and automatic preparation.
 
 
@@ -425,3 +427,5 @@ This ledger does not mirror or change live CC Board tickets. CC-1 remains ongoin
 
 - [2026-11-16: integrated ACP agents ready](docs/notes/2026-11-16-integrated-acp-agents.md)
 - [Bug0040: ACP project loading race](docs/bugs/fixed/0040-acp-project-loading-race.md) — fixed; delayed-discovery recovery regression passes.
+
+- [2026-11-16: Codex ACP ready](docs/notes/2026-11-16-codex-acp-ready.md)

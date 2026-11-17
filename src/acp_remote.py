@@ -78,24 +78,28 @@ def identity(path):
 def options(request):
     if not os.path.isdir('/proc/self') or not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):
         raise ValueError('ACP broker requires Linux /proc and pidfd support; native mode remains available')
+    provider = request.get('provider', 'claude')
+    if provider not in ('claude', 'codex'):
+        raise ValueError('Unsupported ACP provider')
+    name = 'codex-acp' if provider == 'codex' else 'claude-agent-acp'
     path = request.get('path')
     if not isinstance(path, str) or not path.startswith(('/', '~/')) or len(path) > 4096 or any(ord(c) < 32 for c in path):
         raise ValueError('Use an absolute project directory')
     path = os.path.realpath(os.path.expanduser(path))
     if not os.path.isdir(path) or not os.access(path, os.R_OK | os.X_OK):
         raise ValueError('Project directory unavailable')
-    executable = shutil.which('claude-agent-acp')
-    managed = os.path.expanduser('~/.local/share/command-center/acp-adapters/claude/node_modules/.bin/claude-agent-acp')
+    executable = shutil.which(name)
+    managed = os.path.expanduser('~/.local/share/command-center/acp-adapters/'+provider+'/node_modules/.bin/'+name)
     if not executable and os.path.isfile(managed):
         executable = managed
     if not executable:
-        raise ValueError('Claude ACP adapter not installed on this machine; native mode remains available')
+        raise ValueError(provider.title()+' ACP adapter not installed on this machine; native mode remains available')
     executable = os.path.realpath(executable)
     if not os.access(executable, os.X_OK):
         raise ValueError('ACP adapter is not executable')
     if not shutil.which('tmux'):
         raise ValueError('tmux unavailable')
-    return dict(path=path, directory_identity=identity(path)[:2], executable=executable, executable_identity=identity(executable), protocol='acp', provider='claude')
+    return dict(path=path, directory_identity=identity(path)[:2], executable=executable, executable_identity=identity(executable), protocol='acp', provider=provider)
 
 def tmux(request, *args):
     command = ['tmux']
@@ -267,11 +271,11 @@ def launch(request):
     # Native CLI stdin is never an ACP socket; a separate dedicated pane owns this broker.
     command = shlex.join([sys.executable, source, path, fresh['executable'], fresh['path']])
     command = command.replace('#', '##')
-    line = tmux(request, 'new-session', '-d', '-P', '-F', '#{session_id}\t#{window_id}\t#{pane_id}', '-s', 'cc-acp-' + ident, '-n', 'Claude ACP', '-c', fresh['path'].replace('#', '##'), '-x', '120', '-y', '36', command)
+    line = tmux(request, 'new-session', '-d', '-P', '-F', '#{session_id}\t#{window_id}\t#{pane_id}', '-s', 'cc-acp-' + ident, '-n', fresh['provider'].title()+' ACP', '-c', fresh['path'].replace('#', '##'), '-x', '120', '-y', '36', command)
     session, window, pane = line.split('\t')
     target = dict(session=session, window=window, pane=pane, session_name='cc-acp-' + ident)
     exclusive_json(os.path.join(path, 'target.json'), target)
-    return dict(broker=ident, state='starting', protocol='acp', provider='claude', path=fresh['path'], target=target)
+    return dict(broker=ident, state='starting', protocol='acp', provider=fresh['provider'], path=fresh['path'], target=target)
 
 def main(request):
     action = request.get('action')
@@ -294,7 +298,7 @@ def main(request):
             if len(out)>=32 or time.monotonic()-started>2:limited=True;break
             try:
                 value=call(dict(request,action='call',broker=item['broker'],_timeout=.4))
-                summary={k:value.get(k) for k in ('broker','instance','path','state','session_id','target','reply_cursor','reply_position','approval_cursor','sequence')}
+                summary={k:value.get(k) for k in ('broker','instance','provider','path','state','session_id','target','reply_cursor','reply_position','approval_cursor','sequence')}
                 summary['permission_title']=next((p.get('title')for p in value.get('permissions',[])if not p.get('expired')),None)
                 out.append(summary)
             except (OSError,ValueError):
@@ -313,7 +317,7 @@ def main(request):
                 safe_directory(path, private=True)
                 intent = read_json(os.path.join(path, 'intent.json'))
                 target = read_json(os.path.join(path, 'target.json')) if os.path.exists(os.path.join(path, 'target.json')) else None
-                item = dict(broker=ident, protocol='acp', provider='claude', path=intent['prepared']['path'], target=target, state='unavailable')
+                item = dict(broker=ident, protocol='acp', provider=intent['prepared'].get('provider','claude'), path=intent['prepared']['path'], target=target, state='unavailable')
                 try:
                     item.update(verified_live(path));item['state']='running'
                 except (OSError, ValueError):

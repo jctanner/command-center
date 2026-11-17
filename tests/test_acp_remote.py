@@ -28,6 +28,14 @@ class RemoteTests(unittest.TestCase):
    with self.assertRaises(FileExistsError):M.main(req)
    adapter.write_text('#!/bin/sh\nexit 1\n# changed\n')
    with self.assertRaisesRegex(ValueError,'changed'):M.main(dict(req,broker=str(uuid.uuid4())))
+ def test_provider_allowlist_and_grant_prevent_adapter_switch(self):
+  adapter=self.home/'codex-acp';adapter.write_text('#!/bin/sh\nexit 0\n');adapter.chmod(0o700)
+  with patch.object(M.shutil,'which',side_effect=lambda name:str(adapter)if name=='codex-acp'else('/usr/bin/tmux'if name=='tmux'else None)):
+   prepared=M.options({'path':str(self.home),'provider':'codex'})
+   self.assertEqual('codex',prepared['provider']);self.assertEqual(str(adapter),prepared['executable'])
+   with self.assertRaisesRegex(ValueError,'not installed'):M.options({'path':str(self.home)})
+   with self.assertRaisesRegex(ValueError,'Unsupported'):M.options({'path':str(self.home),'provider':'../codex'})
+   with self.assertRaisesRegex(ValueError,'changed'):M.launch({'broker':str(uuid.uuid4()),'prepared':dict(prepared,executable='/wrong')})
  def test_uuid_and_private_file_guards(self):
   for ident in ['../outside','not-a-uuid','/tmp/anything']:
    with self.assertRaises((ValueError,AttributeError)):M.canonical_uuid(ident)
