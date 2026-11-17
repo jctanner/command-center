@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0105: release ACP local commands](docs/tasks/current/0105-release-acp-local-commands.md) — commit/push/deploy requested; preserve live agent processes.
+- [Task0105: release ACP local commands](docs/tasks/done/0105-release-acp-local-commands.md) — 0ec1840 pushed/deployed; four access paths healthy, pane PIDs unchanged.
 
-- [Task0104: ACP local commands](docs/tasks/done/0104-acp-local-command-execution.md) — implemented/tested locally; deployment and explicit existing-broker upgrade pending.
+- [Task0104: ACP local commands](docs/tasks/done/0104-acp-local-command-execution.md) — 0ec1840 deployed; existing-broker upgrades remain explicit.
 
 - [Task0103: deploy native Claude command fix](docs/tasks/done/0103-deploy-native-claude-command-fix.md) — deployed; CC-73 original receipt confirmed without resend; Goose remains pending.
 
