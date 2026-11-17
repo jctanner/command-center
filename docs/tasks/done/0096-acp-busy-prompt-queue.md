@@ -1,6 +1,6 @@
 # Task0096: Durable ACP busy-time prompt queue
 
-Owner: CC dev; claimed2026-11-17; State: done (ready, not deployed).
+Owner: CC dev; claimed2026-11-17; State: done (deployed in task0097).
 
 Human requested ACP busy-time queuing. Add a per-broker-instance, exact-session FIFO of explicit prompt intents. Accept Ready/Working/Approval; submit one session/prompt at a time only when Ready, no pending permissions or uncertain receipts.16 entries,12000 UTF-8 bytes each,24h expiry. Persist queued text privately only until claim/cancel/expiry; retain metadata-only UUID receipts. Browser/backend disconnect must not lose broker-owned queue; changed broker instance must not replay queued/claimed/uncertain input. Show queued/submitted states on a single bubble, allow cancel-before-dispatch, preserve drafts, require capability for older brokers. No automatic broker upgrade/restart/deploy or live-provider test.
 
@@ -25,3 +25,7 @@ Human requested ACP busy-time queuing. Add a per-broker-instance, exact-session 
 ## Handoff
 
 No deployment, commit/push, real-provider launch/input, live-agent restart or migration. Last deployed service remains task0095's recovered-receipt fix; existing live ACP brokers do not gain queue capability until explicitly replaced/resumed with approved scope. Future deployment must preserve current listeners/env/config and pane PIDs, inspect pending switch/restart/send/queue receipts and never replay them. Queues live in tmux-owned brokers and survive backend restart; installing a backend release is not permission to stop brokers. Native remains default. Real-harness/remote queue behavior remains unverified beyond protocol fixtures.
+
+## Subsequent release
+
+Human authorized commit all/push/deploy. Implementation f1ce21c deployed2026-11-17 14:23:48 UTC; task0097 records verification. Four access paths/contract/index/running binary healthy, runtime/env/config/local tmux pane PIDs unchanged. No existing broker restarted or patched. Earlier staged-status notes above describe the implementation checkpoint, not current deployment state.

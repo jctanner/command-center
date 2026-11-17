@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0097: release ACP queue](docs/tasks/current/0097-release-acp-prompt-queue.md) — authorized commit/push/deploy, preserving live agents.
+- [Task0097: release ACP queue](docs/tasks/done/0097-release-acp-prompt-queue.md) — deployed f1ce21c; four access paths/contract/PIDs verified.
 
-- [Task0096: ACP busy prompt queue](docs/tasks/done/0096-acp-busy-prompt-queue.md) — implemented/tested; ready, not deployed; live brokers require explicit upgrade/restart.
+- [Task0096: ACP busy prompt queue](docs/tasks/done/0096-acp-busy-prompt-queue.md) — deployed; new brokers support busy FIFO; live brokers require explicit upgrade/restart.
 
 - [Task0095: recovered switch receipts](docs/tasks/done/0095-resolve-recovered-mode-switch.md) — deployed; coordinator receipt recovered, fresh review verified; no switch performed.
 

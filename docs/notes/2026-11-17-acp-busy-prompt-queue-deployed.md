@@ -1,0 +1,3 @@
+# ACP busy-time queue deployed
+
+Human requested commit all changes, push and deploy. Implementation f1ce21c includes pending image-replay/recovered-receipt fixes and the busy FIFO feature. Deployment14:23:48 UTC verified four configured access paths, SSE, full served API/queue contract, frontend index and running release binary. Full args/env/config and local tmux pane PIDs unchanged. No live brokers restarted/migrated or agent input sent. New brokers support queueing; old brokers need separately authorized replacement/resume to gain capability. Native remains default. See task0097 for evidence and private receipt/log locations.
