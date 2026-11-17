@@ -1,0 +1,3 @@
+# ACP usage deployed; coordinator upgraded
+
+Human requested commit/push/deploy then cc-coordinator upgrade. Implementation d0dd999 pushed. Deployment2026-11-17T16:12:45Z verified all four access paths/SSE/full contract/usage schema/index/running binary, exact args/env/config and unchanged local pane PIDs. Then guarded ACP→native→ACP upgrade completed with same conversation/target/card metadata and unchanged other pane PIDs. New broker source hash/usage reader and Ready/queue capability verified. No usage event yet; values remain unreported until normal adapter activity. No chat or /usage command, approval, install or other agent restart. See task0100 and private deployment/upgrade journals.

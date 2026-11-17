@@ -1,6 +1,6 @@
 # Task0099: ACP usage_update integration
 
-Owner: CC dev; claimed2026-11-17; State: done (ready, not deployed).
+Owner: CC dev; claimed2026-11-17; State: done (deployed in task0100).
 
 Human requested commit/push existing changes first (completed e6d7162), then fix usage_update. Consume validated session-scoped ACP context occupancy/capacity events, preserve unknown totals, propagate numeric metadata through snapshots/SSE/inventory into process-bound AgentTokenMetrics and existing card/detail meter. Do not sum context snapshots as session usage, infer model capacity or rescan logs. Handle zero/lower-after-compaction, invalid numbers, stale/other sessions and older brokers honestly. Tests/docs/OpenAPI; no deploy/restart/commit/push of new implementation without request.
 
@@ -23,3 +23,7 @@ Human requested commit/push existing changes first (completed e6d7162), then fix
 ## Handoff / limits
 
 New integration is uncommitted/undeployed. No live-provider messages, /usage prompts, hooks, real brokers/agents restarts, installs or backend deploy. Native launch remains default. Existing ACP brokers need separately approved replacement/resume to load new reader code, and an adapter usage event must occur before numbers appear; no backfill from unrelated native/project history. Real Claude/Codex/SSH event flow unverified beyond primary source and protocol fixtures. Old brokers may continue showing Usage unreported until upgraded; context occupancy never substitutes for cumulative usage.
+
+## Subsequent approved release
+
+Human requested commit/push/deploy and coordinator upgrade. Implementation d0dd999 is pushed/deployed; task0100 records all four access paths/configuration/runtime/PID verification and successful exact-conversation coordinator upgrade. New broker reader verified, queue capability retained. No usage event yet at verification; normal adapter reports will populate the meter. Earlier staged-status text above describes the implementation checkpoint, not current deployment state.
