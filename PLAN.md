@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0083: Codex ACP](docs/tasks/done/0083-codex-acp.md) — implemented and fixture-verified; not deployed, real-provider test permission pending.
+- [Task0083: Codex ACP](docs/tasks/done/0083-codex-acp.md) — deployed with approval; real-provider test permission pending.
 
 - [Task0082: integrated ACP agents](docs/tasks/done/0082-integrated-acp-agents.md) — deployed with approval; regular cards/chat and automatic preparation.
 

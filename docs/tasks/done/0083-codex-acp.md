@@ -1,6 +1,6 @@
 # Task0083: Codex ACP support
 
-Owner: CC dev; claimed 2026-11-16. State: done (implementation and fixtures; not deployed).
+Owner: CC dev; claimed 2026-11-16. State: done (deployed with approval; real-provider test pending).
 
 Add explicit Codex ACP selection alongside Claude, native default unchanged. Allowlist adapter names/providers, bind provider/executable identity into one-use grants, preserve exact process/permission/receipt guards and old Claude brokers. Use maintained agentclientprotocol/codex-acp adapter; no automatic installs, provider migrations or permission bypasses. Cover provider validation, launch identity, queue/chat labels, browser recovery and native defaults. No deployment or live test-agent launch in this task without approval.
 
@@ -19,3 +19,9 @@ Reference: maintained https://github.com/agentclientprotocol/codex-acp README; o
 - Final seven ACP Playwright tests passed: both providers at desktop/mobile widths, queue provider identity, messaging, explicit permissions, metadata, reviewed close, per-provider lost-response/reload recovery and native-preparation invalidation. Two additional native-launch regressions passed in the broader run. An initial immediate queue assertion raced asynchronous discovery; changed to bounded eventual observation and all seven final checks passed.
 
 Prior deployed ACP changes were committed/pushed first as0b8c05c, as requested. Codex support remains uncommitted and undeployed. A real corsair adapter install/disposable-agent test was requested separately and has not been approved or performed. Production service/agents unchanged by this task. Do not equate fixture tests with a certified real adapter/version.
+
+## Approved deployment
+
+Human requested commit, push and deploy. Implementation4d558cf pushed, then verified release deployed with one brief backend restart. All four access paths, Whiteboard SSE, native and ACP contracts, Codex provider enum, frontend index and running binary hash passed. Exact runtime environment/listener flags, configuration hashes and canonical tmux pane/PIDs unchanged. No adapter install, agent launch, input or approval. Real-provider disposable-test authorization remains separate and pending.
+
+Live desktop/mobile launcher smoke passed: native default, Codex option, zero browser errors, API writes or terminal sockets.
