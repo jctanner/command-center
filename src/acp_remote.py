@@ -304,7 +304,7 @@ def main(request):
             if len(out)>=32 or time.monotonic()-started>2:limited=True;break
             try:
                 value=call(dict(request,action='call',broker=item['broker'],_timeout=.4))
-                summary={k:value.get(k) for k in ('broker','instance','provider','path','state','session_id','target','reply_cursor','reply_position','approval_cursor','sequence')}
+                summary={k:value.get(k) for k in ('broker','instance','provider','path','state','session_id','target','reply_cursor','reply_position','approval_cursor','sequence','usage')}
                 summary['permission_title']=next((p.get('title')for p in value.get('permissions',[])if not p.get('expired')),None)
                 out.append(summary)
             except (OSError,ValueError):

@@ -390,6 +390,42 @@ pub(crate) fn instance(broker: &str, raw: &str) -> String {
     use sha2::{Digest, Sha256};
     format!("{:x}", Sha256::digest(format!("acp/{broker}/{raw}")))
 }
+fn usage_metrics(value: &Value, broker: &str, identity: &str, now: u64) -> Value {
+    let usage = &value["usage"];
+    let Some(at) = usage["observed_at"]
+        .as_u64()
+        .filter(|at| *at <= now.saturating_add(30))
+    else {
+        return Value::Null;
+    };
+    let number = |key: &str, positive: bool| {
+        usage[key]
+            .as_u64()
+            .filter(|v| *v <= 9_007_199_254_740_991 && (!positive || *v > 0))
+    };
+    let used = number("used", false);
+    let window = number("size", true);
+    if used.is_none() && window.is_none() {
+        return Value::Null;
+    }
+    let Some(session) = value["session_id"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() <= 512)
+    else {
+        return Value::Null;
+    };
+    let provider = value["provider"].as_str().unwrap_or("");
+    if !matches!(provider, "claude" | "codex") {
+        return Value::Null;
+    }
+    let model = usage["model"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() <= 128 && !s.chars().any(char::is_control));
+    let reported = usage["reported_at"]
+        .as_str()
+        .filter(|s| s.len() <= 40 && s.contains('T') && !s.chars().any(char::is_control));
+    json!({"source":"acp_usage_update","provider":provider,"conversation":format!("acp:{broker}:{session}"),"instance":identity,"association":"process","stale":matches!(value["state"].as_str(),Some("unavailable"|"failed"|"exited")),"complete":false,"limited":false,"session":{"input":null,"output":null,"cached_input":null,"cache_write":null,"reasoning_output":null,"total":null},"input_includes_cache":false,"context":{"used":used,"window":window,"reported_at":reported},"model":model,"observed_at":at,"note":"ACP reported context occupancy/capacity; cumulative session token totals are not reported. Context is the last usage_update, not a live estimate."})
+}
 pub(crate) async fn enrich(
     state: &AppState,
     config: &crate::config::Host,
@@ -455,8 +491,8 @@ pub(crate) async fn enrich(
     {
         let mut observed = state.acp.observed.lock().await;
         let fingerprint = format!(
-            "{phase}/{}/{}",
-            value["reply_cursor"], value["approval_cursor"]
+            "{phase}/{}/{}/{}",
+            value["reply_cursor"], value["approval_cursor"], value["usage"]
         );
         let scope = format!("{key}/{identity}");
         if observed.get(&scope) != Some(&fingerprint) {
@@ -476,6 +512,7 @@ pub(crate) async fn enrich(
     result["activity"] = serde_json::to_value(activity).unwrap();
     result["read_state"] = serde_json::to_value(read).unwrap();
     result["card"] = serde_json::to_value(card).unwrap();
+    result["token_metrics"] = usage_metrics(value, broker, &identity, now);
     result["card_instance"] = json!(identity);
     Ok(result)
 }
@@ -499,6 +536,37 @@ async fn receipts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn usage_context_is_process_bound_and_does_not_fabricate_totals() {
+        let mut value = json!({"provider":"claude","session_id":"thread","state":"ready","usage":{"used":142000,"size":400000,"observed_at":90,"reported_at":"2026-11-17T14:00:00+00:00"}});
+        let metrics = usage_metrics(&value, "broker", "instance", 100);
+        assert_eq!(metrics["context"]["used"], 142000);
+        assert_eq!(metrics["context"]["window"], 400000);
+        assert!(metrics["session"]["total"].is_null());
+        assert_eq!(metrics["instance"], "instance");
+        assert_eq!(metrics["conversation"], "acp:broker:thread");
+        assert_eq!(metrics["observed_at"], 90);
+        value["usage"]["used"] = json!(0);
+        assert_eq!(
+            usage_metrics(&value, "broker", "instance", 100)["context"]["used"],
+            0
+        );
+        value["usage"]["size"] = json!(0);
+        assert!(usage_metrics(&value, "broker", "instance", 100)["context"]["window"].is_null());
+        value["usage"]["observed_at"] = json!(200);
+        assert!(usage_metrics(&value, "broker", "instance", 100).is_null());
+        value["usage"] = Value::Null;
+        assert!(usage_metrics(&value, "broker", "instance", 100).is_null());
+    }
+    #[test]
+    fn usage_invalid_numbers_and_disconnection_remain_honest() {
+        let value = json!({"provider":"codex","session_id":"thread","state":"unavailable","usage":{"used":-1,"size":400000,"observed_at":90,"model":"bad\nmodel"}});
+        let metrics = usage_metrics(&value, "broker", "instance", 100);
+        assert!(metrics["context"]["used"].is_null());
+        assert_eq!(metrics["context"]["window"], 400000);
+        assert_eq!(metrics["stale"], true);
+        assert!(metrics["model"].is_null());
+    }
     #[test]
     fn commands_are_typed_and_do_not_accept_cli_flags() {
         let input = json!({"connection_revision":"r","instance":uuid::Uuid::new_v4().to_string(),"id":uuid::Uuid::new_v4().to_string(),"action":"prompt","text":"hello"});

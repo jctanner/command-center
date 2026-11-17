@@ -51,6 +51,28 @@ class BrokerTests(unittest.TestCase):
     def action(self, **kwargs):
         return dict(instance=self.broker.instance, id=str(uuid.uuid4()), **kwargs)
 
+    def test_usage_updates_are_context_snapshots_not_totals_and_do_not_change_activity(self):
+        self.assertIsNone(self.broker.snapshot()['usage'])
+        self.broker.dispatch(self.action(action='prompt',text='hold'))
+        with self.broker.lock:self.broker.update(dict(sessionUpdate='usage_update',used=142000,size=400000,_meta={'_claude/model':'fixture-model','secret':'ignore'},cost={'amount':9}))
+        usage=self.broker.snapshot()['usage'];self.assertEqual(142000,usage['used']);self.assertEqual(400000,usage['size']);self.assertEqual('working',self.broker.state);self.assertNotIn('secret',json.dumps(usage));self.assertNotIn('cost',usage)
+        with self.broker.lock:self.broker.update(dict(sessionUpdate='usage_update',used=12000,size=400000))
+        self.assertEqual(12000,self.broker.snapshot()['usage']['used'])
+        with self.broker.lock:self.broker.update(dict(sessionUpdate='usage_update',used=0,size=400000))
+        self.assertEqual(0,self.broker.snapshot()['usage']['used'])
+
+    def test_invalid_usage_numbers_do_not_invent_context_or_capacity(self):
+        for value in (-1,True,1.5,float('nan'),9007199254740992):
+            with self.broker.lock:self.broker.update(dict(sessionUpdate='usage_update',used=value,size=value))
+        self.assertIsNone(self.broker.snapshot()['usage'])
+        with self.broker.lock:self.broker.update(dict(sessionUpdate='usage_update',used=12,size=0,_meta={'_claude/model':'model-with-unknown-window'}))
+        self.assertEqual(12,self.broker.snapshot()['usage']['used']);self.assertIsNone(self.broker.snapshot()['usage']['size'])
+
+    def test_usage_from_other_session_is_ignored(self):
+        receipt=self.broker.dispatch(self.action(action='prompt',text='foreign-usage'))
+        wait(lambda:self.broker.state=='ready')
+        self.assertIsNone(self.broker.snapshot()['usage'])
+
     def hold_turn(self):
         active=self.broker.dispatch(self.action(action='prompt',text='permission'))
         wait(lambda:self.broker.state=='approval')

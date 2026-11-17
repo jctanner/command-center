@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0100: release ACP usage and coordinator upgrade](docs/tasks/current/0100-release-acp-usage-and-upgrade-coordinator.md) — authorized commit/push/deploy and exact-conversation broker replacement.
+
+- [Task0099: ACP usage metrics](docs/tasks/done/0099-acp-usage-update-metrics.md) — implemented/tested; ready, not deployed; context reported, totals unknown.
+
 - [Task0098: coordinator ACP queue upgrade](docs/tasks/done/0098-upgrade-coordinator-acp-broker.md) — complete; same conversation, ACP Ready and queue capability enabled; no chat input.
 
 - [Task0097: release ACP queue](docs/tasks/done/0097-release-acp-prompt-queue.md) — deployed f1ce21c; four access paths/contract/PIDs verified.

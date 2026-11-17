@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in remote ACP v1 broker. Its tmux pane owns the agent, never CC/SSH."""
 import collections
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -59,6 +60,7 @@ class Broker:
         self.instance = str(uuid.uuid4())
         self.messages = []
         self.tools = {}
+        self.usage = None
         self.permissions = {}
         self.state, self.session = 'starting', None
         self.turn = None
@@ -148,7 +150,7 @@ class Broker:
             self.expire_queue()
             queued=self.db.execute('select count(*) from prompt_queue').fetchone()[0]
             blocked=bool(queued and(self.state in ('failed','exited')or self.unresolved_sends()))
-            return dict(queue_blocked=blocked,prompt_queue=self.prompt_session_ready,queued_prompts=queued,queue_limit=MAX_QUEUED,instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
+            return dict(usage=self.usage,queue_blocked=blocked,prompt_queue=self.prompt_session_ready,queued_prompts=queued,queue_limit=MAX_QUEUED,instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
                         messages=list(self.messages), tools=list(self.tools.values()), permissions=list(self.permissions.values()), receipts=self.receipt_snapshot())
 
     def receipt_snapshot(self):
@@ -243,6 +245,15 @@ class Broker:
 
     def update(self, update):
         kind = update.get('sessionUpdate')
+        if kind=='usage_update':
+            def count(value,positive=False):
+                return value if type(value)is int and (value>0 if positive else value>=0)and value<=9007199254740991 else None
+            used=count(update.get('used'));size=count(update.get('size'),True)
+            if used is None and size is None:return
+            model=(update.get('_meta')or{}).get('_claude/model')if self.provider=='claude'and isinstance(update.get('_meta',{}),dict)else None
+            if not isinstance(model,str)or not model or len(model)>128 or any(ord(c)<32 for c in model):model=None
+            self.usage=dict(used=used,size=size,model=model,observed_at=int(time.time()),reported_at=datetime.now(timezone.utc).isoformat())
+            self.emit();return
         if kind == 'agent_message_chunk' or kind=='user_message_chunk' and self.state=='starting' and self.resume_session:
             role='user' if kind=='user_message_chunk' else 'assistant'
             content = update.get('content', {})

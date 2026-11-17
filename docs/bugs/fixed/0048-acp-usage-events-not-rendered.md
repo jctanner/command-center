@@ -1,0 +1,3 @@
+# Bug0048: ACP context usage events ignored
+
+Reported2026-11-17: coordinator card Usage unreported despite Claude adapter support. Broker ignored usage_update, inventory omitted numeric usage and ACP queue items hardcoded token_metrics null. Fix validates session-scoped reported occupancy/capacity in broker, carries bounded metadata through snapshots/SSE/inventory, maps process-bound AgentTokenMetrics and updates existing card/chat meters. Totals remain null; model capacity is never inferred. Source fixed/tested, not deployed. Existing brokers need separately approved replacement to gain event handling. See task0099 for evidence and limits.
