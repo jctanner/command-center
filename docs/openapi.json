@@ -3457,8 +3457,8 @@
     "/hosts/{host}/agents/connection-mode": {
       "get": {
         "operationId": "prepareAgentConnectionMode",
-        "summary": "Review an explicit same-conversation Codex native/ACP handoff",
-        "description": "Read-only source observation plus bounded initialize-only adapter capability probe. No source process stopped. Requires verified Ready and persisted exact native session; no new-conversation fallback. Old brokers lacking handoff support reject. Returned grant expires after120 seconds.",
+        "summary": "Review an explicit same-conversation Codex/Claude/Claude native/ACP handoff",
+        "description": "Read-only source observation plus bounded initialize-only adapter capability probe. No source process stopped. Requires verified Ready and persisted exact native session; no new-conversation fallback. Old brokers lacking handoff support reject. Returned grant expires after120 seconds. Missing Codex/Claude adapter returns install_required and a pinned isolated installation proposal. GET never installs. Existing, incompatible or partially installed adapters are not overwritten.",
         "parameters": [
           {
             "name": "host",
@@ -3561,8 +3561,8 @@
       },
       "post": {
         "operationId": "switchAgentConnectionMode",
-        "summary": "Consume one prepared Codex mode-switch receipt before process replacement",
-        "description": "Explicit human action only. Persist attempt before shared transport IO; serialize endpoint changes and message delivery, reject unresolved sends/answers. Existing pane is respawned only after fresh process/directory/executable/conversation/idle checks. Lost or uncertain outcomes never replay. Native uses codex resume UUID; ACP negotiates session/load with the same UUID. No arbitrary command/flags, approvals or trust bypass.",
+        "summary": "Consume one prepared Codex/Claude mode-switch receipt before process replacement",
+        "description": "Explicit human action only. Persist attempt before shared transport IO; serialize endpoint changes and message delivery, reject unresolved sends/answers. Existing pane is respawned only after fresh process/directory/executable/conversation/idle checks. Lost or uncertain outcomes never replay. Native uses codex resume UUID or claude --resume UUID; ACP negotiates session/load with the same UUID. No arbitrary command/flags, approvals or trust bypass.",
         "parameters": [
           {
             "name": "host",
@@ -3641,6 +3641,66 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Metadata-only receipt; no automatic retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentModeReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not idle, stale target, unsupported resume, unresolved receipt, or already consumed operation"
+          }
+        }
+      }
+    },
+    "/hosts/{host}/agents/connection-mode-install": {
+      "post": {
+        "operationId": "installMissingCodexAcpAdapter",
+        "summary": "Install the reviewed missing Codex or Claude ACP adapter",
+        "description": "Explicit human install action. Fixed package/version/registry/integrity and private target prefix; clients supply only the opaque receipt ID. Existing adapters, native Codex and running agents are untouched. Durable attempt before shared SSH IO, no automatic retries. Installer runs with disabled npm scripts and bounded time/disk, publishes only a verified complete tree with atomic no-overwrite rename. Poll the original connection-mode-status receipt across browser/backend restarts. Successful install requires fresh source/process/switch preparation and a separate switch confirmation. Node/npm must already be installed. Claude uses pinned @agentclientprotocol/claude-agent-acp 0.107.3 and requires Node.js 22 or newer; provider profiles cannot be mixed.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Metadata-only receipt; no automatic retry",
@@ -5017,7 +5077,8 @@
             "enum": [
               "process",
               "project",
-              "none"
+              "none",
+              "process_pending"
             ]
           },
           "conversations": {
@@ -5225,6 +5286,18 @@
               }
             ],
             "description": "Cards require process-linked history; conversation details may describe explicitly selected project history."
+          },
+          "pending_codex_session": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Exact process-owned native thread awaiting first transcript persistence, not a project history selection."
+          },
+          "pending_codex_input_available": {
+            "type": "boolean",
+            "description": "Conservative empty editor verified; permits an explicit screen/process/session-bound first message, without claiming Ready."
           }
         },
         "description": "Native user/assistant history; no reasoning/tool/system/sidechain messages. Preserve association: project history does not prove live process identity. Returned instance must match fresh queue attention.instance. Keep branch/version while paging; on history_reset discard previous page sequence. Do not expose terminal captures or action tokens to passive inventories.",
@@ -7539,7 +7612,7 @@
           },
           "handoff_supported": {
             "type": "boolean",
-            "description": "Broker implements the private serialized handoff; absent in older brokers. Actual availability requires verified idle Codex, persisted thread and no unresolved receipts."
+            "description": "Broker implements serialized Codex/Claude handoff; absent in older brokers. Requires verified idle process, persisted native session and no unresolved permissions, tools or receipts."
           }
         }
       },
@@ -7717,7 +7790,12 @@
               "prepared",
               "checking",
               "complete",
-              "not_sent"
+              "not_sent",
+              "install_required",
+              "installing",
+              "installed",
+              "install_failed",
+              "install_uncertain"
             ]
           },
           "note": {
@@ -7731,7 +7809,11 @@
             ]
           },
           "provider": {
-            "const": "codex"
+            "type": "string",
+            "enum": [
+              "codex",
+              "claude"
+            ]
           },
           "session": {
             "type": "string",
@@ -7750,6 +7832,81 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "connection_revision": {
+            "type": "string",
+            "description": "Current runtime revision after stable endpoint verification on status reads; permits fresh preparation after successful install, never replay."
+          },
+          "installation": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "package": {
+                    "const": "@agentclientprotocol/codex-acp"
+                  },
+                  "version": {
+                    "const": "2.7.0"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "scripts": {
+                    "const": false
+                  },
+                  "registry": {
+                    "const": "https://registry.npmjs.org"
+                  },
+                  "timeout_seconds": {
+                    "const": 180
+                  }
+                },
+                "required": [
+                  "package",
+                  "version",
+                  "prefix",
+                  "scripts",
+                  "registry",
+                  "timeout_seconds"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "package": {
+                    "const": "@agentclientprotocol/claude-agent-acp"
+                  },
+                  "version": {
+                    "const": "0.107.3"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "scripts": {
+                    "const": false
+                  },
+                  "registry": {
+                    "const": "https://registry.npmjs.org"
+                  },
+                  "timeout_seconds": {
+                    "const": 180
+                  }
+                },
+                "required": [
+                  "package",
+                  "version",
+                  "prefix",
+                  "scripts",
+                  "registry",
+                  "timeout_seconds"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },

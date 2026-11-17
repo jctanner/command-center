@@ -433,6 +433,9 @@ def message_input_guard(observation, state=None):
 
 def verify_active_message(request, observation):
     state=active_message_state(observation)
+    pending=request.get('pending_codex_session')
+    if pending and codex_pending_session(observation)==pending and codex_first_input_available(observation):
+        return dict(state='starting',source='codex_pending')
     if not state: fail(409,'Agent is no longer verified Ready or Working; no message was pasted')
     linked=[c for c in conversations(observation) if c.get('linked')]
     expected=request.get('conversation')
@@ -740,6 +743,44 @@ def pi_bridge(observation):
         observation['_pi_bridge']=record
         return record
     except (OSError,ValueError,TypeError,AttributeError,IndexError): return None
+
+def codex_pending_session(observation,candidates=None):
+    """Owned thread UUID before rollout persistence, never a project-history guess."""
+    if '_codex_pending' in observation:return observation['_codex_pending']
+    observation['_codex_pending']=None
+    if observation.get('kind')!='codex' or not observation.get('identity') or observation.get('base') is None:return None
+    home=provider_home(observation)
+    if not home.is_absolute():return None
+    sessions=process_sessions(observation,home)
+    if len(sessions)!=1:return None
+    session=next(iter(sessions));candidates=conversations(observation)if candidates is None else candidates
+    if any(c.get('session')==session for c in candidates):return None
+    # An existing but unreadable/invalid transcript is not a pristine session.
+    for db in sorted(home.glob('state*.sqlite'),reverse=True)[:2]:
+        try:
+            with sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=.2)as conn:
+                rows=conn.execute('SELECT rollout_path FROM threads WHERE id=?',(session,)).fetchall()
+            for row in rows:
+                if not isinstance(row[0],str):return None
+                try:os.lstat(row[0])
+                except FileNotFoundError:pass
+                except OSError:return None
+                else:return None
+        except sqlite3.Error:return None
+    import itertools
+    for index,path in enumerate(itertools.islice((home/'sessions').glob('*/*/*/*.jsonl'),4001)):
+        if index>=4000 or session in path.name:return None
+    observation['_codex_pending']=session
+    return session
+
+
+def codex_first_input_available(observation,candidates=None):
+    if observation.get('in_mode') or not codex_pending_session(observation,candidates):return False
+    lines=observation.get('visible','').splitlines();tail=[line.strip() for line in lines if line.strip()][-4:]
+    # Versioned conservative empty-editor boundary, never terminal silence.
+    return (any(re.fullmatch(r'›\s+Ask Codex to do anything',line)for line in tail)
+            and tail and tail[-1]=='? for shortcuts' and not approval_menu(observation) and not folder_trust(observation))
+
 
 def pi_pending_session(observation):
     if observation.get('kind') != 'pi': return None
@@ -1349,6 +1390,7 @@ def provider_activity(observation, candidates=None):
     candidates = conversations(observation) if candidates is None else candidates
     linked = [c for c in candidates if c['linked']]
     if len(linked) != 1:
+        if codex_pending_session(observation,candidates):return state_result('unknown','codex_pending','New Codex session identified; history will appear after its first message')
         return state_result('unknown', 'none', 'No unique process-linked conversation for turn status')
     return codex_activity(linked[0]['path'], int(time.time()))
 
@@ -1915,11 +1957,12 @@ def execute(request):
         linked=[candidate for candidate in candidates if candidate.get('linked')]
         chosen=linked[0] if len(linked)==1 else None
         result=dict(instance=observation['identity'], screen=observation['screen'], context=observation['context'],
-                    activity=provider_activity(observation,candidates), log=None, users=[], pending_pi_session=None,
+                    activity=provider_activity(observation,candidates), log=None, users=[], pending_pi_session=None,pending_codex_session=codex_pending_session(observation,candidates),
+                    pending_codex_input_available=codex_first_input_available(observation,candidates),
                     send_available=bool(observation['identity']) and not observation['in_mode'] and not folder_trust(observation) and not approval_menu(observation)
                         and not native_input_dialog(observation))
         state=active_message_state(observation)
-        result['input_guard']=message_input_guard(observation,state) if state else None
+        result['input_guard']=observation['screen'] if result['pending_codex_input_available'] else message_input_guard(observation,state) if state else None
         if chosen:
             info=os.stat(chosen['path'])
             result['log']=dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size)
@@ -1927,10 +1970,13 @@ def execute(request):
             result['users']=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in page['messages'] if message['role']=='user' and message.get('input_hash')]
             result['commands']=page.get('commands',[])
             if observation['kind']=='pi': result['pi_session']=chosen['session']
+            if observation['kind']=='codex': result['codex_session']=chosen['session']
         else:
             result['pending_pi_session']=pi_pending_session(observation)
         return result
     if request.get('action') == 'send':
+        if request.get('pending_codex_session') and not request.get('require_active') and (codex_pending_session(observation)!=request['pending_codex_session'] or not codex_first_input_available(observation)):
+            fail(409,'Original empty Codex session changed; no message was pasted')
         if native_input_dialog(observation): fail(409,'The native CLI is waiting for input in a dialog. Answer it in the terminal before sending a message.')
         if not observation['identity'] or observation['identity'] != request.get('identity'):
             fail(409, 'Agent process changed; refresh before sending')
@@ -1985,16 +2031,22 @@ def execute(request):
         if len(linked) == 1: selected = linked[0]['id']
         elif len(candidates) == 1 and not observation['env'].get('CC_LAUNCH_ID'): selected = candidates[0]['id']
     chosen = next((c for c in candidates if c['id'] == selected), None)
+    pending_codex=codex_pending_session(observation,candidates)
     if selected and not chosen:
         fail(409, 'Conversation is no longer available for this project')
     result = dict(instance=observation['identity'], screen=observation['screen'], context=observation['context'],
                   project=observation['cwd'], provider=observation['kind'], selected=selected,
                   approval=approval_menu(observation), input_request=input_question(observation),
-                  association='process' if chosen and chosen['linked'] else 'project' if chosen else 'none',
+                  association='process' if chosen and chosen['linked'] else 'project' if chosen else 'process_pending' if pending_codex else 'none',
+                  pending_codex_session=pending_codex,pending_codex_input_available=bool(pending_codex and not chosen and codex_first_input_available(observation,candidates)),
                   conversations=[{k:v for k,v in c.items() if k != 'path'} for c in candidates],
                   activity=provider_activity(observation, candidates),
                   messages=[], older_cursor=None,
                   send_available=bool(observation['identity']) and not observation['in_mode'])
+    if pending_codex:
+        result['send_available']=bool(result['pending_codex_input_available'])
+        if chosen:result['send_reason']='You are viewing older project history. Return to the current new session to send its first message.'
+        elif not result['send_available']:result['send_reason']='New Codex session identified; check its terminal startup prompt or unfinished input before sending.'
     if result['input_request'] and result['input_request']['supported']:
         question=result['input_request'];anchor=question_request_id(observation,question,candidates)
         if anchor:
@@ -2034,6 +2086,7 @@ def execute(request):
         if request.get('before') is None and chosen.get('linked') and not result.get('history_unchanged'):
             result['_outbox_observation']=dict(log=dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size),users=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in result.get('messages',[]) if message['role']=='user' and message.get('input_hash')])
             if observation['kind']=='pi': result['_outbox_observation']['pi_session']=chosen['session']
+            if observation['kind']=='codex': result['_outbox_observation']['codex_session']=chosen['session']
         if request.get('before') is None:
             result['reply'] = reply_observation(chosen, observation['kind'], request.get('known_reply_version'), None if result.get('history_unchanged') else result)
     return result

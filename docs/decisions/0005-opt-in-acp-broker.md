@@ -15,3 +15,12 @@ The first UI isolates these experimental agents behind ACP agents rather than ov
 ## Integration follow-up (task0082)
 
 The human approved integrating cards and chat and making preparation internal to Start. Shared presentation and metadata now wrap two explicit transports; native remains default. Queue discovery verifies managed brokers without migration, chat streams/replies/permissions remain ACP-only, and existing card/read stores use namespaced broker process identity. The initial separate catalog is retired. Explicit close uses durable UUID metadata plus a start/boot/tty-verified pidfd; native window controls and outbox are never used as fallback. Existing brokers are adopted read-only without restarting. Restart/resume remains unavailable until verified.
+
+
+## Reviewed installer follow-up (task0087)
+
+The human requested installing missing adapters as part of switching. Codex missing-adapter preparation now exposes a fixed package/prefix review. An explicit one-use POST starts a private bounded one-shot installer over shared transport; a separate switch review follows success. It is not a generic package runner, long-running host daemon or automatic updater. Fixed registry/integrity, disabled npm scripts, isolated configuration/cache and atomic no-overwrite publication preserve existing adapters/native agents. Durable private results survive CC disconnect/restart; unknown outcomes do not replay. Ordinary launch behavior and default native mode remain unchanged.
+
+## Claude handoff follow-up (task0088)
+
+Explicit exact-conversation handoff now supports Claude as well as Codex. Claude uses ACP v1 session/load and native --resume, preserving CLAUDE_CONFIG_DIR and independently validated persisted continuation records. No project-recency, summary or new-session fallback is allowed. Active/unverified native background work, pending ACP tools and unresolved receipts block handoff. The installer adds one fixed Claude profile (0.107.3, Node >=22) alongside Codex; lifecycle scripts remain disabled and existing prefixes are never overwritten. Existing brokers lacking handoff capability remain unsupported without an independently authorized replacement.

@@ -10,10 +10,15 @@ def load_helpers(request):
 
 
 def idle_native(a,observed):
-    if observed['kind']!='codex' or not observed.get('identity'):
-        raise ValueError('Mode switching supports verified Codex agents only')
+    if observed['kind']not in ('codex','claude') or not observed.get('identity'):
+        raise ValueError('Mode switching supports verified Codex and Claude agents only')
     if observed['in_mode'] or a['provider_activity'](observed)['state']!='ready' or a['native_input_dialog'](observed):
         raise ValueError('Wait for verified Ready with no active prompt before switching')
+    if observed['kind']=='claude':
+        linked=[c for c in a['conversations'](observed)if c.get('linked')]
+        tasks=a['observed_background_tasks'](observed,linked[0]if len(linked)==1 else None)
+        if tasks and (tasks.get('unavailable')or any(t.get('state')in ('running','waiting','unverified')for t in tasks.get('tasks',[]))):
+            raise ValueError('Resolve Claude background tasks before switching')
 
 
 def broker_observation(request,a,b):
@@ -24,22 +29,28 @@ def broker_observation(request,a,b):
     if any(target[k]!=request[k] for k in ('session','window','pane')):
         raise ValueError('ACP tmux target changed')
     value=b['call'](dict(request,action='call',command={'action':'snapshot'}))
-    if value.get('provider')!='codex' or not value.get('handoff_supported'):
-        raise ValueError('This broker does not support Codex handoff; existing brokers are not modified automatically')
+    if value.get('provider')not in ('codex','claude') or not value.get('handoff_supported'):
+        raise ValueError('This broker does not support this provider handoff; existing brokers are not modified automatically')
     if value.get('state')!='ready' or any(not p.get('expired') for p in value.get('permissions',[])):
         raise ValueError('Wait for ACP Ready with no pending permission')
+    if any(t.get('status')in ('pending','in_progress')for t in value.get('tools',[])):
+        raise ValueError('Wait for ACP tools to finish before switching')
     if any(r.get('state')in ('claimed','uncertain') or r.get('kind')=='prompt' and r.get('state')!='completed' for r in value.get('receipts',[])):
         raise ValueError('Check unresolved ACP receipts before switching')
     session=value.get('session_id');b['canonical_uuid'](session)
     env={}
     for entry in Path('/proc',str(live['pid']),'environ').read_bytes().decode().split('\0'):
         key,_,val=entry.partition('=')
-        if key in ('CODEX_HOME','VIRTUAL_ENV'):env[key]=val
-    observed=dict(kind='codex',identity=request['identity'],cwd=value['path'],env=env,base=None,args=['codex','resume',session])
+        if key in ('CODEX_HOME','CLAUDE_CONFIG_DIR','VIRTUAL_ENV'):env[key]=val
+    provider=value['provider']
+    observed=dict(kind=provider,identity=request['identity'],cwd=value['path'],env=env,base=None,args=['codex','resume',session]if provider=='codex'else['claude','--resume',session])
+    native_session=a['claude_current_session'](a['provider_home'](observed),observed['cwd'],session)if provider=='claude'else session
+    if not native_session:raise ValueError('Native continuation chain cannot be verified')
     # Native metadata must independently confirm this exact thread and directory.
-    candidates=[c for c in a['conversations'](observed)if c.get('linked') and c['session']==session]
+    candidates=[c for c in a['conversations'](observed)if c.get('linked') and c['session']==native_session]
     if len(candidates)!=1:raise ValueError('No unique persisted native conversation matches this ACP thread')
     plan=a['restart_plan'](request,observed)
+    plan['acp_session']=session
     plan['broker_identity']={k:live[k]for k in ('instance','pid','start','boot','agent_pid')}
     return plan
 
@@ -62,7 +73,7 @@ def probe_load(executable):
                 if v.get('id')=='cc-load-probe':
                     r=v.get('result',{})
                     if r.get('protocolVersion')==1 and r.get('agentCapabilities',{}).get('loadSession') is True:return
-                    raise ValueError('Installed Codex adapter does not advertise ACP session/load')
+                    raise ValueError('Installed adapter does not advertise ACP session/load')
         raise ValueError('ACP session/load capability check timed out or exceeded bounds')
     finally:
         if p.poll()is None:os.killpg(p.pid,signal.SIGTERM)
@@ -81,9 +92,14 @@ def plan(request,a,b,probe=False):
         observed=a['observe'](request);idle_native(a,observed)
         native=a['restart_plan'](request,observed)
         native['screen']=observed['screen']
-        adapter=b['options']({'path':native['project'],'provider':'codex'})
-        if probe:probe_load(adapter['executable'])
-        native['adapter']=adapter
+        try:
+            adapter=b['options']({'path':native['project'],'provider':native['provider']})
+            if probe:probe_load(adapter['executable'])
+            native['adapter']=adapter
+        except b['MissingAdapter']:
+            if not probe:raise
+            installer={'__name__':'cc_install'};exec(request['_install_code'],installer)
+            native['installation']=installer['propose'](native['provider'])
     else:
         if not request.get('broker'):raise ValueError('Already a native agent')
         native=broker_observation(request,a,b)
@@ -192,7 +208,7 @@ def status(request,a,b):
         return {'state':'complete','instance':hashlib.sha256(('acp/'+request['id']+'/'+value['instance']).encode()).hexdigest()}
     observed=a['observe'](request)
     if observed['identity']==request['identity']:return {'state':'checking','note':'Original process is still present; no retry'}
-    if observed['env'].get('CC_MODE_SWITCH_ID')!=request['id'] or observed['kind']!='codex' or observed['cwd']!=expected['project']:
+    if observed['env'].get('CC_MODE_SWITCH_ID')!=request['id'] or observed['kind']!=expected['provider'] or observed['cwd']!=expected['project']:
         raise ValueError('A different process occupies the pane; metadata not transferred')
     linked=[c for c in a['conversations'](observed)if c.get('linked')]
     if len(linked)!=1 or linked[0]['session']!=expected['session'] or linked[0]['id']!=expected['conversation']:return {'state':'checking','note':'Waiting for native resume conversation verification'}
@@ -202,6 +218,15 @@ def status(request,a,b):
 def main(request):
     a,b=load_helpers(request)
     if request['action']=='prepare':return plan(request,a,b,True)
+    if request['action']in ('install_start','install_status'):
+        installer={'__name__':'cc_install'};exec(request['_install_code'],installer)
+        if request['action']=='install_status':return installer['status'](request['id'])
+        try:
+            if request.get('mode')!='acp' or request.get('broker') or plan(request,a,b,True)!=request['plan']:
+                raise ValueError('Agent or installation target changed; prepare a fresh review')
+        except Exception:
+            return {'state':'install_failed','note':'Installation preflight changed. No package installation or agent switch was attempted; prepare again.'}
+        return installer['start'](request['id'],request['plan']['installation'],request['_install_code'])
     if request['action']=='start':return start(request,a,b)
     if request['action']=='status':return status(request,a,b)
     raise ValueError('Unsupported switch action')

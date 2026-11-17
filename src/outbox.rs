@@ -57,6 +57,10 @@ struct Record {
     baseline: Option<Log>,
     #[serde(default)]
     pending_pi_session: Option<String>,
+    #[serde(default)]
+    pending_codex_session: Option<String>,
+    #[serde(default)]
+    pending_codex_screen: Option<String>,
     seen_message: Option<u64>,
     #[serde(default)]
     command_message: Option<u64>,
@@ -94,7 +98,10 @@ fn unresolved(r: &Record) -> bool {
 // Uncertain/blocked input and legacy unanchored receipts remain FIFO barriers.
 fn blocks_dispatch(r: &Record) -> bool {
     unresolved(r)
-        && !(r.status == "submitted" && (r.baseline.is_some() || r.pending_pi_session.is_some()))
+        && !(r.status == "submitted"
+            && (r.baseline.is_some()
+                || r.pending_pi_session.is_some()
+                || r.pending_codex_session.is_some()))
 }
 fn stored(c: &Connection, id: &str) -> Result<Option<Record>, ApiError> {
     c.query_row("SELECT data FROM agent_outbox WHERE id=?1", [id], |r| {
@@ -324,16 +331,25 @@ pub(crate) async fn enqueue(
     } else {
         None
     };
-    let (target, identity, attachment) = if let Some(g) = &prepared {
-        (
-            g.target.clone(),
-            g.identity.clone(),
-            Some(g.attachment.clone()),
-        )
-    } else {
-        let g = agents::claim_message(&s, &host, &token).await?;
-        (g.target, g.identity, None)
-    };
+    let (target, identity, attachment, pending_codex_session, pending_codex_screen) =
+        if let Some(g) = &prepared {
+            (
+                g.target.clone(),
+                g.identity.clone(),
+                Some(g.attachment.clone()),
+                None,
+                None,
+            )
+        } else {
+            let g = agents::claim_message(&s, &host, &token).await?;
+            let pending = g.pending_codex_session;
+            let screen = if pending.is_some() {
+                Some(g.screen)
+            } else {
+                None
+            };
+            (g.target, g.identity, None, pending, screen)
+        };
     let machine = s.registry.get(&host).await?;
     if machine.connection_revision != target.connection_revision
         || prepared
@@ -366,6 +382,8 @@ pub(crate) async fn enqueue(
         updated_at: now(),
         baseline: None,
         pending_pi_session: None,
+        pending_codex_session,
+        pending_codex_screen,
         seen_message: None,
         command_message: None,
         attachment,
@@ -430,9 +448,15 @@ fn matching_receipt(r: &Record, observation: &Value, used: &HashSet<(String, u64
     } else {
         // Pi allocates a process-linked UUID before persisting its first log.
         // Only an empty-session anchor recorded BEFORE paste can confirm it.
-        let expected = r.pending_pi_session.as_deref()?;
-        if observation["pi_session"].as_str() != Some(expected) {
-            return None;
+        if let Some(expected) = r.pending_codex_session.as_deref() {
+            if observation["codex_session"].as_str() != Some(expected) {
+                return None;
+            }
+        } else {
+            let expected = r.pending_pi_session.as_deref()?;
+            if observation["pi_session"].as_str() != Some(expected) {
+                return None;
+            }
         }
         0
     };
@@ -462,7 +486,9 @@ async fn confirm_observed(
         .iter()
         .filter(|r| {
             r.status == "archived"
-                && (r.baseline.is_some() || r.pending_pi_session.is_some())
+                && (r.baseline.is_some()
+                    || r.pending_pi_session.is_some()
+                    || r.pending_codex_session.is_some())
                 && r.seen_message.is_none()
                 && r.command_message.is_none()
         })
@@ -478,6 +504,9 @@ async fn confirm_observed(
                 && (old.pending_pi_session.as_ref().is_some_and(|session| {
                     r.pending_pi_session.as_ref() == Some(session)
                         || observation["pi_session"].as_str() == Some(session.as_str())
+                }) || old.pending_codex_session.as_ref().is_some_and(|session| {
+                    r.pending_codex_session.as_ref() == Some(session)
+                        || observation["codex_session"].as_str() == Some(session.as_str())
                 }) || (old.baseline.is_some()
                     && old
                         .baseline
@@ -875,6 +904,28 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
             _ => {}
         }
     }
+    let first_codex = if let Some(expected) = next.pending_codex_session.as_deref() {
+        let actual = observation["pending_codex_session"]
+            .as_str()
+            .or_else(|| observation["codex_session"].as_str());
+        if actual != Some(expected) {
+            let _ = change(
+                s,
+                next,
+                "blocked",
+                "Original Codex session changed; no first message was sent.",
+            )
+            .await?;
+            return Ok(());
+        }
+        if log.is_none() && next.pending_codex_screen.as_deref() != observation["screen"].as_str() {
+            let _=change(s,next,"blocked","Codex terminal changed after the first-message review; check it before submitting.").await?;
+            return Ok(());
+        }
+        log.is_none() && observation["pending_codex_input_available"] == true
+    } else {
+        false
+    };
     let activity = crate::queue::Activity::from_value(
         &observation["activity"],
         observation["context"].as_str().unwrap_or(""),
@@ -883,8 +934,8 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
         observation["activity"]["source"].as_str(),
         Some("pi_bridge" | "claude_registry" | "claude_events" | "codex_events")
     );
-    if !matches!(activity.state, AgentState::Ready | AgentState::Working)
-        || !verified
+    if (!first_codex
+        && (!matches!(activity.state, AgentState::Ready | AgentState::Working) || !verified))
         || observation["send_available"] != true
         || !observation["input_guard"].is_string()
     {
@@ -966,6 +1017,7 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
     request["input_guard"] = observation["input_guard"].clone();
     request["conversation"] = json!(claimed.conversation);
     request["pending_pi_session"] = json!(claimed.pending_pi_session);
+    request["pending_codex_session"] = json!(claimed.pending_codex_session);
     complete(s, claimed, machine.transport.agent_request(request).await).await
 }
 async fn complete(
@@ -1162,6 +1214,17 @@ async fn manual(s: &AppState, r: Record, token: &str) -> Result<(), ApiError> {
         ));
     }
     let mut intent = r;
+    if intent.pending_codex_session.is_some()
+        && intent.pending_codex_session != grant.pending_codex_session
+        && observed["codex_session"].as_str() != intent.pending_codex_session.as_deref()
+    {
+        return Err(conflict(
+            "Original Codex session changed; no input was sent",
+        ));
+    }
+    if intent.pending_codex_session.is_none() {
+        intent.pending_codex_session = grant.pending_codex_session.clone();
+    }
     intent.pending_pi_session = if log.is_none() {
         observed["pending_pi_session"].as_str().map(str::to_owned)
     } else {
@@ -1185,6 +1248,9 @@ async fn manual(s: &AppState, r: Record, token: &str) -> Result<(), ApiError> {
     request["action"] = json!("send");
     request["identity"] = json!(claimed.instance);
     request["screen"] = json!(grant.screen);
+    if claimed.baseline.is_none() {
+        request["pending_codex_session"] = json!(claimed.pending_codex_session);
+    }
     request["text"] = json!(claimed.text);
     complete(s, claimed, machine.transport.agent_request(request).await).await
 }
@@ -1283,6 +1349,8 @@ mod tests {
                 size: 100,
             }),
             pending_pi_session: None,
+            pending_codex_session: None,
+            pending_codex_screen: None,
             seen_message: None,
             command_message: None,
             attachment: None,
@@ -1323,6 +1391,39 @@ mod tests {
         assert_eq!(rows[1].status, "command");
         assert_eq!(rows[1].command_message, Some(130));
         assert_eq!(rows[1].seen_message, None);
+    }
+    #[test]
+    fn first_codex_receipt_matches_only_its_original_thread_after_persistence() {
+        let mut r = fixture();
+        r.baseline = None;
+        r.pending_codex_session = Some("fresh-thread".into());
+        let mut observation = json!({"log":{"conversation":"new-log","device":1,"inode":2,"size":200},"codex_session":"other-thread","users":[{"position":50,"digest":r.digest}]});
+        assert!(matching_receipt(&r, &observation, &HashSet::new()).is_none());
+        observation["codex_session"] = json!("fresh-thread");
+        assert_eq!(
+            matching_receipt(&r, &observation, &HashSet::new()),
+            Some(50)
+        );
+        assert!(
+            matching_receipt(
+                &r,
+                &observation,
+                &HashSet::from([("new-log".to_string(), 50)])
+            )
+            .is_none()
+        );
+        let mut legacy = serde_json::to_value(&r).unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("pending_codex_session");
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("pending_codex_screen");
+        let old: Record = serde_json::from_value(legacy).unwrap();
+        assert!(old.pending_codex_session.is_none());
+        assert!(matching_receipt(&old, &observation, &HashSet::new()).is_none());
     }
     #[test]
     fn definite_native_submissions_allow_followups_but_uncertainty_and_legacy_do_not() {

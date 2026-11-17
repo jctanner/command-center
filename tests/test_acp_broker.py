@@ -29,8 +29,8 @@ class BrokerTests(unittest.TestCase):
         executable = self.root / 'fake-agent'
         executable.write_text(FAKE)
         executable.chmod(0o700)
-        if self._testMethodName.startswith('test_codex_'):
-            (self.root/'intent.json').write_text(json.dumps({'id':str(uuid.uuid4()),'prepared':{'provider':'codex'},'resume_session':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}));(self.root/'intent.json').chmod(0o600)
+        if self._testMethodName.startswith(('test_codex_','test_claude_')):
+            (self.root/'intent.json').write_text(json.dumps({'id':str(uuid.uuid4()),'prepared':{'provider':'claude'if self._testMethodName.startswith('test_claude_')else'codex'},'resume_session':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}));(self.root/'intent.json').chmod(0o600)
         self.broker = MOD.Broker(str(self.root), str(executable), str(self.root))
         wait(lambda: self.broker.state == 'ready')
 
@@ -43,6 +43,17 @@ class BrokerTests(unittest.TestCase):
 
     def action(self, **kwargs):
         return dict(instance=self.broker.instance, id=str(uuid.uuid4()), **kwargs)
+
+    def test_claude_load_preserves_native_uuid_and_explicit_handoff(self):
+        self.assertEqual('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',self.broker.session)
+        self.assertEqual('claude',self.broker.snapshot()['provider']);self.assertTrue(self.broker.snapshot()['handoff_supported'])
+        command=self.action(action='handoff');self.assertEqual('completed',self.broker.dispatch(command)['state']);self.assertIsNotNone(self.broker.agent.poll())
+        self.assertEqual('completed',self.broker.dispatch(command)['state'])
+    def test_claude_handoff_rejects_pending_tools_and_stale_instances(self):
+        self.broker.tools['active']={'status':'in_progress'}
+        with self.assertRaisesRegex(ValueError,'idle'):self.broker.dispatch(self.action(action='handoff'))
+        with self.assertRaisesRegex(ValueError,'Stale'):self.broker.dispatch(dict(self.action(action='handoff'),instance=str(uuid.uuid4())))
+        self.assertIsNone(self.broker.agent.poll())
 
     def test_codex_load_retains_native_thread_and_handoff_is_one_use(self):
         self.assertEqual('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',self.broker.session)

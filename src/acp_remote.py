@@ -13,6 +13,9 @@ import sys
 import time
 import uuid
 
+class MissingAdapter(ValueError):
+    pass
+
 LIMIT = 1024 * 1024
 
 def canonical_uuid(value):
@@ -93,7 +96,7 @@ def options(request):
     if not executable and os.path.isfile(managed):
         executable = managed
     if not executable:
-        raise ValueError(provider.title()+' ACP adapter not installed on this machine; native mode remains available')
+        raise MissingAdapter(provider.title()+' ACP adapter not installed on this machine; native mode remains available')
     executable = os.path.realpath(executable)
     if not os.access(executable, os.X_OK):
         raise ValueError('ACP adapter is not executable')

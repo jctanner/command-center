@@ -1,0 +1,7 @@
+# Reviewed missing-adapter install ready
+
+Task0087 adds Install adapter and review switch when a Codex adapter is missing. Fixed package2.7.0/private prefix/integrity review; no installation from GET. A one-use durable intent starts a bounded private one-shot installer over existing transport. Disabled npm scripts and isolated config/cache, no-overwrite publication, immutable UUID/lock and atomic results protect existing adapters/native agents. Closing CC does not cancel or repeat the job. Successful installation leads to fresh process/source/directory/screen/adapter checks and separate switch confirmation, including after service restart.
+
+Validation: frontend/debug/release builds,92 Rust tests,25 Python ACP/installer tests,6 OpenAPI checks and Clippy pass.22 release browser regressions pass, covering desktop/mobile install and source retention, failure, lost response, backend restart, existing ACP chat/switching and pending task0086 first-message fix. Tests use fake npm/agents, no network downloads or live agent actions.
+
+All new task0086/87 code remains uncommitted/undeployed; last published release f3d774b. The separately requested manual corsair adapter install already exists and is reused. No further live install/restart/send occurred. A future deployment needs explicit human approval and normal listener/config/process/in-flight checks. Updater detection remains open bug0042. Only missing Codex adapters during switching are handled; Node/npm prerequisites, incompatible/partial existing adapters and Claude/pi installs are not auto-repaired.

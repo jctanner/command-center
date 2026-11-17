@@ -238,6 +238,7 @@ impl Transport {
         request["socket"] = serde_json::json!(self.host.socket);
         request["_agent_code"] = serde_json::json!(include_str!("agent_remote.py"));
         request["_acp_code"] = serde_json::json!(include_str!("acp_remote.py"));
+        request["_install_code"] = serde_json::json!(include_str!("acp_install.py"));
         if request["action"] == "start" {
             request["_broker_code"] = serde_json::json!(include_str!("acp_broker.py"));
         }

@@ -156,6 +156,26 @@ class AgentHistory(unittest.TestCase):
             fcntl.flock(stream,fcntl.LOCK_UN)
             self.assertEqual(agent.process_sessions(observation,home),set())
 
+    def test_pending_codex_requires_owned_unique_writer_and_exact_empty_editor(self):
+        base,_,_=agent.proc(os.getpid());home=self.root/'pending-codex';(home/'thread-writer-locks').mkdir(parents=True)
+        ident='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';lock=home/'thread-writer-locks'/(ident+'.lock')
+        def observed():return dict(kind='codex',base=base,identity='verified',env={'CODEX_HOME':str(home)},args=[],cwd=str(self.root),in_mode=False,visible='› Ask Codex to do anything\n\nFixture model · /fixture\n? for shortcuts',screen='screen')
+        with lock.open('w')as stream:
+            self.assertIsNone(agent.codex_pending_session(observed()))
+            fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            self.assertEqual(agent.codex_pending_session(observed()),ident)
+            self.assertTrue(agent.codex_first_input_available(observed()))
+            self.assertEqual(agent.provider_activity(observed())['state'],'unknown')
+            self.assertEqual(agent.provider_activity(observed())['source'],'codex_pending')
+            for visible in ['Update available\n1. Update now\n2. Skip\nenter continue','› unfinished draft\n? for shortcuts','Working…']:
+                self.assertFalse(agent.codex_first_input_available(dict(observed(),visible=visible)))
+            with self.assertRaises(agent.Failure):agent.verify_active_message({'pending_codex_session':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'},observed())
+            self.assertEqual(agent.verify_active_message({'pending_codex_session':ident},observed())['state'],'starting')
+            path=home/'sessions/2026/11/16/log.jsonl';path.parent.mkdir(parents=True);path.write_text(json.dumps({'type':'session_meta','payload':{'id':ident,'cwd':str(self.root)}})+'\n')
+            self.assertIsNone(agent.codex_pending_session(observed()))
+            fcntl.flock(stream,fcntl.LOCK_UN)
+            self.assertIsNone(agent.codex_pending_session(observed()))
+
     def test_codex_only_same_active_turn_progress_refreshes_working(self):
         now = int(time.time())
         started=dict(type='event_msg',timestamp=now-1000,payload=dict(type='task_started',turn_id='root'))

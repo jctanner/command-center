@@ -202,6 +202,10 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
             "/api/v1/hosts/{host}/agents/connection-mode-status",
             get(agent_mode::status),
         )
+        .route(
+            "/api/v1/hosts/{host}/agents/connection-mode-install",
+            post(agent_mode::install),
+        )
         .route("/api/v1/queue", get(queue::snapshot))
         .route("/api/v1/attention/read", post(attention::read))
         .route(

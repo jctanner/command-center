@@ -112,7 +112,7 @@ fn pending(
             ));
         }
     }
-    let count:u64=c.query_row("SELECT count(*) FROM agent_mode_switches WHERE json_extract(data,'$.host')=?1 AND json_extract(data,'$.target.pane')=?2 AND json_extract(data,'$.endpoint')=?3 AND json_extract(data,'$.state')='checking'",params![host,target.pane,endpoint],|r|r.get(0)).map_err(storage)?;
+    let count:u64=c.query_row("SELECT count(*) FROM agent_mode_switches WHERE json_extract(data,'$.host')=?1 AND json_extract(data,'$.target.pane')=?2 AND json_extract(data,'$.endpoint')=?3 AND json_extract(data,'$.state') IN ('checking','installing','install_uncertain')",params![host,target.pane,endpoint],|r|r.get(0)).map_err(storage)?;
     if count > 0 {
         return Err(conflict(
             "An earlier switch is unresolved; check its receipt before another handoff",
@@ -121,7 +121,7 @@ fn pending(
     Ok(())
 }
 fn public(r: &Receipt) -> Value {
-    json!({"id":r.id,"state":r.state,"note":r.note,"provider":r.plan["provider"],"session":r.plan["session"],"project":r.plan["project"],"command":if r.target.mode=="acp" {json!([r.plan["adapter"]["executable"],"ACP session/load",r.plan["session"]])} else {r.plan["command"].clone()},"python_venv":r.plan["python_venv"],"mode":r.target.mode})
+    json!({"id":r.id,"state":r.state,"note":r.note,"provider":r.plan["provider"],"session":r.plan["session"],"project":r.plan["project"],"installation":if r.plan["installation"].is_object(){json!({"package":r.plan["installation"]["package"],"version":r.plan["installation"]["version"],"prefix":r.plan["installation"]["prefix"],"scripts":false,"registry":r.plan["installation"]["registry"],"timeout_seconds":r.plan["installation"]["timeout_seconds"]})}else{Value::Null},"command":if r.plan["installation"].is_object() {json!(["CC isolated install",format!("{}@{}",r.plan["installation"]["package"].as_str().unwrap_or(""),r.plan["installation"]["version"].as_str().unwrap_or("")),r.plan["installation"]["prefix"]])} else if r.target.mode=="acp" {json!([r.plan["adapter"]["executable"],"ACP session/load",r.plan["session"]])} else {r.plan["command"].clone()},"python_venv":r.plan["python_venv"],"mode":r.target.mode})
 }
 pub(crate) async fn prepare(
     State(s): State<Arc<AppState>>,
@@ -168,14 +168,19 @@ pub(crate) async fn prepare(
         target: target.clone(),
         scope: crate::attention::scope(&m.config, &target.session, &target.window, &target.pane).1,
         endpoint: crate::attention::scope(&m.config, "", "", "").0,
-        plan,
-        state: "prepared".into(),
+        plan: plan.clone(),
+        state: if plan["installation"].is_object() {
+            "install_required"
+        } else {
+            "prepared"
+        }
+        .into(),
         created: now(),
         note: String::new(),
     };
     let saved = r.clone();
     s.board.with(move |c| {
-        c.execute("DELETE FROM agent_mode_switches WHERE json_extract(data,'$.state')='prepared' AND json_extract(data,'$.created')<?1",[now().saturating_sub(120)]).map_err(storage)?;
+        c.execute("DELETE FROM agent_mode_switches WHERE json_extract(data,'$.state') IN ('prepared','install_required') AND json_extract(data,'$.created')<?1",[now().saturating_sub(120)]).map_err(storage)?;
         let count:u64=c.query_row("SELECT count(*) FROM agent_mode_switches",[],|r|r.get(0)).map_err(storage)?;
         if count>=4096 { return Err(conflict("Mode switch receipt limit reached")); }
         pending(c,&saved.host,&saved.target,&saved.endpoint)?;
@@ -263,6 +268,75 @@ pub(crate) async fn start(
     s.queue.invalidate();
     Ok(Json(public(&r)))
 }
+pub(crate) async fn install(
+    State(s): State<Arc<AppState>>,
+    Path(host): Path<String>,
+    Json(body): Json<Operation>,
+) -> Result<Json<Value>, ApiError> {
+    let _slot = s
+        .file_slots
+        .try_acquire()
+        .map_err(|_| conflict("Host operations busy; installation not started"))?;
+    let id = body.id;
+    let r = s
+        .board
+        .with({
+            let id = id.clone();
+            move |c| read(c, &id)
+        })
+        .await?;
+    if r.host != host {
+        return Err(conflict("Installation belongs to another machine"));
+    }
+    let m = s.registry.get(&host).await?;
+    let _endpoint = m.file_writes.lock().await;
+    if m.connection_revision != r.target.connection_revision
+        || s.registry.get(&host).await?.connection_revision != m.connection_revision
+    {
+        return Err(conflict("Machine changed; installation not started"));
+    }
+    let mut r = s
+        .board
+        .with(move |c| {
+            let tx = c.transaction().map_err(storage)?;
+            let mut r = read(&tx, &id)?;
+            if r.state != "install_required" || now().saturating_sub(r.created) > 120 {
+                return Err(conflict(
+                    "Installation expired or already attempted; check its original receipt",
+                ));
+            }
+            pending(&tx, &r.host, &r.target, &r.endpoint)?;
+            r.state = "installing".into();
+            r.note =
+                "Pinned adapter installation requested explicitly; agent remains unchanged.".into();
+            write(&tx, &r)?;
+            tx.commit().map_err(storage)?;
+            Ok(r)
+        })
+        .await?;
+    let mut request = r.target.request("install_start");
+    request["id"] = json!(r.id);
+    request["plan"] = r.plan.clone();
+    if let Ok(value) = m
+        .transport
+        .mode_request(request)
+        .await
+        .and_then(|v| agents::result(v).map_err(|e| anyhow::anyhow!(e.1)))
+    {
+        if value["state"] == "install_failed" {
+            r.state = "install_failed".into();
+            r.note = value["note"]
+                .as_str()
+                .unwrap_or("Installation did not start; agent unchanged")
+                .into();
+        }
+    } else {
+        r.note="Installation response unavailable. Check its original receipt; no retry or agent switch was made.".into();
+    }
+    let saved = r.clone();
+    s.board.with(move |c| write(c, &saved)).await?;
+    Ok(Json(public(&r)))
+}
 pub(crate) async fn status(
     State(s): State<Arc<AppState>>,
     Path(host): Path<String>,
@@ -286,8 +360,37 @@ pub(crate) async fn status(
             "Machine endpoint changed; switch status cannot be verified",
         ));
     }
-    if r.state == "prepared" || r.state == "complete" || r.state == "not_sent" {
-        return Ok(Json(public(&r)));
+    if matches!(
+        r.state.as_str(),
+        "prepared" | "complete" | "not_sent" | "install_required" | "installed" | "install_failed"
+    ) {
+        let mut value = public(&r);
+        value["connection_revision"] = json!(m.connection_revision);
+        return Ok(Json(value));
+    }
+    if matches!(r.state.as_str(), "installing" | "install_uncertain") {
+        let mut request = r.target.request("install_status");
+        request["id"] = json!(r.id);
+        let result = agents::result(m.transport.mode_request(request).await?)?;
+        let phase = result["state"]
+            .as_str()
+            .filter(|v| {
+                matches!(
+                    *v,
+                    "installing" | "installed" | "install_failed" | "install_uncertain"
+                )
+            })
+            .ok_or_else(|| conflict("Invalid installation receipt"))?;
+        r.state = phase.into();
+        r.note = result["note"]
+            .as_str()
+            .unwrap_or("Check original installation; agent unchanged")
+            .into();
+        let saved = r.clone();
+        s.board.with(move |c| write(c, &saved)).await?;
+        let mut value = public(&r);
+        value["connection_revision"] = json!(m.connection_revision);
+        return Ok(Json(value));
     }
     let mut request = r.target.request("status");
     request["id"] = json!(r.id);

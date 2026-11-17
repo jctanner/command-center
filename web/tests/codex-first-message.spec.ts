@@ -1,0 +1,30 @@
+import {test,expect} from '@playwright/test';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,existsSync} from 'node:fs';
+import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';import {spawn,spawnSync,type ChildProcess} from 'node:child_process';import {createServer} from 'node:net';
+let dir:string,home:string,socket:string,base:string,backend:ChildProcess,pane:string;
+const thread='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',old='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const tmux=(...args:string[])=>{const r=spawnSync('tmux',['-S',socket,...args],{encoding:'utf8'});if(r.status!==0)throw Error(r.stderr);return r.stdout.trim();};
+async function get(path:string){const r=await fetch(base+path);expect(r.status).toBe(200);return r.json();}
+const post=(path:string,body:unknown)=>fetch(base+path,{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify(body)});
+const pathFor=(id:string)=>join(home,'sessions/2026/11/16','rollout-'+id+'.jsonl');
+test.beforeEach(async()=>{
+ dir=mkdtempSync(join(tmpdir(),'cc-first-codex-'));home=join(dir,'codex-home');mkdirSync(join(home,'sessions/2026/11/16'),{recursive:true});socket=join(dir,'tmux.sock');
+ writeFileSync(pathFor(old),JSON.stringify({type:'session_meta',payload:{id:old,cwd:dir}})+'\n'+JSON.stringify({type:'response_item',payload:{type:'message',role:'assistant',content:[{type:'output_text',text:'UNRELATED OLD AGENT HISTORY'}]}})+'\n');
+ tmux('-f','/dev/null','new-session','-d','-s','fixture','-c',dir,'/usr/bin/env','CODEX_HOME='+home,'CC_LAUNCH_ID=11111111-1111-4111-8111-111111111111','CC_FIXTURE_THREAD='+thread,'python3',resolve('../tests/fixtures/codex-lazy-rollout.py'));pane=tmux('display-message','-p','-t','fixture','#{pane_id}');
+ const server=createServer();const port=await new Promise<number>(r=>server.listen(0,'127.0.0.1',()=>r((server.address()as{port:number}).port)));await new Promise<void>(r=>server.close(()=>r()));base=`http://127.0.0.1:${port}`;const config=join(dir,'config.toml');writeFileSync(config,`[[hosts]]\nid="local"\nname="First message fixture"\nsocket=${JSON.stringify(socket)}\n`);
+ backend=spawn(resolve(process.env.CC_BINARY||'../target/debug/command-center'),['--listen',base.slice(7),'--config',config,'--web-dir',resolve(process.env.CC_WEB_DIR||'dist-next')],{env:{...process.env,HOME:dir},stdio:'ignore'});await expect.poll(async()=>{try{return(await fetch(base+'/api/v1/health')).status}catch{return 0;}}).toBe(200);
+});
+test.afterEach(async()=>{backend?.kill('SIGTERM');if(socket)spawnSync('tmux',['-S',socket,'kill-server']);if(dir)rmSync(dir,{recursive:true,force:true});});
+for(const width of [1440,393])test(`first Codex message persists and attaches the exact thread at ${width}px`,async({page})=>{
+ let sockets=0;page.on('websocket',()=>sockets++);await page.setViewportSize({width,height:900});await page.goto(base+'/#/queue');const card=page.locator('.queue-card').first();await expect(card).toContainText('New session');await card.click();await expect(page.locator('.agent-history')).toContainText('Send its first message here');await expect(page.locator('.agent-history')).not.toContainText('UNRELATED');expect(existsSync(pathFor(thread))).toBe(false);
+ const input=page.getByRole('textbox',{name:'Message to agent',exact:true});await input.fill('hello from CC, not the terminal');await page.getByRole('button',{name:'Send message',exact:true}).click();await expect.poll(async()=>{const out=await get('/api/v1/agents/outbox');return out.entries[0]?.status;},{timeout:15000}).toBe('seen');await expect(page.locator('.agent-history')).toContainText('First reply from the correct fresh thread');await expect(page.locator('.agent-history')).not.toContainText('UNRELATED');expect(readFileSync(pathFor(thread),'utf8').match(/hello from CC, not the terminal/g)).toHaveLength(1);expect(sockets).toBe(0);
+});
+test('changed native editor blocks first input and never targets another conversation',async()=>{
+ const queue=await get('/api/v1/queue');const h=queue.hosts[0],i=h.items[0];const query=new URLSearchParams({session:i.session,window:i.window,pane:i.pane,connection_revision:h.connection_revision});const d=await get('/api/v1/hosts/local/agents/conversation?'+query);expect(d.pending_codex_session).toBe(thread);expect(d.selected).toBeNull();expect(d.association).toBe('process_pending');expect(d.send_available).toBe(true);
+ tmux('send-keys','-t',pane,'-l','unfinished terminal draft');await expect.poll(()=>tmux('capture-pane','-p','-t',pane)).toContain('unfinished terminal draft');const r=await post('/api/v1/hosts/local/agents/message',{id:crypto.randomUUID(),token:d.message_token,text:'must not be pasted'});expect(r.status).toBe(200);await expect.poll(async()=>{const out=await get('/api/v1/agents/outbox');return out.entries[0]?.status;},{timeout:15000}).toBe('blocked');expect(existsSync(pathFor(thread))).toBe(false);expect(tmux('capture-pane','-p','-t',pane)).not.toContain('must not be pasted');
+});
+
+test('old history stays separate and a terminal first message auto-links the fresh thread',async({page})=>{
+ await page.goto(base+'/#/queue');await page.locator('.queue-card').first().click();await expect(page.locator('.agent-history')).toContainText('Send its first message here');await page.getByRole('button',{name:'Details',exact:true}).click();const select=page.getByLabel('Conversation history',{exact:true});await select.selectOption({index:1});await expect(page.locator('.agent-history')).toContainText('UNRELATED OLD AGENT HISTORY');await expect(page.getByRole('button',{name:'Send message',exact:true})).toBeDisabled();
+ tmux('send-keys','-t',pane,'-l','first input directly in the fixture terminal');tmux('send-keys','-t',pane,'Enter');await expect(page.locator('.agent-history')).toContainText('First reply from the correct fresh thread',{timeout:15000});await expect(page.locator('.agent-history')).not.toContainText('UNRELATED');expect(readFileSync(pathFor(old),'utf8')).not.toContain('first input');
+});

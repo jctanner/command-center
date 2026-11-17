@@ -74,7 +74,7 @@ class Broker:
             if self.provider not in ('claude', 'codex'):
                 raise ValueError('Unsupported ACP provider')
             self.resume_session = intent.get('resume_session')
-            if self.resume_session is not None and (self.provider!='codex' or str(uuid.UUID(self.resume_session))!=self.resume_session):
+            if self.resume_session is not None and (self.provider not in ('codex','claude') or str(uuid.UUID(self.resume_session))!=self.resume_session):
                 raise ValueError('Unsupported resume session')
             prompt = intent.pop('initial_prompt', None)
             if prompt:
@@ -133,7 +133,7 @@ class Broker:
 
     def snapshot(self):
         with self.lock:
-            return dict(instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider=='codex', path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
+            return dict(instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
                         messages=list(self.messages), tools=list(self.tools.values()), permissions=list(self.permissions.values()), receipts=[json.loads(r[0]) for r in self.db.execute('select data from receipts order by rowid desc limit 40')])
 
     def rpc(self, method, params, callback):
@@ -303,8 +303,8 @@ class Broker:
             if action == 'handoff':
                 if self.db.execute('select id from receipts where id=?',(ident,)).fetchone():return self.receipt(ident,request)[0]
                 unresolved=any(r.get('state')in ('claimed','uncertain')or r.get('kind')=='prompt'and r.get('state')!='completed'for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
-                if self.provider!='codex' or self.state!='ready' or self.permissions or unresolved:
-                    raise ValueError('Handoff requires idle Codex with no unresolved receipts')
+                if self.provider not in ('codex','claude') or self.state!='ready' or self.permissions or unresolved or any(t.get('status')in ('pending','in_progress')for t in self.tools.values()):
+                    raise ValueError('Handoff requires an idle agent with no unresolved receipts')
                 value,_=self.receipt(ident,request);self.state='switching';self.emit()
                 try:
                     if self.agent.poll() is None:os.killpg(self.agent.pid,signal.SIGTERM)

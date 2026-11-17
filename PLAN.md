@@ -9,6 +9,14 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0089: release Claude handoff](docs/tasks/current/0089-release-claude-mode-switch.md) — human-authorized commit, push and deploy in progress.
+
+- [Task0088: Claude switch and adapter install](docs/tasks/done/0088-claude-mode-switch-install.md) — both-provider handoff and pinned installation fixture-verified; ready, not deployed.
+
+- [Task0087: missing ACP adapter installation](docs/tasks/done/0087-install-missing-acp-adapter.md) — reviewed pinned install verified; ready, not deployed.
+
+- [Task0086: Codex first message](docs/tasks/done/0086-codex-first-message.md) — verified pending-session identity/first input; ready, not deployed.
+
 - [Task0084: native/ACP switch](docs/tasks/current/0084-agent-mode-switch.md) — deployed with approval; real test permission pending.
 
 - [Task0083: Codex ACP](docs/tasks/done/0083-codex-acp.md) — deployed with approval; real-provider test permission pending.
@@ -434,3 +442,12 @@ This ledger does not mirror or change live CC Board tickets. CC-1 remains ongoin
 
 - [2026-11-16: Codex connection-mode handoff](docs/notes/2026-11-16-codex-mode-switch-ready.md)
 - [Bug0041: stopped-pane identity during handoff](docs/bugs/fixed/0041-mode-switch-dead-pane-identity.md) — fixed in fixture verification.
+
+- [Task0085: Codex startup update diagnosis](docs/tasks/done/0085-codex-startup-update-diagnosis.md) — live read-only diagnosis; no agent/session changes.
+- [Bug0042: startup update picker not surfaced](docs/bugs/open/0042-codex-startup-update-not-surfaced.md) — open; blocks native conversation startup while shown as Unknown.
+
+- [Bug0043: Codex first-message bootstrap](docs/bugs/fixed/0043-codex-pretranscript-first-message.md) — fixed in code; pending deployment.
+
+- [2026-11-16: native Codex first-message fix ready](docs/notes/2026-11-16-codex-first-message-ready.md)
+
+- [2026-11-16: missing ACP install on switch ready](docs/notes/2026-11-16-acp-install-on-switch-ready.md)

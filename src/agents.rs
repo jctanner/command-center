@@ -75,6 +75,7 @@ pub(crate) struct Grant {
     pub(crate) target: Target,
     pub(crate) identity: String,
     pub(crate) screen: String,
+    pub(crate) pending_codex_session: Option<String>,
     at: Instant,
     used: bool,
 }
@@ -234,6 +235,9 @@ pub(crate) async fn conversation(
                             target: target.clone(),
                             identity: value["instance"].as_str().unwrap_or("").into(),
                             screen: value["screen"].as_str().unwrap_or("").into(),
+                            pending_codex_session: value["pending_codex_session"]
+                                .as_str()
+                                .map(str::to_owned),
                             at: Instant::now(),
                             used: false,
                         },
@@ -286,6 +290,7 @@ pub(crate) async fn conversation(
                 target,
                 identity: value["instance"].as_str().unwrap_or("").into(),
                 screen: value["screen"].as_str().unwrap_or("").into(),
+                pending_codex_session: value["pending_codex_session"].as_str().map(str::to_owned),
                 at: Instant::now(),
                 used: false,
             },
@@ -345,7 +350,7 @@ pub(crate) async fn message(
         )
     })?;
     // Consume before transport IO. A timeout or backend restart must never replay input.
-    let (target, identity, screen) = {
+    let (target, identity, screen, pending_codex_session) = {
         let mut grants = state.agents.grants.lock().await;
         let grant = grants.get_mut(&message.token).ok_or_else(|| {
             ApiError(
@@ -365,6 +370,7 @@ pub(crate) async fn message(
             grant.target.clone(),
             grant.identity.clone(),
             grant.screen.clone(),
+            grant.pending_codex_session.clone(),
         )
     };
     let machine = state.registry.get(&host).await?;
@@ -386,6 +392,7 @@ pub(crate) async fn message(
     request["action"] = json!("send");
     request["identity"] = json!(identity);
     request["screen"] = json!(screen);
+    request["pending_codex_session"] = json!(pending_codex_session);
     request["text"] = json!(message.text);
     let response = result(machine.transport.agent_request(request).await?)?;
     Ok(Json(response))
@@ -416,6 +423,7 @@ pub(crate) async fn claim_message(
         target: g.target.clone(),
         identity: g.identity.clone(),
         screen: g.screen.clone(),
+        pending_codex_session: g.pending_codex_session.clone(),
         at: g.at,
         used: true,
     })

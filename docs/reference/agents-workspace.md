@@ -19,3 +19,14 @@ Card usage summaries show reported context use and capacity/percentage when know
 ## Optional ACP agents
 
 ACP brokers share the agent cards, filters, card metadata, notifications/read state and ticket context capture. Their badge identifies the protocol; selecting one opens broker-backed chat in the normal detail pane. Native launching/polling remains default. ACP launch preparation is internal to Start Claude (ACP). Prompts, permissions, cancellation and receipts use only the guarded broker path, never native terminal input. Explicit close is supported; unsupported restart/resume and busy-time queueing are labeled honestly. See [ACP broker](acp-broker.md).
+
+
+## Fresh Codex sessions before their first message
+
+Native Codex may own a thread before its rollout is persisted. CC identifies that thread only through verified process/start evidence and a uniquely owned kernel writer lock or validated native runtime registration. It shows **New session**, with API activity still Unknown (`codex_pending`), rather than claiming Ready. Older project history is not that session. The current-session selector stays empty until native history exists; once the same thread materializes, CC follows it automatically, including after an accidentally selected old history. Explicit older-history browsing remains labelled and cannot send the fresh session's first message.
+
+The first explicit CC message can initialize the native history without terminal input. Its one-use grant includes the exact process/session UUID and native screen; durable outbox metadata retains that anchor before transport IO. A conservative empty startup editor must still match at dispatch and immediately before paste. The initial supported boundary is the native `› Ask Codex to do anything` editor and `? for shortcuts` footer. Unknown layouts, typed drafts, update/trust/approval menus and replacement sessions do not receive input. Changed screens hold the message for explicit review, not automatic retry. There is no synthesized user message, auto-prompt, startup update answer or fabricated provider Ready state.
+
+Once a transcript is persisted, Submitted becomes Seen only from matching user text in the same original native thread. An older conversation with identical text cannot confirm delivery. Missing or ambiguous kernel ownership stays unassociated. Provider histories, normal working/ready messaging and pi's separate deferred-log handling retain their original guards.
+
+Codex and Claude cards offer **Switch connection mode…** for an explicitly reviewed, exact-conversation native/ACP handoff. If its adapter is missing, the dialog offers a separate pinned isolated install, followed by a fresh switch review. Claude requires Node.js >=22 for that install. Native remains default; pi conversion and old brokers without handoff capability are unsupported. See the [handoff and installer details](acp-broker.md#switching-codex-or-claude-connection-mode).
