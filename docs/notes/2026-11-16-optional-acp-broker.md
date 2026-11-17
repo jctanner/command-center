@@ -1,0 +1,13 @@
+# Optional ACP broker checkpoint
+
+[Task0077](../tasks/done/0077-optional-acp-broker.md), [ADR0005](../decisions/0005-opt-in-acp-broker.md), [reference](../reference/acp-broker.md).
+
+Native tmux launching/polling remains default. Explicit ACP mode opens a separate experimental catalog/chat and new Claude ACP v1 broker in a dedicated remote tmux pane. Broker owns the adapter/process group, basic terminal interface, private Unix socket and durable UUID action receipts. Rust talks over existing local/SSH/ProxyJump transport with endpoint/process/permission guards, REST and bounded SSE. No network port, automatic migration, fallback, approval or credential provisioning. Preview does not yet integrate native cards/outbox/tickets/notifications, resume/model/venv/attachments or native Claude TUI parity.
+
+Actual human-authorized corsair test used pinned isolated adapter0.107.3 and disposable project/session. API prompt/SSE worked; stopped isolated CC, sent terminal prompt, restarted CC, and observed same broker/conversation with the reply. Stale-instance send rejected, existing remote pane PIDs unchanged. Disposable panes/projects/managed directories removed, isolated adapter retained. Marker-only prompts; no actual provider tool approvals. Private evidence .local/reviews/acp-corsair/. First driver needed a refreshed endpoint revision after restart; corrected/reran successfully.
+
+Staged TypeScript/Vite and release builds pass. Rust89 and all-target Clippy, Python9 broker/security, OpenAPI6, and focused browser9 ACP/native-launch checks pass. Final release specifically rechecked with ACP desktop/mobile tests2 and OpenAPI6. Source/frontend deployed with subsequent human approval; no commit or push requested/performed. Future production restarts require explicit human approval; preserve every listener/origin/config/native process as usual. Do not run a second backend against production state. Native default has no ACP IO or installation until explicitly opted in.
+
+Human subsequently approved deployment. Brief backend restart completed at 2026-11-17T01:00:30Z. Four access paths, SSE/contracts, running binary and frontend verified; exact runtime/env/listeners/config/native pane PIDs retained. Private backups and .local/reviews/acp-deployment.json retained. No agent launch/input/restart, commit or push.
+
+Live validation caught bug0039 (ACP switch ignored during native preparation). Frontend-only correction and delayed-check regression passed; no second backend restart. Live compact UI confirms native default, explicit ACP dialog, prepared-launch gate, zero errors/writes/terminal sockets. All four access paths healthy. Reload clients once.

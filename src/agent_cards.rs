@@ -130,6 +130,8 @@ pub(crate) async fn view(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Target {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    acp: Option<String>,
     session: String,
     window: String,
     pane: String,
@@ -167,12 +169,26 @@ async fn verify(state: &AppState, host: &str, t: &Target) -> Result<String, ApiE
             "Machine changed; reopen the card editor".into(),
         ));
     }
-    let value = m
-        .transport
-        .agent_request(
-            json!({"action":"status","session":t.session,"window":t.window,"pane":t.pane}),
-        )
-        .await?;
+    let value = if let Some(broker) = &t.acp {
+        let value = m
+            .transport
+            .acp_request(json!({"action":"call","broker":broker}))
+            .await?;
+        let v = &value["ok"];
+        if v["target"]["session"] != t.session
+            || v["target"]["window"] != t.window
+            || v["target"]["pane"] != t.pane
+        {
+            return Err(ApiError(StatusCode::CONFLICT, "ACP target changed".into()));
+        }
+        json!({"ok":{"instance":crate::acp::instance(broker,v["instance"].as_str().unwrap_or(""))}})
+    } else {
+        m.transport
+            .agent_request(
+                json!({"action":"status","session":t.session,"window":t.window,"pane":t.pane}),
+            )
+            .await?
+    };
     if value["ok"]["instance"].as_str() != Some(t.instance.as_str())
         || state.registry.get(host).await?.connection_revision != t.connection_revision
     {

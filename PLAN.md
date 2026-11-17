@@ -9,6 +9,13 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0082: integrated ACP agents](docs/tasks/done/0082-integrated-acp-agents.md) — deployed with approval; regular cards/chat and automatic preparation.
+
+
+
+
+
+
 
 
 
@@ -35,6 +42,16 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Task 0009: Pi first-message receipts](docs/tasks/current/0009-pi-first-message-receipts.md) — CC dev; fix deployed, one legacy receipt archive choice pending.
 
 ## Completed work
+
+- [Task0081: ACP directory layout](docs/tasks/done/0081-acp-directory-layout.md) — deployed; full-width path and compact setup.
+
+- [Task0080: launch modal desktop width](docs/tasks/done/0080-launch-modal-desktop-width.md) — deployed; desktop cap1100px, compact unchanged.
+
+- [Task0079: toolbar action order](docs/tasks/done/0079-agents-toolbar-action-order.md) — deployed; Start agent before All outboxes.
+
+- [Task0078: restore Agents toolbar](docs/tasks/done/0078-restore-agents-toolbar.md) — deployed; ACP stays accessible through launcher protocol selection.
+
+- [Task 0077: optional ACP broker](docs/tasks/done/0077-optional-acp-broker.md) — experimental slice deployed with approval; real Claude/corsair lifetime and reconnect checks pass, native stays default.
 
 - [Task 0076: Settings token usage](docs/tasks/done/0076-settings-token-usage.md) — deployed with approval; ten browser checks pass.
 
@@ -193,6 +210,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Fixed bugs
 
+- [Bug0039: ACP protocol handoff during native preparation](docs/bugs/fixed/0039-acp-protocol-handoff.md) — fixed and deployed; delayed-check regression passes.
+
 - [Bug 0027: queue raw SSH warnings](docs/bugs/fixed/0027-queue-raw-ssh-warning.md)
 
 - [Bug 0026: assistant file links disabled](docs/bugs/fixed/0026-agent-markdown-file-links-disabled.md)
@@ -246,6 +265,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Decisions
 
+- [ADR-0005: opt-in ACP broker](docs/decisions/0005-opt-in-acp-broker.md)
+
 - [ADR-0004: board-owned raster blobs](docs/decisions/0004-whiteboard-raster-blobs.md) — deployed.
 
 - [ADR-0003: bounded shared-geometry export renderer](docs/decisions/0003-bounded-whiteboard-export-renderer.md) — implemented; deployment pending.
@@ -255,6 +276,16 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [ADR-0001: filesystem work ledger and sortable filenames](docs/decisions/0001-filesystem-work-ledger.md)
 
 ## Handoff
+
+- [2026-11-16: ACP directory layout](docs/notes/2026-11-16-acp-directory-layout.md) — deployed, browser verified and human ACP connection test succeeded.
+
+- [2026-11-16: desktop launch width](docs/notes/2026-11-16-desktop-launch-width.md) — widened and deployed.
+
+- [2026-11-16: toolbar action order](docs/notes/2026-11-16-toolbar-action-order.md) — deployed and verified.
+
+- [2026-11-16: Agents toolbar restored](docs/notes/2026-11-16-agents-toolbar-restored.md) — extra ACP button removed and frontend deployed.
+
+- [2026-11-16: optional ACP broker](docs/notes/2026-11-16-optional-acp-broker.md) — tested with Claude on corsair and deployed; native default and pane processes preserved.
 
 - [2026-11-16: Settings token usage](docs/notes/2026-11-16-settings-token-usage.md) — current-inventory usage snapshot deployed without restart.
 
@@ -391,3 +422,6 @@ This ledger does not mirror or change live CC Board tickets. CC-1 remains ongoin
 - [2026-11-14: Native folder trust implementation](docs/notes/2026-11-14-native-folder-trust-implementation.md)
 
 - [2026-11-14: Native folder trust deployed](docs/notes/2026-11-14-native-folder-trust-deployed.md)
+
+- [2026-11-16: integrated ACP agents ready](docs/notes/2026-11-16-integrated-acp-agents.md)
+- [Bug0040: ACP project loading race](docs/bugs/fixed/0040-acp-project-loading-race.md) — fixed; delayed-discovery recovery regression passes.

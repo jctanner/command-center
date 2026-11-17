@@ -1,0 +1,3 @@
+# Agents toolbar restored
+
+[Task0078](../tasks/done/0078-restore-agents-toolbar.md) removes the standalone ACP button that disrupted the row. Original toolbar/control order restored; use Start agent → Connection protocol → ACP for the experimental catalog and existing-session access. Build and three browser tests pass, including desktop/mobile reconnect and in-flight native preparation handoff. Frontend-only correction deployed with four paths healthy and backend/config/tmux PIDs unchanged. Live compact check zero errors/writes/terminal sockets. No restart, agent input, commit or push. Reload once.

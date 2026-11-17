@@ -51,6 +51,7 @@ struct Agent {
     approval: u64,
     approval_read: u64,
     approval_open: bool,
+    approval_transition: Option<String>,
     conversation: Option<String>,
     watch: Option<String>,
     version: Option<String>,
@@ -80,7 +81,7 @@ pub(crate) struct Reply {
     #[serde(default)]
     position: u64,
 }
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct View {
     pub key: String,
     pub instance: String,
@@ -209,13 +210,16 @@ impl Attention {
         if matches!(
             activity.state,
             AgentState::Approval | AgentState::AwaitingTrust
-        ) && !agent.approval_open
+        ) && (!agent.approval_open
+            || activity.transition.is_some() && activity.transition != agent.approval_transition)
         {
             agent.revision += 1;
             agent.approval = agent.revision;
             agent.approval_open = true;
+            agent.approval_transition = activity.transition.clone();
         } else if matches!(activity.state, AgentState::Working | AgentState::Ready) {
             agent.approval_open = false;
+            agent.approval_transition = None;
             agent.approval_read = agent.approval;
         }
         let mut selected = None;
@@ -521,6 +525,49 @@ mod tests {
         let seen = store.read(read(&approval)).await.unwrap();
         assert!(!seen.new_approval && seen.needs_attention);
     }
+    #[tokio::test]
+    async fn new_permission_identity_advances_attention_while_still_waiting() {
+        let store = Attention::new(None).unwrap();
+        let first = store
+            .observe(
+                ("agent", "host"),
+                Some("process"),
+                &activity("approval", "prompt-one"),
+                None,
+                true,
+                None,
+            )
+            .await
+            .unwrap();
+        let old_ack = read(&first);
+        store.read(read(&first)).await.unwrap();
+        let same = store
+            .observe(
+                ("agent", "host"),
+                Some("process"),
+                &activity("approval", "prompt-one"),
+                None,
+                true,
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(!same.new_approval);
+        let next = store
+            .observe(
+                ("agent", "host"),
+                Some("process"),
+                &activity("approval", "prompt-two"),
+                None,
+                true,
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(next.new_approval && next.revision > first.revision);
+        assert!(store.read(old_ack).await.unwrap().new_approval);
+    }
+
     #[tokio::test]
     async fn metadata_survives_restart_and_isolated_processes_cannot_share_read_markers() {
         let dir = tempfile::tempdir().unwrap();

@@ -15,3 +15,7 @@ Card usage summaries show reported context use and capacity/percentage when know
 ## Outbox scope
 
 **All outboxes** shows receipts across machines/processes and retains explicitly confirmed global bulk actions. **Agent outbox** freezes the selected machine/session/window/pane/process at opening and shows only matching receipts; previous processes and other agents remain in All outboxes. Global bulk controls are hidden and guarded in this scoped view. Individual receipt actions retain their original UUID, revision, delivery state and backend process/conversation/endpoint guards. Opening an outbox or changing selection never retargets or resends a receipt. Phone users can open the agent outbox through Details.
+
+## Optional ACP agents
+
+ACP brokers share the agent cards, filters, card metadata, notifications/read state and ticket context capture. Their badge identifies the protocol; selecting one opens broker-backed chat in the normal detail pane. Native launching/polling remains default. ACP launch preparation is internal to Start Claude (ACP). Prompts, permissions, cancellation and receipts use only the guarded broker path, never native terminal input. Explicit close is supported; unsupported restart/resume and busy-time queueing are labeled honestly. See [ACP broker](acp-broker.md).

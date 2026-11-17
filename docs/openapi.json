@@ -2928,6 +2928,531 @@
           }
         }
       }
+    },
+    "/hosts/{host}/acp": {
+      "get": {
+        "operationId": "listAcpAgents",
+        "summary": "List managed ACP brokers (at most 64 per machine)",
+        "description": "Experimental opt-in Claude ACP broker. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. ",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale endpoint/process/prompt, launch claim exists or operation unavailable; inspect same UUID before any further write."
+          },
+          "410": {
+            "description": "Expired or consumed preparation token."
+          }
+        }
+      }
+    },
+    "/hosts/{host}/acp/prepare": {
+      "post": {
+        "operationId": "prepareAcpAgent",
+        "summary": "Prepare a new Claude ACP broker; no installation or launch",
+        "description": "Experimental opt-in Claude ACP broker. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. ",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpPrepared"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale endpoint/process/prompt, launch claim exists or operation unavailable; inspect same UUID before any further write."
+          },
+          "410": {
+            "description": "Expired or consumed preparation token."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpPreparation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/{host}/acp/start": {
+      "post": {
+        "operationId": "startAcpAgent",
+        "summary": "Consume 120-second single-use grant; claim durable broker UUID before tmux IO",
+        "description": "Experimental opt-in Claude ACP broker. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. ",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale endpoint/process/prompt, launch claim exists or operation unavailable; inspect same UUID before any further write."
+          },
+          "410": {
+            "description": "Expired or consumed preparation token."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpStart"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/{host}/acp/{broker}": {
+      "get": {
+        "operationId": "readAcpAgent",
+        "summary": "Read verified broker snapshot",
+        "description": "Experimental opt-in Claude ACP broker. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. ",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "broker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpSnapshot"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale endpoint/process/prompt, launch claim exists or operation unavailable; inspect same UUID before any further write."
+          },
+          "410": {
+            "description": "Expired or consumed preparation token."
+          }
+        }
+      },
+      "post": {
+        "operationId": "controlAcpAgent",
+        "summary": "Submit explicit prompt, permission choice or cancellation; UUID receipt before ACP IO",
+        "description": "Experimental opt-in Claude ACP broker. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. ",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "broker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale endpoint/process/prompt, launch claim exists or operation unavailable; inspect same UUID before any further write."
+          },
+          "410": {
+            "description": "Expired or consumed preparation token."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpCommand"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hosts/{host}/acp/{broker}/events": {
+      "get": {
+        "operationId": "watchAcpAgent",
+        "summary": "Watch broker events over existing SSH transport",
+        "description": "Experimental opt-in Claude ACP broker. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. SSE sends bounded authoritative snapshot events and unavailable events; reconnect never resends input.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "broker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "instance",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale endpoint/process/prompt, launch claim exists or operation unavailable; inspect same UUID before any further write."
+          },
+          "410": {
+            "description": "Expired or consumed preparation token."
+          }
+        }
+      }
+    },
+    "/hosts/{host}/acp/{broker}/receipts": {
+      "get": {
+        "operationId": "readAcpReceipts",
+        "summary": "Read durable ACP action receipts even after the broker exits",
+        "description": "Read-only exact endpoint/broker instance metadata. No input or close retry; at most40 latest receipts.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "broker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "instance",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Receipts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "maxItems": 40,
+                  "items": {
+                    "$ref": "#/components/schemas/AcpReceipt"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale endpoint/process/prompt, launch claim exists or operation unavailable; inspect same UUID before any further write."
+          },
+          "410": {
+            "description": "Expired or consumed preparation token."
+          }
+        }
+      }
+    },
+    "/hosts/{host}/agents/card": {
+      "get": {
+        "operationId": "readAgentCard",
+        "summary": "Read native or explicitly identified ACP card metadata",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\$[0-9]+$",
+              "maxLength": 24
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^@[0-9]+$",
+              "maxLength": 24
+            }
+          },
+          {
+            "name": "pane",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^%[0-9]+$",
+              "maxLength": 24
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "instance",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-fA-F0-9]{64}$"
+            }
+          },
+          {
+            "name": "acp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid",
+              "description": "Explicit ACP broker UUID. Omit for native; mismatches reject without fallback."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Process-scoped saved metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCard"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale endpoint/process or card revision; keep the draft and reconcile."
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveAgentCard",
+        "summary": "Revision-checked metadata update; never sends input or renames tmux",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentCardChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Process-scoped saved metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCard"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale endpoint/process or card revision; keep the draft and reconcile."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3719,7 +4244,7 @@
           },
           "source": {
             "type": "string",
-            "description": "Evidence source. terminal_question is an inferred native clarification; claude_input is process-verified registry waiting. Both use state approval for attention compatibility, but do not authorize tool approval or message input."
+            "description": "Evidence source. terminal_question is an inferred native clarification; claude_input is process-verified registry waiting. Both use state approval for attention compatibility, but do not authorize tool approval or message input. acp_broker is verified broker protocol state; it is distinct from native logs/terminal inference."
           },
           "reason": {
             "type": "string"
@@ -3865,6 +4390,36 @@
               }
             ],
             "description": "Cards require process-linked history; conversation details may describe explicitly selected project history."
+          },
+          "acp": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "broker": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "conversation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "endpoint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "broker",
+              "instance"
+            ]
           }
         },
         "description": "Read-only observation. context/prompt are terminal evidence, not conversation history. Only process-linked provider state establishes Working/Ready. Retain source, timestamps and unavailable/limited labels. Do not treat inferred attention as permission to act.",
@@ -6371,6 +6926,513 @@
             "type": "string"
           }
         }
+      },
+      "AcpPreparation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connection_revision": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "connection_revision",
+          "path"
+        ]
+      },
+      "AcpStart": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "initial_prompt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 12000
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "AcpCommand": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connection_revision": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "const": "prompt"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12000
+              }
+            },
+            "required": [
+              "connection_revision",
+              "instance",
+              "id",
+              "action",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connection_revision": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "const": "permission"
+              },
+              "permission": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "revision": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "option": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "connection_revision",
+              "instance",
+              "id",
+              "action",
+              "permission",
+              "revision",
+              "option"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connection_revision": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "const": "cancel"
+              }
+            },
+            "required": [
+              "connection_revision",
+              "instance",
+              "id",
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connection_revision": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "const": "close"
+              }
+            },
+            "required": [
+              "connection_revision",
+              "instance",
+              "id",
+              "action"
+            ]
+          }
+        ]
+      },
+      "AcpPrepared": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "broker": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "protocol": {
+            "const": "acp"
+          },
+          "provider": {
+            "const": "claude"
+          },
+          "path": {
+            "type": "string"
+          },
+          "executable": {
+            "type": "string"
+          },
+          "notice": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "token",
+          "broker",
+          "protocol",
+          "provider",
+          "path",
+          "executable",
+          "notice",
+          "endpoint"
+        ]
+      },
+      "AcpReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "enum": [
+              "claimed",
+              "submitted",
+              "completed",
+              "failed",
+              "uncertain"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "prompt",
+              "permission",
+              "cancel",
+              "close"
+            ]
+          },
+          "at": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "kind",
+          "at"
+        ]
+      },
+      "AcpSnapshot": {
+        "type": "object",
+        "required": [
+          "instance",
+          "state",
+          "session_id",
+          "messages",
+          "tools",
+          "permissions",
+          "receipts"
+        ],
+        "properties": {
+          "instance": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "enum": [
+              "starting",
+              "ready",
+              "working",
+              "approval",
+              "failed",
+              "exited"
+            ]
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messages": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "role",
+                "text"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "role": {
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "tools": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object"
+            }
+          },
+          "permissions": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "revision",
+                "title",
+                "tool",
+                "options"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "revision": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "tool": {
+                  "type": "object"
+                },
+                "options": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "optionId",
+                      "name",
+                      "kind"
+                    ],
+                    "properties": {
+                      "optionId": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "receipts": {
+            "type": "array",
+            "maxItems": 40,
+            "items": {
+              "$ref": "#/components/schemas/AcpReceipt"
+            }
+          },
+          "broker": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "card_instance": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "read_state": {
+            "type": "object"
+          },
+          "activity": {
+            "type": "object"
+          },
+          "card": {
+            "type": "object"
+          }
+        }
+      },
+      "AgentCardTarget": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "type": "string",
+            "pattern": "^\\$[0-9]+$",
+            "maxLength": 24
+          },
+          "window": {
+            "type": "string",
+            "pattern": "^@[0-9]+$",
+            "maxLength": 24
+          },
+          "pane": {
+            "type": "string",
+            "pattern": "^%[0-9]+$",
+            "maxLength": 24
+          },
+          "connection_revision": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "acp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Explicit ACP broker UUID. Omit for native; mismatches reject without fallback."
+          }
+        },
+        "required": [
+          "session",
+          "window",
+          "pane",
+          "connection_revision",
+          "instance"
+        ]
+      },
+      "AgentCard": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revision",
+          "name",
+          "notes",
+          "color",
+          "pinned"
+        ]
+      },
+      "AgentCardChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/AgentCardTarget"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^$|^#[a-fA-F0-9]{6}$"
+          },
+          "pinned": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "target",
+          "revision",
+          "name",
+          "notes"
+        ]
       }
     },
     "responses": {

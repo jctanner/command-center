@@ -1,5 +1,5 @@
 export type AgentCard={revision:number;name:string;notes:string;color?:string;pinned?:boolean};
-export type CardTarget={host:string;connection_revision:string;session:string;window:string;pane:string;instance:string;label:string};
+export type CardTarget={acp?:string;host:string;connection_revision:string;session:string;window:string;pane:string;instance:string;label:string};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,text='')=>{const n=document.createElement(tag);n.textContent=text;return n;};
 export class AgentCardEditor {
  private dialog=el('dialog');private name=el('input');private notes=el('textarea');private color=el('input');private pinned=el('input');private colorValue=el('span','Default');private resetColor=el('button','Use default color');private chosenColor='';

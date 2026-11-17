@@ -1,3 +1,4 @@
+import {AcpChat,type AcpTarget,type AcpSnapshot} from './acp-chat';
 import {AgentTokenMetrics,type TokenMetrics} from './agent-token-metrics';
 import {QuestionControls,type InputQuestion} from './agent-question';
 import {BackgroundTasks,backgroundLabel,type BackgroundSnapshot} from './agent-background';
@@ -15,7 +16,7 @@ type AgentState = 'working' | 'ready' | 'approval' | 'awaiting_trust' | 'unknown
 type Activity = { state: AgentState; source: string; reason: string; evidence_at?: number; observed_at: number; transition?: string };
 export type AgentFileTarget={host:string;connection:string;path:string};
 export type QueueTarget = { instance?:string|null;host: string; connection: string; session: string; window: string; pane: string };
-type Item = {token_metrics?:TokenMetrics|null; folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
+type Item = {acp?:{broker:string;instance:string;endpoint?:string;conversation?:string};token_metrics?:TokenMetrics|null; folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
 type Host = { id: string; name: string; connection_revision: string; error?: string; limited: boolean; items: Item[] };
 type Snapshot = { checked_at: number; hosts: Host[] };
 type Message = { id: string; role: 'user' | 'assistant'; text: string; timestamp: string; order?: number; truncated?: boolean };
@@ -27,7 +28,7 @@ type Detail = {token_metrics?:TokenMetrics|null;folder_trust?:InputQuestion|null
 const node = <K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] => { const n = document.createElement(tag); n.textContent = text; return n; };
 const stateOf = (item: Item): AgentState => item.activity?.state || (item.status === 'disconnected' ? 'disconnected' : item.status === 'attention' || (!item.status && item.prompt !== 'Live agent') ? 'approval' : 'unknown');
 const projectName = (path: string) => path.split('/').filter(Boolean).at(-1) || '/';
-const agentTitle = (item: Item) => item.card?.name || (compactClient() && ['claude','codex','pi','pi-coding-agent'].includes(item.window_name.toLowerCase()) ? projectName(item.project) : item.window_name);
+const agentTitle = (item: Item) => item.card?.name || (item.acp&&item.window_name==='Claude ACP'?projectName(item.project):compactClient() && ['claude','codex','pi','pi-coding-agent'].includes(item.window_name.toLowerCase()) ? projectName(item.project) : item.window_name);
 const waiting = (item: Item) => ['approval','awaiting_trust'].includes(stateOf(item));
 const unread = (state?: ReadState) => !!state && (state.finished || state.new_approval || state.unread_reply);
 const needsAttention = (item: Item) => waiting(item) || unread(item.attention);
@@ -41,6 +42,7 @@ function stateBadge(activity?: Activity, fallback: AgentState = 'unknown') {
   return badge;
 }
 export class AttentionQueue {
+  private acpChat!:AcpChat;private nativeNodes:HTMLElement[]=[];private nativeHidden=new Map<HTMLElement,boolean>();
   private notifications = new AgentNotifications();
   private mute = node('button', 'Mute notifications');
   private restartAgent=node('button','Restart agent…');private agentRestarter:AgentRestarter;
@@ -152,6 +154,7 @@ export class AttentionQueue {
     this.mute.onclick = () => { const state = this.chosen()?.item.attention; if (state) { this.notifications.toggleMute(JSON.stringify([state.key, state.instance])); this.render(); } };
     const heading = node('div'); heading.className = 'queue-heading';
     const title = node('div'); title.append(node('h1', 'AI Queue'), node('p', 'Live agents and requests across your machines.'));
+
     const launcher = new AgentLauncher(agent => this.openLaunched(agent));
     const startAgent = node('button', 'Start agent'); startAgent.className = 'queue-start-agent primary'; startAgent.onclick = () => { void launcher.open(this.host || this.chosen()?.h.id); };
     const filters = node('div'); filters.className = 'queue-filters';
@@ -175,7 +178,7 @@ export class AttentionQueue {
     filters.append(this.statusSelect, this.hostSelect, this.projectSelect, refresh, done);
     this.filterPanel.className = 'queue-filter-panel'; this.filterPanel.open = !compactClient();
     document.addEventListener('pointerdown', event => { if (compactClient() && this.filterPanel.open && !this.filterPanel.contains(event.target as Node)) this.filterPanel.open = false; });
-    this.filterPanel.append(node('summary', 'Filters'), filters); heading.append(title, this.outbox.button('All outboxes'), startAgent, this.search, this.filterPanel, this.searchStatus);
+    this.filterPanel.append(node('summary', 'Filters'), filters); heading.append(title, startAgent, this.outbox.button('All outboxes'), this.search, this.filterPanel, this.searchStatus);
     this.inboxControls.className = 'queue-inbox-controls';
     for (const [value, label] of [['', 'All agents'], ['needs_attention', 'Needs attention']]) {
       const b = node('button', label); b.dataset.filter = value; b.onclick = () => { this.statusSelect.value = value; this.openedForRead = ''; this.render(); }; this.inboxControls.append(b);
@@ -191,7 +194,7 @@ export class AttentionQueue {
     const updateTerminalLink = () => { openButton.hidden = compactClient(); };
     updateTerminalLink(); compactViewport.addEventListener('change', updateTerminalLink);
     openButton.onclick = () => { if (compactClient()) return; const entry = this.chosen(); if (entry) void this.open({ host: entry.h.id, connection: entry.h.connection_revision, session: entry.item.session, window: entry.item.window, pane: entry.item.pane }); };
-    const createTicket=node('button','Create ticket');createTicket.onclick=()=>{const c=this.chosen();if(c)document.dispatchEvent(new CustomEvent('cc-create-ticket',{detail:{host:c.h.id,session:c.item.session,session_name:c.item.session_name,window:c.item.window,window_name:c.item.window_name,pane:c.item.pane,path:c.item.project,provider:c.item.agent,conversation:this.detailData?.conversations.find(v=>v.id===this.detailData?.selected)?.session||''}}));};
+    const createTicket=node('button','Create ticket');createTicket.onclick=()=>{const c=this.chosen();if(c)document.dispatchEvent(new CustomEvent('cc-create-ticket',{detail:{host:c.h.id,session:c.item.session,session_name:c.item.session_name,window:c.item.window,window_name:c.item.window_name,pane:c.item.pane,path:c.item.project,provider:c.item.agent,conversation:c.item.acp?.conversation||this.detailData?.conversations.find(v=>v.id===this.detailData?.selected)?.session||''}}));};
     const actions = node('div'); actions.className = 'queue-detail-actions'; actions.append(back, this.activityBadge, agentOutbox(), this.detailsButton, openButton);
     this.detailsButton.className = 'queue-details-button'; this.detailsButton.setAttribute('aria-controls', 'queue-agent-metadata');
     this.detailsButton.onclick = () => { this.metadata.hidden = !this.metadata.hidden; this.detailsButton.setAttribute('aria-expanded', String(!this.metadata.hidden)); };
@@ -234,11 +237,13 @@ export class AttentionQueue {
     this.history.append(this.older);
     this.approvalCard.className = 'agent-approval'; this.approvalCard.setAttribute('aria-label', 'Tool approval'); this.approvalCard.hidden = true;
     this.liveActivity.className = 'agent-live-activity'; this.liveActivity.setAttribute('role', 'status'); this.liveActivity.setAttribute('aria-live', 'polite');
-    this.detail.append(chatHeader, this.tokenMetrics.element, this.chatNotice, this.metadata, this.backgroundTasks.element, this.history, this.liveActivity, this.approvalCard, form);
+    this.nativeNodes=[chatHeader,this.tokenMetrics.element,this.chatNotice,this.metadata,this.backgroundTasks.element,this.history,this.liveActivity,this.approvalCard,form];
+    this.acpChat=new AcpChat({back:()=>{delete this.body.dataset.detail;this.syncPresentation();},edit:()=>{const c=this.chosen();if(c)this.openCardEditor(c.h,c.item);},mute:()=>this.mute.click(),ticket:()=>createTicket.click(),open:()=>openButton.click(),file:async path=>{const c=this.chosen();if(c)await this.openFile({host:c.h.id,connection:c.h.connection_revision,path});},observe:snapshot=>this.observeAcp(snapshot),unavailable:()=>{const c=this.chosen();if(c?.item.acp){c.item.activity={state:'disconnected',source:'acp_stream',reason:'ACP connection unavailable',observed_at:Date.now()/1000};this.render();}},closed:()=>{void this.refresh();}});
+    this.detail.append(...this.nativeNodes);
     this.render(); void this.refresh();
     window.setInterval(() => { if (!document.hidden || this.notifications.enabled()) void this.refresh(); if(!document.hidden&&this.visible)void this.outbox.refresh(); }, 6000);
     window.setInterval(() => {
-      if (document.hidden || !this.visible || !this.selected || this.submitting) return;
+      if (document.hidden || !this.visible || !this.selected || this.submitting || this.chosen()?.item.acp) return;
       const active = this.currentActivity()?.state === 'working' || this.pendingReplies.has(this.draftKey());
       if (Date.now() - this.lastDetailPoll >= (active ? 1800 : 5800)) void this.loadDetail();
     }, 2000);
@@ -269,26 +274,29 @@ export class AttentionQueue {
     if (!host || host.connection_revision !== agent.connection_revision) throw new Error('Machine changed or queue unavailable. Check launch to reopen the agent.');
     const id = `${agent.host}/${agent.connection_revision}/${agent.session}/${agent.window}/${agent.pane}`;
     if (!host.items.some(item => item.id === id)) {
-      host.items.push({ id, session: agent.session, session_name: agent.session_name, window: agent.window, window_name: agent.provider, pane: agent.pane, project: agent.project, agent: agent.provider, prompt: 'Live agent', context: agent.context, status: 'live', activity: { state: 'unknown', source: 'launch', reason: 'Agent started; checking provider status', observed_at: Math.floor(Date.now() / 1000) } });
+      host.items.push({ acp:agent.acp,id, session: agent.session, session_name: agent.session_name, window: agent.window, window_name: agent.provider, pane: agent.pane, project: agent.project, agent: agent.provider, prompt: 'Live agent', context: agent.context, status: 'live', activity: { state: 'unknown', source: 'launch', reason: 'Agent started; checking provider status', observed_at: Math.floor(Date.now() / 1000) } });
     }
     this.host = ''; this.project = ''; this.statusSelect.value = '';
     this.selected = id; this.openedForRead = id; this.body.dataset.detail = 'true'; this.render();
   }
+  private acpTarget(host:Host,item:Item):AcpTarget{return{host:host.id,connection_revision:host.connection_revision,endpoint:item.acp!.endpoint||host.connection_revision,broker:item.acp!.broker,instance:item.acp!.instance,label:agentTitle(item),machine:host.name,path:item.project,session:item.session,window:item.window,pane:item.pane,disconnected:!!host.error||stateOf(item)==='disconnected',muted:item.attention?this.notifications.isMuted(JSON.stringify([item.attention.key,item.attention.instance])):false};}
+  private observeAcp(snapshot:AcpSnapshot){const chosen=this.chosen();if(!chosen?.item.acp||chosen.item.acp.instance!==snapshot.instance)return;const before=JSON.stringify([chosen.item.activity?.state,chosen.item.attention]);chosen.item.activity=snapshot.activity;chosen.item.status=snapshot.activity?.state==='approval'?'attention':snapshot.activity?.state==='disconnected'?'disconnected':'live';chosen.item.attention=snapshot.read_state as ReadState;chosen.item.acp.conversation=snapshot.session_id;if(snapshot.card&&snapshot.card_instance)this.mergeCard(chosen.item,snapshot.card_instance,snapshot.card);if(before!==JSON.stringify([chosen.item.activity?.state,chosen.item.attention]))this.render();}
   private mergeCard(item:Item,instance:string,card:AgentCard){const key=`${item.id}/${instance}`,old=this.cardVersions.get(key);if(old&&old.revision>card.revision)item.card=old;else{item.card=card;this.cardVersions.set(key,card);}if(this.cardVersions.size>512)this.cardVersions.delete(this.cardVersions.keys().next().value!);}
-  private openAgentRestart(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentRestarter.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
-  private openAgentClose(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentCloser.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
+  private openAgentRestart(host:Host,item:Item){if(item.acp){this.feedback.textContent="ACP restart/resume is not supported yet.";return;}const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentRestarter.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
+  private openAgentClose(host:Host,item:Item){if(item.acp){void this.acpChat.closeTarget(this.acpTarget(host,item));return;}const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentCloser.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
   private openCardActions(host:Host,item:Item,x:number,y:number){
     const action=(text:string,run:()=>void)=>{const button=node('button',text);button.type='button';button.setAttribute('role','menuitem');button.onclick=()=>{this.cardMenu.hidden=true;run();};button.disabled=!item.attention?.instance||stateOf(item)==='disconnected';return button;};
-    const edit=action('Edit card',()=>this.openCardEditor(host,item));const pin=action(item.card?.pinned?'Unpin card':'Pin card',()=>{void this.setCardPinned(host,item);});const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';const restart=action('Restart agent…',()=>this.openAgentRestart(host,item));this.cardMenu.replaceChildren(edit,pin,restart,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
+    const edit=action('Edit card',()=>this.openCardEditor(host,item));const pin=action(item.card?.pinned?'Unpin card':'Pin card',()=>{void this.setCardPinned(host,item);});const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';const restart=action('Restart agent…',()=>this.openAgentRestart(host,item));restart.disabled ||= !!item.acp;restart.title=item.acp?'ACP restart/resume is not verified':'';this.cardMenu.replaceChildren(edit,pin,restart,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
   }
-  private async setCardPinned(host:Host,item:Item){const instance=item.attention?.instance;if(!instance)return;try{await this.cardEditor.setPinned({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:agentTitle(item)},!item.card?.pinned);}catch(error){this.feedback.dataset.error='true';this.feedback.textContent=`${String(error)} Refresh this card before trying again.`;}}
-  private openCardEditor(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected'){this.feedback.textContent='Refresh this agent before editing its card.';return;}void this.cardEditor.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:agentTitle({...item,card:undefined})});}
+  private async setCardPinned(host:Host,item:Item){const instance=item.attention?.instance;if(!instance)return;try{await this.cardEditor.setPinned({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,...(item.acp?{acp:item.acp.broker}:{}),label:agentTitle(item)},!item.card?.pinned);}catch(error){this.feedback.dataset.error='true';this.feedback.textContent=`${String(error)} Refresh this card before trying again.`;}}
+  private openCardEditor(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected'){this.feedback.textContent='Refresh this agent before editing its card.';return;}void this.cardEditor.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,...(item.acp?{acp:item.acp.broker}:{}),label:agentTitle({...item,card:undefined})});}
   private fitComposer() {
     this.composer.rows = 1;
     this.composer.style.height = '';
     if (this.composer.value) this.composer.style.height = `${Math.min(132, Math.max(40, this.composer.scrollHeight))}px`;
   }
   private syncPresentation() {
+    this.acpChat?.setVisible(this.visible&&(!compactClient()||this.body.dataset.detail==='true'));
     const conversation = this.visible && compactClient() && this.body.dataset.detail === 'true';
     document.documentElement.classList.toggle('queue-chat-active', conversation);
     this.fitComposer();
@@ -296,7 +304,7 @@ export class AttentionQueue {
   private options(select: HTMLSelectElement, all: string, entries: [string, string][], selected: string) {
     select.replaceChildren(...[['', all], ...entries].map(([value, label]) => { const o = node('option', label); o.value = value; return o; })); select.value = selected;
   }
-  private entries() {const terms=this.search.value.slice(0,240).trim().toLocaleLowerCase().split(/\s+/).filter(Boolean).slice(0,16);return (this.snapshot?.hosts || []).flatMap(h => h.items.map(item => ({ h, item }))).filter(({ h, item }) => (!this.host || h.id === this.host) && (!this.project || JSON.stringify([h.id, item.project]) === this.project) && (!this.statusSelect.value || (this.statusSelect.value === 'needs_attention' ? needsAttention(item) : this.statusSelect.value === 'attention' ? waiting(item) : stateOf(item) === this.statusSelect.value))&&terms.every(term=>[item.card?.name,item.card?.notes,h.name,h.id,item.agent,item.project,item.window_name,item.session_name].filter(Boolean).join(' ').toLocaleLowerCase().includes(term))); }
+  private entries() {const terms=this.search.value.slice(0,240).trim().toLocaleLowerCase().split(/\s+/).filter(Boolean).slice(0,16);return (this.snapshot?.hosts || []).flatMap(h => h.items.map(item => ({ h, item }))).filter(({ h, item }) => (!this.host || h.id === this.host) && (!this.project || JSON.stringify([h.id, item.project]) === this.project) && (!this.statusSelect.value || (this.statusSelect.value === 'needs_attention' ? needsAttention(item) : this.statusSelect.value === 'attention' ? waiting(item) : stateOf(item) === this.statusSelect.value))&&terms.every(term=>[item.acp?'acp':'native',item.card?.name,item.card?.notes,h.name,h.id,item.agent,item.project,item.window_name,item.session_name].filter(Boolean).join(' ').toLocaleLowerCase().includes(term))); }
 
   private chosen() { return (this.snapshot?.hosts || []).flatMap(h => h.items.map(item => ({ h, item }))).find(e => e.item.id === this.selected); }
   private clearRecall(){if(this.recall)this.drafts.set(this.recall.key,this.recall.draft);this.recall=undefined;}
@@ -347,7 +355,7 @@ export class AttentionQueue {
       folder.className='queue-card-path';
       const machine=node('small',`${h.name} / ${item.agent}`);machine.className='queue-card-machine';
       const name=node('strong',item.card?.name||(waiting(item)?item.prompt:agentTitle(item)));name.className='queue-card-name';name.title=name.textContent||'';
-      const context=node('small');context.className='queue-card-context';context.title=`${h.name} · ${item.agent} · ${item.project} · ${item.session_name} / ${item.window_name} / ${item.pane}`;
+      const context=node('small');context.className='queue-card-context';if(item.acp){const badge=node('span','ACP');badge.className='agent-protocol';context.append(badge,document.createTextNode(' · '));}context.title=`${h.name} · ${item.agent} · ${item.project} · ${item.session_name} / ${item.window_name} / ${item.pane}`;
       const attention=[item.attention?.finished?'Finished':'',item.attention?.new_approval?(inputSource(item.activity?.source)?'New input request':'New approval'):'',item.attention?.unread_reply?'Unread reply':''].filter(Boolean);
       if(attention.length){const dot=node('span');dot.className='queue-card-unread';dot.setAttribute('role','img');dot.setAttribute('aria-label',attention.join(' · '));dot.title=attention.join(' · ');context.append(dot);}
       context.append(document.createTextNode(`${h.name} · ${item.agent} · ${projectName(item.project)}`));
@@ -381,6 +389,14 @@ export class AttentionQueue {
     this.root.querySelector('h1')!.textContent = compactClient() ? 'Agents' : 'AI Queue';
     for (const b of this.inboxControls.querySelectorAll('button')) b.setAttribute('aria-pressed', String(this.statusSelect.value === b.dataset.filter));
     const chosen = this.chosen();
+    if(chosen?.item.acp){
+      if(!this.nativeHidden.size){for(const node of this.nativeNodes)this.nativeHidden.set(node,node.hidden);this.detailData=undefined;this.detailKey='';this.detailRequest++;this.loadingDetail=false;}
+      for(const node of this.nativeNodes)node.remove();
+      if(!this.acpChat.element.parentElement)this.detail.append(this.acpChat.element);
+      this.acpChat.setTarget(this.acpTarget(chosen.h,chosen.item),this.openedForRead===chosen.item.id);
+    }else{
+      this.acpChat.setTarget(undefined);this.acpChat.element.remove();
+      if(this.nativeHidden.size){this.detail.append(...this.nativeNodes);for(const [node,hidden]of this.nativeHidden)node.hidden=hidden;this.nativeHidden.clear();}
     for(const button of this.agentOutboxes)button.disabled=!chosen?.item.attention?.instance;
     this.restartAgent.disabled=this.closeAgent.disabled=this.editCard.disabled=!chosen?.item.attention?.instance||stateOf(chosen.item)==='disconnected';this.cardNotes.textContent=chosen?.item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;
     this.mute.hidden = !chosen?.item.attention;
@@ -407,6 +423,7 @@ export class AttentionQueue {
     this.conversationSelect.hidden = !chosen;
     this.updateSend();
     this.markRead.hidden = !unread(this.detailData?.read_state || chosen?.item.attention);
+    }
     const issues = hosts.filter(h => h.error || h.limited);
     this.feedback.dataset.error = 'false';
     this.feedback.textContent = this.snapshot ? `Checked ${new Date(this.snapshot.checked_at * 1000).toLocaleTimeString()}` : 'Checking machines…';
@@ -421,6 +438,7 @@ export class AttentionQueue {
     if(!issues.length)this.hostIssues.open=false;
   }
   private updateSend() {
+    if(this.chosen()?.item.acp)return;
     const data = this.detailData;
     this.sendButton.disabled = this.submitting || !!data?.input_request || (this.chosen() ? stateOf(this.chosen()!.item) === 'disconnected' : true) || !data?.send_available || !data.message_token || !this.composer.value.trim() || new TextEncoder().encode(this.composer.value).length > 12000 || this.uncertain.has(this.draftKey());
     this.sendButton.textContent=this.currentActivity()?.state==='working'?'Queue message':'Send message';
@@ -532,7 +550,7 @@ export class AttentionQueue {
     }
   }
   private async loadDetail(reset = false, before?: number) {
-    const chosen = this.chosen(); if (!chosen || this.submitting || (this.loadingDetail && !reset)) return;
+    const chosen = this.chosen(); if (!chosen || chosen.item.acp || this.submitting || (this.loadingDetail && !reset)) return;
     if (stateOf(chosen.item) === 'disconnected') {
       this.detailFeedback.textContent = chosen.item.activity?.reason || 'Agent disconnected';
       this.chatNotice.hidden = false; this.chatNotice.textContent = this.detailFeedback.textContent;
@@ -641,6 +659,7 @@ export class AttentionQueue {
     }
   }
   private async acknowledge(explicit = false) {
+    if(this.chosen()?.item.acp)return;
     const observed = this.detailData?.read_state || (explicit ? this.chosen()?.item.attention : undefined);
     if (this.reading || !observed || !unread(observed) || !this.visible || document.hidden || !this.detail.getClientRects().length) return;
     if (!explicit && (this.openedForRead !== this.selected || !this.readAvailable || this.history.scrollHeight - this.history.scrollTop - this.history.clientHeight > 60)) return;
@@ -672,7 +691,7 @@ export class AttentionQueue {
     this.uncertain.delete(draft.key);this.outboxDrafts.delete(entry.id);this.updateSend();
   }
   private renderOutbox() {
-    const chosen=this.chosen(); if(!chosen||!this.detailData)return;
+    const chosen=this.chosen(); if(!chosen||chosen.item.acp||!this.detailData)return;
     const target={host:chosen.h.id,session:chosen.item.session,window:chosen.item.window,pane:chosen.item.pane,instance:this.detailData.instance||'',conversation:this.detailData.selected};
     const nearBottom=this.history.scrollHeight-this.history.scrollTop-this.history.clientHeight<60;
     const top=this.history.scrollTop;
@@ -722,7 +741,7 @@ export class AttentionQueue {
     if (item.attention?.history_id) this.conversations.set(target.id, item.attention.history_id);
     this.selected = target.id; this.openedForRead = target.id; this.body.dataset.detail = 'true';
     document.getElementById('show-queue')!.click(); this.render(); void this.loadDetail(true);
-    requestAnimationFrame(() => this.history.focus());
+    requestAnimationFrame(() => {if(target.acp)this.acpChat.focusHistory();else this.history.focus();});
   }
   private refresh(): Promise<void> {
     if (this.refreshing) return this.refreshing;
@@ -742,7 +761,7 @@ export class AttentionQueue {
         if (state.new_approval) tokens.push(JSON.stringify([scope, 'approval', state.revision]));
         if (state.finished) tokens.push(JSON.stringify([scope, 'finished', state.revision]));
         if (state.unread_reply && state.reply_cursor) tokens.push(JSON.stringify([scope, 'reply', state.conversation, state.reply_cursor]));
-        return { scope, tokens, title: `${h.name} · ${item.card?.name||item.window_name}`, body: state.new_approval ? (inputSource(item.activity?.source) ? 'Agent needs input' : 'Agent needs approval') : state.finished ? 'Agent finished working' : 'New agent reply', reading: this.visible && document.hasFocus() && this.openedForRead === item.id && this.selected === item.id && this.history.scrollHeight - this.history.scrollTop - this.history.clientHeight < 60,
+        return { scope, tokens, title: `${h.name} · ${item.card?.name||item.window_name}`, body: state.new_approval ? (inputSource(item.activity?.source) ? 'Agent needs input' : 'Agent needs approval') : state.finished ? 'Agent finished working' : 'New agent reply', reading: this.visible && document.hasFocus() && this.openedForRead === item.id && this.selected === item.id && (item.acp?this.acpChat.isReading():this.history.scrollHeight - this.history.scrollTop - this.history.clientHeight < 60),
           open: () => { void this.openNotification(h, item); } };
       })));
       this.render();

@@ -1,0 +1,69 @@
+# Optional ACP broker (experimental)
+
+Native tmux launching, discovery and bounded log/pane observation remain the default. Nothing installs or migrates an existing agent automatically. The launcher offers **Native tmux (default)** and an explicit **ACP broker · Claude** option. ACP brokers appear in the regular agent list with an ACP badge and open a chat in the ordinary detail panel. The separate experimental catalog is retired. Native transport/outbox/ticket-run launching remain unchanged.
+
+The current implementation supports Linux agent hosts with /proc/pidfd and new Claude ACP v1 conversations only, via an already installed `claude-agent-acp` executable. It has no native Claude TUI, resume/restart, model override, project venv, pre-trust, ticket-run launching, attachments, busy-time message queuing or automatic approval. Card names/notes/colors/pinning, ticket context capture, notification/mute and exact-revision read metadata are shared with native agents; chat, permissions and delivery receipts stay ACP-specific. Those must not silently fall back to native input. The basic terminal interface is CC's, not Claude's original terminal UI.
+
+## Integrated launch and chat
+
+Select ACP in **Start agent**, choose a shared machine/project or literal directory, optionally enter an initial prompt, then click **Start Claude (ACP)**. There is no separate Prepare click: the launcher checks the directory/installed adapter and obtains the same one-use grant internally. Unsupported native-only settings are hidden, not silently translated to flags. Fresh launch defaults to native; a pending ACP launch can reopen its recovery controls.
+
+Before launch IO, the browser persists the original broker UUID and stable endpoint fingerprint. **Check launch** reads that original broker and never repeats creation or the initial prompt. After a backend restart it may refresh the runtime revision only after checking the stable endpoint still matches. The optional initial prompt uses the broker UUID as its message receipt ID; the broker redacts launch-intent text to hash/length before ACP IO, then submits once after successful initialization. An uncertain outcome is inspected, never replayed.
+
+Queue discovery checks the managed broker directory through a bounded per-host helper, verifies process/start/boot, private socket and exact tmux membership/tty, and returns at most32 compact observations within a time budget. Snapshot parsing happens remotely; chat text is not copied into the queue. Existing prototype brokers are read compatibly, without restarting or replacing them. Sources remain explicit: ACP state comes from the verified broker, not pane silence or project logs. Native panes cannot become ACP just because a title or folder matches.
+
+The selected ACP conversation uses SSE, sanitized Markdown, tool activity and exact permission option labels/scopes. Hidden workspaces/compact list views disconnect their selected stream. Streaming edits update only changed message DOM and preserve drafts, reading position and pending approval focus. A card selection does not focus the composer. Messages are sent only when ACP is Ready; busy drafts are retained with an explicit unsupported-queue notice. There is no native keystroke fallback.
+
+Draft and uncertain-action holds use stable endpoint/broker-process scope, surviving runtime connection-revision changes. Recent broker history is bounded in memory; older log pagination is not implemented. **Details → ACP message receipts / Check ACP delivery** exposes durable phases separately from native outbox Submitted/Seen semantics. **All outboxes** remains the native outbox, not an aggregate of ACP receipts. Attention/read state is metadata-only and scoped by endpoint, broker process and conversation; existing replies baseline as read, and only explicitly opened visible recent replies acknowledge their exact observed cursor. Notifications use the actual ACP reading position and per-process mute state.
+
+**Close agent** reviews machine/project, stable tmux target, broker UUID and instance with Cancel focused. The helper persists a close receipt before signaling the exact start/boot-verified broker through a pidfd. It stops the broker's own agent process; it does not kill other panes or complete tickets. Lost responses are checked through the receipt endpoint even after process exit. Duplicate close UUIDs return the durable receipt without signaling again. Restart/resume remains disabled; no new conversation is invented as a restart.
+
+## Process and transport
+
+```
+CC browser -- REST + SSE -- Rust backend -- existing SSH/ProxyJump -- helper
+                                                                      |
+                                                            private Unix socket
+                                                                      |
+remote tmux pane: terminal chat + broker -- ACP v1 JSON-RPC/stdio -- adapter/Claude
+```
+
+The broker is installed only for an explicit prepared launch, under `~/.cache/command-center/acp/<launch-UUID>/`. Its tmux pane owns it; it owns the ACP adapter/agent process group. It remains usable through direct tmux attachment when CC, its browser or SSH disconnects. CC reconnects through its existing transport to the broker's private Unix socket. No new network port or remote account daemon is installed. This optional persistent broker is an explicit exception to native mode's short-lived-helper architecture.
+
+SSE uses one persistent shared-transport SSH helper, not repeated log/pane polling. The broker coalesces ACP updates into at most ten bounded snapshots per second per viewer; a quiet connection gets a ten-second heartbeat snapshot. A slow client is bounded/timed out. Losing a watcher terminates only that watcher, never the broker/agent. Reconnection returns current state and bounded in-memory history. Broker failure is different from CC failure: there is no automatic broker or conversation restart, and no pending input replay.
+
+Only process-linked native ACP messages supply chat/activity. Thought chunks are discarded. Tools show bounded title/kind/status; permission cards retain the original bounded tool request and exact option IDs, labels and scopes. Unsupported client RPC capabilities fail closed. No filesystem or terminal capabilities are advertised to the adapter; the Claude adapter can execute its own tools under its normal permission policy. CC never adds skip-permissions or edits trust files. Reply/read positions come from completed prompt receipt order, not token-chunk sequence; new permission identities advance attention even when the agent remains in the approval state.
+
+## Guards and receipts
+
+- Preparation checks canonical directory identity and installed adapter executable identity. The server binds host connection revision and broker UUID in a 120-second single-use grant.
+- Start consumes the grant, serializes endpoint edits, rechecks directory/adapter, then exclusively creates a private UUID directory and durable intent before detached tmux creation. No arbitrary executable/flags from the browser. A lost launch response is checked by that same UUID in the inventory, not retried.
+- Home/cache ancestors must be owned, not writable by other users, and not symlinks. Managed directories/files are private. Live metadata verifies owner, boot ID, broker PID/start time and command-line path; socket type/owner/mode and peer UID are checked. No TCP broker listener.
+- Mutations require the exact broker instance UUID. Permission answers additionally bind the current permission UUID/revision and exact offered option. Both browser and terminal use the same serialized dispatcher; a second client cannot answer an already consumed request.
+- Remote SQLite (FULL synchronous) persists UUID, payload digest, action type, phase and timestamp **before** ACP IO. Duplicate UUIDs return the existing receipt; conflicting payload reuse is rejected. Claimed/uncertain receipts never replay. Submitted means written to ACP; Completed means its prompt response completed, not a claim about every side effect. There is no native-log Seen receipt in this preview.
+- Browser recovery records contain opaque target/receipt IDs, not prompt contents. A failed/uncertain send retains the draft and blocks further submission until receipt observation resolves it or the human explicitly clears the local hold after checking. Clearing does not resend anything.
+
+Bounds: 64 broker records/host, 16 CC streams globally, 8 socket clients/broker, one active prompt (busy prompts are rejected, not queued), 12,000 UTF-8 bytes/prompt, 1 MiB wire frames, 128 history messages with ~256 KiB total message storage, 100 tool summaries, 8 pending permissions with 16 KiB original tool requests, 512 durable receipts per broker. History is memory-only; native provider logs remain under provider ownership. Old directories are retained rather than automatically deleting possible recovery evidence. `/quit` closes the broker's own agent process group; no automatic cleanup of unknown directories or existing agents.
+
+## Terminal interface
+
+Attach to the returned dedicated `cc-acp-<UUID>` tmux session. Type a line and Enter to send a prompt. `/status` reports state/session, `/cancel` cancels the active turn, `/approve REQUEST_UUID OPTION_ID` answers one displayed permission, and `/quit` terminates this broker and its agent. Permission options print their exact IDs, labels and kinds. Plain Ctrl+C requests cancellation rather than killing unrelated tmux sessions. This preview is a basic line UI, not a full TUI editor.
+
+## API
+
+All routes are under `/api/v1/hosts/{host}/acp`; see OpenAPI. Existing Host/Origin controls apply; every mutation requires the configured exact Origin. Read routes require current `connection_revision`. POST `prepare` takes that revision plus literal project `path`; POST `start` takes the returned token and optional `initial_prompt` (up to12,000 UTF-8 bytes). GET the base lists managed brokers; GET `/{broker}` reads its snapshot; GET `/{broker}/events` additionally requires `instance` and streams `snapshot`/`unavailable`. POST `/{broker}` takes connection_revision, instance, a fresh action UUID and one of:
+
+- `{action:"prompt",text:"..."}`
+- `{action:"permission",permission:UUID,revision:UUID,option:EXACT_OPTION_ID}` — an explicit human decision only, never coordinator auto-approval.
+- `{action:"cancel"}`
+- `{action:"close"}` — explicit reviewed lifetime control, with a durable receipt and pidfd target check, not a provider ACP method.
+
+GET `/{broker}/receipts?connection_revision=...&instance=...` reads at most40 latest receipt records without requiring a live process; it never retries a command. Card metadata uses the existing `/agents/card` API with an explicit optional `acp` broker UUID and a namespaced64-hex card-instance digest, plus exact tmux target and endpoint revision. Provider/raw broker instance UUID remains separate for ACP commands.
+
+The trusted-network boundary is unchanged; actor claims are not authenticated multi-user identities. Do not run a second backend against production config/state to test this mode.
+
+## Adapter setup and evidence
+
+The broker does not install dependencies. It discovers `claude-agent-acp` on PATH or the isolated prefix `~/.local/share/command-center/acp-adapters/claude/node_modules/.bin/claude-agent-acp`. An operator can explicitly install a pinned adapter there without changing their global native Claude. The adapter uses its existing supported authentication on that machine; CC does not provision credentials.
+
+Protocol references: [ACP v1 transports](https://agentclientprotocol.com/protocol/v1/transports), [prompt turns](https://agentclientprotocol.com/protocol/v1/prompt-turn), [Claude adapter](https://github.com/agentclientprotocol/claude-agent-acp). Validation evidence belongs in task0077, including the actual tested adapter version and remote cleanup result.

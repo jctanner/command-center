@@ -231,6 +231,42 @@ impl Transport {
     ) -> Result<serde_json::Value> {
         self.helper_request(include_str!("jira_bootstrap.py"),serde_json::json!({"project":project,"code":include_str!("jira_remote.py"),"request":request})).await
     }
+    pub(crate) async fn acp_request(
+        &self,
+        mut request: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        request["socket"] = serde_json::json!(self.host.socket);
+        if request["action"] == "launch" {
+            request["_broker_code"] = serde_json::json!(include_str!("acp_broker.py"));
+        }
+        self.helper_request(include_str!("acp_remote.py"), request)
+            .await
+    }
+    pub(crate) async fn acp_stream(
+        &self,
+        mut request: serde_json::Value,
+    ) -> Result<tokio::process::Child> {
+        request["socket"] = serde_json::json!(self.host.socket);
+        let (program, args) = self.command_invocation(
+            "python3",
+            vec!["-c".into(), Self::HELPER_BOOTSTRAP.into()],
+            false,
+        )?;
+        let mut child = Command::new(program)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()?;
+        let mut input = child.stdin.take().unwrap();
+        let body = serde_json::to_vec(
+            &serde_json::json!({"source":include_str!("acp_remote.py"),"request":request}),
+        )?;
+        input.write_all(&body).await?;
+        drop(input);
+        Ok(child)
+    }
     // Trusted source and bounded request travel over stdin, not the remote
     // shell command (Linux limits a single argv string to about 128 KiB).
     // Restore payload stdin for existing helpers; never load source from clients.

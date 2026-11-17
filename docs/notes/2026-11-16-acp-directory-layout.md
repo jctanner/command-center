@@ -1,0 +1,3 @@
+# ACP directory layout
+
+Task0081 gives ACP Directory a full-width row with machine/project above and actions below. Scoped acp-layout.css avoids concurrent edits to the shared stylesheet/markup. Empty setup sizes to content; active conversations keep their chat space. Build and three geometry/behavior browser checks pass; synthetic screenshot inspected. Frontend-only deployment2026-11-17T01:33:09Z verified four paths and unchanged backend/config/native pane PIDs. Live browser no errors/writes/terminal sockets. Human confirmed their ACP connection worked. No restart, agent input, commit or push. Reload once for layout.

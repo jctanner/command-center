@@ -1,3 +1,4 @@
+mod acp;
 mod agent_cards;
 mod agent_restart;
 mod agents;
@@ -70,6 +71,7 @@ pub struct AppState {
     agents: agents::Agents,
     outbox: outbox::Outbox,
     launches: launch::Launches,
+    acp: acp::Acp,
     attention: attention::Attention,
     pub runtime: tempfile::TempDir,
     pub shutdown: tokio::sync::watch::Sender<bool>,
@@ -110,6 +112,7 @@ impl AppState {
             agents,
             outbox: outbox::Outbox::default(),
             launches: launch::Launches::default(),
+            acp: acp::Acp::default(),
             attention,
             shutdown,
             port,
@@ -167,6 +170,7 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
             (state.clone(), features::Feature::Jira),
             features::gate,
         )))
+        .merge(acp::routes())
         .merge(board::routes())
         .merge(whiteboard::routes())
         .merge(whiteboard_images::routes())

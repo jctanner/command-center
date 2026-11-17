@@ -100,6 +100,8 @@ impl Activity {
 }
 #[derive(Clone, Serialize)]
 struct Item {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acp: Option<Value>,
     id: String,
     session: String,
     session_name: String,
@@ -246,6 +248,19 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                 present=Some(inventory.sessions.iter().flat_map(|s|s.windows.iter().flat_map(move|w|w.panes.iter().map(move|p|(s.id.clone(),w.id.clone(),p.id.clone())))).collect::<HashSet<PaneTarget>>());
                 // One bounded process-discovery RPC per host, not per shell pane.
                 // Keep the cheap tmux-name fallback for hosts without /proc support.
+                let mut acp_panes=HashSet::new();
+                if let Ok(value)=machine.transport.acp_request(json!({"action":"inventory"})).await {
+                    result.limited|=value["ok"]["limited"]==true;
+                    if let Some(agents)=value["ok"]["agents"].as_array(){for agent in agents.iter().take(32){
+                        let target=&agent["target"];
+                        let Some((session,window,pane))=inventory.sessions.iter().find_map(|s|s.windows.iter().find_map(|w|w.panes.iter().find(|p|target["session"]==s.id&&target["window"]==w.id&&target["pane"]==p.id).map(|p|(s,w,p)))) else {continue};
+                        let Ok(observed)=crate::acp::enrich(&state,&machine.config,agent).await else{result.limited=true;continue};
+                        acp_panes.insert(pane.id.clone());
+                        let activity=Activity::from_value(&observed["activity"],"");
+                        let attention=serde_json::from_value(observed["read_state"].clone()).unwrap_or_default();
+                        result.items.push(Item{acp:Some(json!({"broker":agent["broker"],"instance":agent["instance"],"conversation":agent["session_id"],"endpoint":crate::attention::scope(&machine.config,"","","").0})),id:format!("{}/{}/{}/{}/{}",host.id,host.connection_revision,session.id,window.id,pane.id),session:session.id.clone(),session_name:session.name.clone(),window:window.id.clone(),window_name:window.name.clone(),pane:pane.id.clone(),project:agent["path"].as_str().unwrap_or("").into(),agent:"claude".into(),prompt:agent["permission_title"].as_str().unwrap_or("ACP agent").into(),context:String::new(),status:if activity.state==AgentState::Approval{"attention"}else if activity.state==AgentState::Disconnected{"disconnected"}else{"live"}.into(),activity,last_seen:now(),attention,card:Default::default(),background_tasks:Value::Null,folder_trust:Value::Null,token_metrics:Value::Null});
+                    }}
+                }
                 let discovery=machine.transport.agent_request(json!({"action":"discover_agents"})).await;
                 let mut providers=std::collections::HashMap::new();
                 if let Ok(value)=discovery && let Some(agents)=value["ok"]["agents"].as_array() {
@@ -261,6 +276,7 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                 for session in inventory.sessions {
                     for window in session.windows {
                         for pane in window.panes {
+                            if acp_panes.contains(&pane.id){continue}
                             let command = pane.command.to_lowercase();
                             let hinted=if command.contains("codex"){Some("codex")}else if command.contains("claude"){Some("claude")}else if command=="pi"||command=="pi-coding-agent"{Some("pi")}else{None};
                             let provider=providers.get(&pane.id).cloned().or_else(||hinted.map(str::to_owned));
@@ -295,7 +311,7 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                                 pane:pane.id, project:pane.cwd, agent:provider,
                                 status:if matches!(activity.state,AgentState::Approval|AgentState::AwaitingTrust) {"attention"} else {"live"}.into(),
                                 prompt:detected.unwrap_or_else(|| if activity.state == AgentState::Approval {if matches!(activity.source.as_str(),"pi_bridge"|"claude_input") {"Agent is waiting for input"} else if activity.source=="terminal_question" {&activity.reason} else {"Agent is awaiting approval"}} else {"Live agent"}.into()),
-                                context:context.chars().take(24000).collect(), activity, last_seen:now(), attention,card:Default::default(),background_tasks,folder_trust,token_metrics,
+                                context:context.chars().take(24000).collect(), activity, last_seen:now(), attention,card:Default::default(),background_tasks,folder_trust,token_metrics,acp:None,
                             });
                         }
                     }
@@ -347,6 +363,7 @@ mod tests {
             background_tasks: Value::Null,
             folder_trust: Value::Null,
             token_metrics: Value::Null,
+            acp: None,
         };
         let mut items = vec![];
         retain_disconnected(
@@ -387,6 +404,7 @@ mod tests {
             background_tasks: Value::Null,
             folder_trust: Value::Null,
             token_metrics: Value::Null,
+            acp: None,
         };
         let mut missing = vec![];
         retain_disconnected(

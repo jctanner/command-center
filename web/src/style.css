@@ -1132,3 +1132,12 @@ button:disabled { opacity: .5; cursor: default; }
 .token-usage-table .usage-conversation {white-space:normal;overflow-wrap:anywhere;min-width:100px;max-width:200px;}
 #settings-usage {max-width:1100px;min-width:0;}
 #settings-usage p {font-size:13px;color:var(--cc-muted);line-height:1.5;}
+
+@media (min-width:901px) and (pointer:fine), (min-width:1101px) {
+ .agent-launch-dialog {width:min(1100px,calc(100vw - 48px));}
+}
+
+.acp-integrated-chat {display:contents;}
+.agent-protocol {font-size:10px;border:1px solid var(--cc-border);border-radius:4px;padding:0 4px;}
+.acp-tool-activity {max-height:140px;overflow:auto;font-size:12px;}
+.acp-integrated-chat .agent-approval pre {white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;}
