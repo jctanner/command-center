@@ -24,3 +24,7 @@ The human requested installing missing adapters as part of switching. Codex miss
 ## Claude handoff follow-up (task0088)
 
 Explicit exact-conversation handoff now supports Claude as well as Codex. Claude uses ACP v1 session/load and native --resume, preserving CLAUDE_CONFIG_DIR and independently validated persisted continuation records. No project-recency, summary or new-session fallback is allowed. Active/unverified native background work, pending ACP tools and unresolved receipts block handoff. The installer adds one fixed Claude profile (0.107.3, Node >=22) alongside Codex; lifecycle scripts remain disabled and existing prefixes are never overwritten. Existing brokers lacking handoff capability remain unsupported without an independently authorized replacement.
+
+## Busy prompt queue (task0096)
+
+Human requested follow-ups while ACP is busy. Keep a bounded private per-instance/session SQLite queue of explicit unsent prompts beside metadata receipts, rather than concurrent ACP session/prompt calls or native-input steering. The broker survives CC disconnect and serializes next-turn dispatch.16 pending,12000-byte prompts and24h expiry bound pending text; claim/cancel/expiry deletes it. Claimed/uncertain sends never replay; broker-instance changes block old intent instead of adopting it. Queue capability is explicit for old-client/broker compatibility. Live brokers are not patched or restarted by deployment.

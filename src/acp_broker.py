@@ -15,9 +15,11 @@ import threading
 import time
 import uuid
 
-MAX_WIRE = 1024 * 1024
+MAX_WIRE = 8 * 1024 * 1024
 MAX_EVENTS = 256
 MAX_HISTORY = 128
+MAX_QUEUED = 16
+QUEUE_TTL = 24 * 60 * 60
 
 def start_identity(pid):
     with open('/proc/%d/stat' % pid) as f:
@@ -63,6 +65,7 @@ class Broker:
         self.failure = None
         self.provider = 'claude'
         self.resume_session = None
+        self.prompt_session_ready = False
         self.initial_prompt = None
         self.initial_message_id = None
         intent_path = os.path.join(root, 'intent.json')
@@ -92,6 +95,8 @@ class Broker:
         self.db = sqlite3.connect(os.path.join(root, 'receipts.sqlite3'), check_same_thread=False)
         self.db.execute('pragma synchronous=FULL')
         self.db.execute('create table if not exists receipts(id text primary key, digest text, data text)')
+        self.db.execute('create table if not exists prompt_queue(id text primary key, instance text not null, session text not null, text text not null, expires real not null)')
+        self.db.execute('pragma secure_delete=ON')
         self.db.commit()
         self.server = socket.socket(socket.AF_UNIX)
         self.server.bind(os.path.join(root, 'broker.sock'))
@@ -100,6 +105,13 @@ class Broker:
         self.connections = threading.BoundedSemaphore(8)
         # Claim metadata before starting a child, so a failed/reused broker cannot orphan it.
         fd = os.open(os.path.join(root, 'live.json'), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        # Queued text belongs to exactly one broker instance; restart never replays it.
+        for row in self.db.execute('select id from prompt_queue').fetchall():
+            old=self.db.execute('select data from receipts where id=?',row).fetchone()
+            if old:
+                value=json.loads(old[0]);value['state']='blocked';self.db.execute('update receipts set data=? where id=?',(json.dumps(value),row[0]))
+        self.db.execute('delete from prompt_queue')
+        self.db.commit()
         try:
             # stdout belongs exclusively to ACP. Own a separate process group for cleanup.
             self.agent = subprocess.Popen([executable], cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
@@ -133,8 +145,16 @@ class Broker:
 
     def snapshot(self):
         with self.lock:
-            return dict(instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
-                        messages=list(self.messages), tools=list(self.tools.values()), permissions=list(self.permissions.values()), receipts=[json.loads(r[0]) for r in self.db.execute('select data from receipts order by rowid desc limit 40')])
+            self.expire_queue()
+            queued=self.db.execute('select count(*) from prompt_queue').fetchone()[0]
+            blocked=bool(queued and(self.state in ('failed','exited')or self.unresolved_sends()))
+            return dict(queue_blocked=blocked,prompt_queue=self.prompt_session_ready,queued_prompts=queued,queue_limit=MAX_QUEUED,instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
+                        messages=list(self.messages), tools=list(self.tools.values()), permissions=list(self.permissions.values()), receipts=self.receipt_snapshot())
+
+    def receipt_snapshot(self):
+        ids=[m['id']for m in self.messages]
+        marks=','.join('?'for _ in ids)or'NULL'
+        return [json.loads(row[0])for row in self.db.execute('select data from receipts where id in ('+marks+') or id in (select id from prompt_queue) or id=? or rowid in (select rowid from receipts order by rowid desc limit 40) order by rowid desc',(*ids,self.turn))]
 
     def rpc(self, method, params, callback):
         ident = str(uuid.uuid4())
@@ -169,6 +189,7 @@ class Broker:
                 return
             with self.lock:
                 self.session, self.state = session, 'approval' if self.permissions else 'ready'
+                self.prompt_session_ready=True
             self.emit()
             if self.initial_prompt:
                 prompt,self.initial_prompt=self.initial_prompt,None
@@ -198,7 +219,7 @@ class Broker:
                 if not raw:
                     break
                 if len(raw) > MAX_WIRE:
-                    raise ValueError('Oversized ACP frame')
+                    self.fail('ACP frame exceeds the 8 MiB adapter limit; session replay stopped. No automatic retry.');return
                 message = json.loads(raw)
                 with self.lock:
                     if 'method' not in message:
@@ -227,9 +248,10 @@ class Broker:
             content = update.get('content', {})
             if content.get('type') == 'text' and isinstance(content.get('text'), str):
                 text = content['text'][:24000]
-                if not self.messages or self.messages[-1]['role'] != role or self.messages[-1].get('turn') != self.turn:
-                    self.messages.append(dict(id=str(uuid.uuid4()), role=role, text='', turn=self.turn))
-                self.messages[-1]['text'] = (self.messages[-1]['text'] + text)[-64000:]
+                message=(self.messages[-1]if self.messages and self.messages[-1]['role']==role and self.messages[-1].get('turn')is None else None)if self.turn is None else next((m for m in reversed(self.messages)if m['role']==role and m.get('turn')==self.turn),None)
+                if message is None:
+                    message=dict(id=str(uuid.uuid4()),role=role,text='',turn=self.turn);self.messages.append(message)
+                message['text']=(message['text']+text)[-64000:]
                 self.messages = self.messages[-MAX_HISTORY:]
                 display(text, end='', flush=True)
         elif kind in ('tool_call', 'tool_call_update'):
@@ -292,6 +314,46 @@ class Broker:
         self.db.commit()
         self.emit()
 
+    def expire_queue(self):
+        rows=self.db.execute('select id from prompt_queue where expires<=?',(time.time(),)).fetchall()
+        for (ident,) in rows:
+            value=json.loads(self.db.execute('select data from receipts where id=?',(ident,)).fetchone()[0])
+            self.db.execute('delete from prompt_queue where id=?',(ident,))
+            self.finish_receipt(value,'expired')
+
+    def unresolved_sends(self):
+        return any(r.get('state')in ('claimed','uncertain')or r.get('kind')=='prompt'and r.get('state')in ('submitted','failed','blocked')for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
+
+    def drain_queue(self,raise_io=False):
+        # Always called under the dispatcher lock, never concurrent session/prompt.
+        self.expire_queue()
+        if self.state!='ready' or self.permissions or self.closed:return
+        if self.unresolved_sends():return
+        row=self.db.execute('select id,instance,session,text from prompt_queue order by rowid limit 1').fetchone()
+        if not row:return
+        ident,instance,session,text=row
+        value=json.loads(self.db.execute('select data from receipts where id=?',(ident,)).fetchone()[0])
+        if instance!=self.instance or session!=self.session:
+            self.db.execute('delete from prompt_queue where id=?',(ident,));self.finish_receipt(value,'blocked');return
+        # Remove text and persist the claim before any adapter IO. A crash or lost
+        # reply is never a reason to replay this intent.
+        self.db.execute('delete from prompt_queue where id=?',(ident,))
+        self.finish_receipt(value,'claimed')
+        self.state='working';self.turn=ident
+        def completed(reply):
+            with self.lock:
+                self.state='ready'if 'error'not in reply else'failed'
+                self.permissions.clear();self.calls.clear()
+                self.finish_receipt(value,'completed'if 'error'not in reply else'failed')
+                self.drain_queue()
+            display('\n[turn %s]\n> '%self.state,end='',flush=True)
+        try:
+            self.rpc('session/prompt',dict(sessionId=self.session,prompt=[dict(type='text',text=text)]),completed)
+            self.finish_receipt(value,'submitted')
+        except Exception:
+            self.finish_receipt(value,'uncertain');self.state='failed';self.emit()
+            if raise_io:raise
+
     def dispatch(self, request):
         with self.lock:
             action = request.get('action')
@@ -302,7 +364,7 @@ class Broker:
             ident = request.get('id', '')
             if action == 'handoff':
                 if self.db.execute('select id from receipts where id=?',(ident,)).fetchone():return self.receipt(ident,request)[0]
-                unresolved=any(r.get('state')in ('claimed','uncertain')or r.get('kind')=='prompt'and r.get('state')!='completed'for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
+                unresolved=any(r.get('state')in ('claimed','uncertain')or r.get('kind')=='prompt'and r.get('state')not in ('completed','cancelled','expired')for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
                 if self.provider not in ('codex','claude') or self.state!='ready' or self.permissions or unresolved or any(t.get('status')in ('pending','in_progress')for t in self.tools.values()):
                     raise ValueError('Handoff requires an idle agent with no unresolved receipts')
                 value,_=self.receipt(ident,request);self.state='switching';self.emit()
@@ -317,31 +379,27 @@ class Broker:
                 text = request.get('text')
                 if not isinstance(text, str) or not text.strip() or len(text.encode()) > 12000 or any(ord(c) < 32 and c not in '\n\t' for c in text):
                     raise ValueError('Prompt must be 1–12000 UTF-8 bytes without control characters')
-                # Duplicate checking precedes state validation, but never repeats IO.
-                row = self.db.execute('select id from receipts where id=?', (ident,)).fetchone()
-                if not row and self.state != 'ready':
-                    raise ValueError('Agent not ready; prompt was not queued or sent')
-                value, fresh = self.receipt(ident, request)
-                if not fresh:
-                    return value
-                self.state = 'working'
-                self.turn = ident
-                self.messages.append(dict(id=ident, role='user', text=text))
-                self.messages = self.messages[-MAX_HISTORY:]
-                def completed(reply):
-                    with self.lock:
-                        self.state = 'ready' if 'error' not in reply else 'failed'
-                        self.permissions.clear();self.calls.clear()
-                        self.finish_receipt(value, 'completed' if 'error' not in reply else 'failed')
-                    display('\n[turn %s]\n> ' % self.state, end='', flush=True)
-                try:
-                    self.rpc('session/prompt', dict(sessionId=self.session, prompt=[dict(type='text', text=text)]), completed)
-                    self.finish_receipt(value, 'submitted')
-                except Exception:
-                    self.finish_receipt(value, 'uncertain')
-                    self.state = 'failed'
-                    raise
-                return value
+                row=self.db.execute('select id from receipts where id=?',(ident,)).fetchone()
+                self.expire_queue()
+                if not row:
+                    if self.state not in ('ready','working','approval')or not self.prompt_session_ready:raise ValueError('Agent session is not ready for prompt queuing')
+                    if self.db.execute('select count(*) from prompt_queue').fetchone()[0]>=MAX_QUEUED:raise ValueError('Prompt queue is full; keep your draft')
+                value,fresh=self.receipt(ident,request)
+                if not fresh:return value
+                value['state']='queued'
+                self.db.execute('insert into prompt_queue values(?,?,?,?,?)',(ident,self.instance,self.session,text,time.time()+QUEUE_TTL))
+                self.db.execute('update receipts set data=? where id=?',(json.dumps(value),ident));self.db.commit()
+                self.messages.append(dict(id=ident,role='user',text=text));self.messages=self.messages[-MAX_HISTORY:]
+                while len(json.dumps(self.messages).encode())>256000 and len(self.messages)>1:del self.messages[0]
+                self.emit();self.drain_queue(raise_io=True)
+                return json.loads(self.db.execute('select data from receipts where id=?',(ident,)).fetchone()[0])
+            if action == 'cancel_queued':
+                if self.db.execute('select id from receipts where id=?',(ident,)).fetchone():return self.receipt(ident,request)[0]
+                queued=request.get('prompt')
+                if not self.db.execute('select id from prompt_queue where id=? and instance=? and session=?',(queued,self.instance,self.session)).fetchone():raise ValueError('Prompt is no longer queued; active turns require Cancel turn')
+                value,_=self.receipt(ident,request)
+                original=json.loads(self.db.execute('select data from receipts where id=?',(queued,)).fetchone()[0])
+                self.db.execute('delete from prompt_queue where id=?',(queued,));self.finish_receipt(original,'cancelled');self.finish_receipt(value,'completed');return value
             if action == 'permission':
                 old = self.db.execute('select id from receipts where id=?', (ident,)).fetchone()
                 if old:
@@ -433,6 +491,9 @@ class Broker:
     def run(self):
         def stop(*_):
             self.closed = True
+            with self.lock:
+                for (ident,) in self.db.execute('select id from prompt_queue').fetchall():
+                    value=json.loads(self.db.execute('select data from receipts where id=?',(ident,)).fetchone()[0]);self.db.execute('delete from prompt_queue where id=?',(ident,));self.finish_receipt(value,'cancelled')
             if self.agent.poll() is None:
                 try:os.killpg(self.agent.pid, signal.SIGTERM)
                 except ProcessLookupError:pass

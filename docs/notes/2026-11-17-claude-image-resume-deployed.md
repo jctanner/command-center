@@ -1,0 +1,3 @@
+# Claude image-replay fix deployed
+
+Approved deployment at13:21:32 UTC passed four access paths/SSE/full contract/index/binary checks with unchanged runtime args/env/config and tmux pane PIDs. Coordinator remains native/Ready after earlier explicit recovery. Only adapter frame bound increases to8MiB; image contents stay excluded and client snapshot bound stays1MiB.31 ACP Python/92 Rust/Clippy and release checks passed. Narrow read-only preflight verified the recovered historical receipt; it remains unchanged and must not be replayed. Future coordinator conversion requires separate reviewed recovery handling. No real ACP retry, existing broker patch/restart, commit or push. See task0094.

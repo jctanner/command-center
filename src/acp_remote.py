@@ -293,7 +293,10 @@ def main(request):
         if request.get('instance')!=live['instance']:raise ValueError('Stale broker instance')
         file=os.path.join(path,'receipts.sqlite3');regular(file)
         with sqlite3.connect('file:'+file+'?mode=ro',uri=True) as db:
-            return [json.loads(row[0])for row in db.execute('select data from receipts order by rowid desc limit 40')]
+            has_queue=db.execute("select 1 from sqlite_master where type='table'and name='prompt_queue'").fetchone()
+            query="select data from receipts where rowid in(select rowid from receipts order by rowid desc limit 40)"
+            if has_queue:query+=" or id in(select id from prompt_queue) or (json_extract(data,'$.kind')='prompt'and json_extract(data,'$.state')in('claimed','submitted','uncertain'))"
+            return [json.loads(row[0])for row in db.execute(query+' order by rowid desc limit 512')]
     if action == 'inventory':
         items=main(dict(request,action='list'));out=[];started=time.monotonic();limited=False
         for item in items:

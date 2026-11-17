@@ -1,4 +1,8 @@
 import importlib.util
+import io
+import threading
+from types import SimpleNamespace
+from unittest.mock import Mock
 import json
 import os
 from pathlib import Path
@@ -27,7 +31,10 @@ class BrokerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         os.chmod(self.root, 0o700)
         executable = self.root / 'fake-agent'
-        executable.write_text(FAKE)
+        source=FAKE
+        if self._testMethodName=='test_claude_load_replays_large_image_without_retaining_bytes':
+            source=source.replace("session=m['params']['sessionId'];result={}", "session=m['params']['sessionId'];result={};print(json.dumps({'jsonrpc':'2.0','method':'session/update','params':{'sessionId':session,'update':{'sessionUpdate':'agent_message_chunk','content':{'type':'image','data':'X'*(2*1024*1024),'mimeType':'image/png'}}}}),flush=True)")
+        executable.write_text(source)
         executable.chmod(0o700)
         if self._testMethodName.startswith(('test_codex_','test_claude_')):
             (self.root/'intent.json').write_text(json.dumps({'id':str(uuid.uuid4()),'prepared':{'provider':'claude'if self._testMethodName.startswith('test_claude_')else'codex'},'resume_session':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}));(self.root/'intent.json').chmod(0o600)
@@ -43,6 +50,111 @@ class BrokerTests(unittest.TestCase):
 
     def action(self, **kwargs):
         return dict(instance=self.broker.instance, id=str(uuid.uuid4()), **kwargs)
+
+    def hold_turn(self):
+        active=self.broker.dispatch(self.action(action='prompt',text='permission'))
+        wait(lambda:self.broker.state=='approval')
+        return active
+
+    def finish_permission(self):
+        permission=next(iter(self.broker.permissions.values()))
+        self.broker.dispatch(self.action(action='permission',permission=permission['id'],revision=permission['revision'],option='deny'))
+
+    def test_working_turn_queues_followups_until_current_turn_completes(self):
+        self.broker.dispatch(self.action(action='prompt',text='hold'))
+        queued=self.action(action='prompt',text='after hold');self.assertEqual('queued',self.broker.dispatch(queued)['state'])
+        self.assertEqual('working',self.broker.state)
+        self.broker.dispatch(self.action(action='cancel'))
+        wait(lambda:self.broker.dispatch(queued)['state']=='completed')
+        self.assertEqual(0,self.broker.snapshot()['queued_prompts'])
+
+    def test_busy_queue_fifo_idempotent_and_private_until_dispatch(self):
+        self.hold_turn()
+        first=self.action(action='prompt',text='first queued');second=self.action(action='prompt',text='second queued')
+        self.assertEqual('queued',self.broker.dispatch(first)['state']);self.assertEqual('queued',self.broker.dispatch(second)['state'])
+        self.assertEqual('queued',self.broker.dispatch(first)['state'])
+        with self.assertRaisesRegex(ValueError,'reused'):self.broker.dispatch(dict(first,text='different'))
+        self.assertEqual(2,self.broker.snapshot()['queued_prompts'])
+        self.assertNotIn('first queued',''.join(r[0]for r in self.broker.db.execute('select data from receipts')))
+        self.assertEqual('first queued',self.broker.db.execute('select text from prompt_queue order by rowid limit 1').fetchone()[0])
+        self.finish_permission();wait(lambda:all(self.broker.dispatch(c)['state']=='completed'for c in (first,second)))
+        self.assertEqual(['permission','first queued','second queued'],[m['text']for m in self.broker.messages if m['role']=='user'])
+        self.assertEqual(0,self.broker.db.execute('select count(*) from prompt_queue').fetchone()[0])
+        self.assertEqual([first['id'],second['id']],[m['turn']for m in self.broker.messages if m['role']=='assistant'])
+
+    def test_cancel_queued_is_durable_and_never_submits_it(self):
+        self.hold_turn();command=self.action(action='prompt',text='do not send');self.broker.dispatch(command)
+        cancel=self.action(action='cancel_queued',prompt=command['id']);self.assertEqual('completed',self.broker.dispatch(cancel)['state']);self.assertEqual('completed',self.broker.dispatch(cancel)['state']);self.assertEqual('cancelled',self.broker.dispatch(command)['state'])
+        self.finish_permission();wait(lambda:self.broker.state=='ready')
+        self.assertFalse(any(m.get('turn')==command['id']for m in self.broker.messages))
+        self.assertEqual(0,self.broker.snapshot()['queued_prompts'])
+
+    def test_queue_limit_expiry_and_changed_session_instance(self):
+        self.hold_turn()
+        commands=[self.action(action='prompt',text=str(i))for i in range(MOD.MAX_QUEUED)]
+        for command in commands:self.assertEqual('queued',self.broker.dispatch(command)['state'])
+        overflow=self.action(action='prompt',text='overflow')
+        with self.assertRaisesRegex(ValueError,'full'):self.broker.dispatch(overflow)
+        self.assertIsNone(self.broker.db.execute('select id from receipts where id=?',(overflow['id'],)).fetchone())
+        self.broker.db.execute('update prompt_queue set expires=0');self.broker.db.commit();self.assertEqual(0,self.broker.snapshot()['queued_prompts'])
+        self.assertTrue(all(self.broker.dispatch(c)['state']=='expired'for c in commands))
+        changed=self.action(action='prompt',text='wrong instance');self.broker.dispatch(changed)
+        self.broker.db.execute("update prompt_queue set instance='replaced'");self.broker.db.commit()
+        self.finish_permission();wait(lambda:self.broker.dispatch(changed)['state']=='blocked')
+        self.assertFalse(any(m.get('turn')==changed['id']for m in self.broker.messages))
+
+    def test_streaming_active_reply_stays_one_message_when_followup_is_queued(self):
+        self.broker.dispatch(self.action(action='prompt',text='hold'))
+        with self.broker.lock:self.broker.update(dict(sessionUpdate='agent_message_chunk',content=dict(type='text',text='prefix ')))
+        queued=self.action(action='prompt',text='next turn');self.broker.dispatch(queued)
+        with self.broker.lock:self.broker.update(dict(sessionUpdate='agent_message_chunk',content=dict(type='text',text='suffix')))
+        replies=[m for m in self.broker.messages if m['role']=='assistant']
+        self.assertEqual(1,len(replies));self.assertEqual('prefix suffix',replies[0]['text'])
+        self.assertEqual(1,len([m for m in self.broker.messages if m['id']==queued['id']]))
+
+    def test_queued_text_keeps_snapshot_bounded_without_dropping_pending_intents(self):
+        self.hold_turn()
+        with self.broker.lock:self.broker.messages=[dict(id=str(uuid.uuid4()),role='assistant',text='x'*60000)for _ in range(4)]
+        commands=[self.action(action='prompt',text='q'*12000)for _ in range(MOD.MAX_QUEUED)]
+        for command in commands:self.broker.dispatch(command)
+        snapshot=self.broker.snapshot()
+        self.assertLessEqual(len(json.dumps(snapshot['messages']).encode()),256000)
+        self.assertTrue({c['id']for c in commands}<={m['id']for m in snapshot['messages']})
+
+    def test_duplicate_broker_start_does_not_erase_live_queued_intents(self):
+        self.hold_turn();command=self.action(action='prompt',text='retain this intent');self.broker.dispatch(command)
+        with self.assertRaises(OSError):MOD.Broker(str(self.root),str(self.root/'fake-agent'),str(self.root))
+        self.assertEqual('queued',self.broker.dispatch(command)['state'])
+        self.assertEqual('retain this intent',self.broker.db.execute('select text from prompt_queue where id=?',(command['id'],)).fetchone()[0])
+
+    def test_failed_provider_holds_queue_until_explicit_cancellation(self):
+        self.broker.dispatch(self.action(action='prompt',text='hold'));command=self.action(action='prompt',text='held after failure');self.broker.dispatch(command)
+        self.broker.agent.terminate();self.broker.agent.wait(timeout=5);wait(lambda:self.broker.state in ('failed','exited'))
+        self.assertTrue(self.broker.snapshot()['queue_blocked']);self.assertEqual('queued',self.broker.dispatch(command)['state'])
+        self.broker.dispatch(self.action(action='cancel_queued',prompt=command['id']));self.assertEqual('cancelled',self.broker.dispatch(command)['state'])
+
+    def test_changed_session_never_dispatches_queued_intent(self):
+        self.hold_turn();command=self.action(action='prompt',text='wrong session');self.broker.dispatch(command)
+        self.broker.db.execute("update prompt_queue set session='unrelated'");self.broker.db.commit();self.finish_permission();wait(lambda:self.broker.dispatch(command)['state']=='blocked')
+        self.assertFalse(any(m.get('turn')==command['id']for m in self.broker.messages))
+
+    def test_uncertain_prompt_blocks_queued_followups_without_replaying(self):
+        original=self.broker.write;self.broker.write=Mock(side_effect=OSError('fixture uncertain'))
+        failed=self.action(action='prompt',text='uncertain')
+        with self.assertRaises(OSError):self.broker.dispatch(failed)
+        self.broker.state='ready'
+        queued=self.action(action='prompt',text='must wait');self.assertEqual('queued',self.broker.dispatch(queued)['state'])
+        self.broker.write.assert_called_once();self.assertEqual('uncertain',self.broker.dispatch(failed)['state']);self.broker.write=original
+
+    def test_claude_load_replays_large_image_without_retaining_bytes(self):
+        self.assertEqual('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',self.broker.session)
+        self.assertEqual('ready',self.broker.state)
+        self.assertEqual([],self.broker.snapshot()['messages'])
+        self.assertNotIn('XXXXX',json.dumps(self.broker.snapshot()))
+        receipt=self.broker.dispatch(self.action(action='prompt',text='after replay'))
+        wait(lambda:self.broker.state=='ready')
+        self.assertIn(receipt['state'],('submitted','completed'))
+        self.assertTrue(any(m['text']=='Fixture reply' for m in self.broker.snapshot()['messages']))
 
     def test_claude_load_preserves_native_uuid_and_explicit_handoff(self):
         self.assertEqual('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',self.broker.session)
@@ -87,7 +199,7 @@ class BrokerTests(unittest.TestCase):
         try:
             wait(lambda:broker.state=='approval')
             self.assertTrue(broker.permissions)
-            with self.assertRaisesRegex(ValueError,'ready|busy|Ready'):broker.dispatch({'action':'prompt','instance':broker.instance,'id':str(uuid.uuid4()),'text':'not yet'})
+            queued=broker.dispatch({'action':'prompt','instance':broker.instance,'id':str(uuid.uuid4()),'text':'not yet'});self.assertEqual('queued',queued['state']);self.assertEqual('approval',broker.state);self.assertTrue(broker.permissions)
         finally:
             broker.closed=True;broker.agent.terminate();broker.agent.wait(timeout=5);broker.server.close()
 
@@ -178,3 +290,14 @@ class BrokerTests(unittest.TestCase):
             broker.closed=True;broker.agent.terminate();broker.agent.wait(timeout=5);broker.server.close()
 
 if __name__ == '__main__': unittest.main()
+
+
+class FrameBoundsTests(unittest.TestCase):
+    def test_oversize_adapter_frame_fails_closed_with_specific_reason(self):
+        broker=SimpleNamespace(agent=SimpleNamespace(stdout=io.BytesIO(b'X'*(MOD.MAX_WIRE+1)+b'\n'),poll=lambda:None),
+                               lock=threading.RLock(),permissions={},state='starting',fail=Mock(),emit=Mock(),update=Mock())
+        MOD.Broker.read_agent(broker)
+        broker.fail.assert_called_once()
+        self.assertIn('8 MiB',broker.fail.call_args.args[0])
+        broker.update.assert_not_called()
+        self.assertEqual('failed',broker.state)

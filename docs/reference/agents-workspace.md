@@ -18,7 +18,7 @@ Card usage summaries show reported context use and capacity/percentage when know
 
 ## Optional ACP agents
 
-ACP brokers share the agent cards, filters, card metadata, notifications/read state and ticket context capture. Their badge identifies the protocol; selecting one opens broker-backed chat in the normal detail pane. Native launching/polling remains default. ACP launch preparation is internal to Start Claude (ACP). Prompts, permissions, cancellation and receipts use only the guarded broker path, never native terminal input. Explicit close is supported; unsupported restart/resume and busy-time queueing are labeled honestly. See [ACP broker](acp-broker.md).
+ACP brokers share the agent cards, filters, card metadata, notifications/read state and ticket context capture. Their badge identifies the protocol; selecting one opens broker-backed chat in the normal detail pane. Native launching/polling remains default. ACP launch preparation is internal to Start Claude (ACP). Prompts, permissions, cancellation and receipts use only the guarded broker path, never native terminal input. Explicit close is supported; busy-time queueing is capability-gated; unsupported general restart/resume is labeled honestly. See [ACP broker](acp-broker.md).
 
 
 ## Fresh Codex sessions before their first message

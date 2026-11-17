@@ -1,6 +1,8 @@
 """Provider-specific mode-switch guards; no live providers or transport."""
 import importlib.util
 import unittest
+import os
+import tempfile
 from unittest.mock import patch
 from pathlib import Path
 
@@ -38,10 +40,10 @@ class NativeIdleGuards(unittest.TestCase):
 
 
 class ClaudeBrokerMapping(unittest.TestCase):
-    def run_observation(self, candidates=None, continuation='continued-thread', tools=None):
+    def run_observation(self, candidates=None, continuation='continued-thread', tools=None, receipts=None):
         request = dict(identity='source', broker_instance='instance', session='$1', window='@1', pane='%1')
         snapshot = dict(provider='claude', handoff_supported=True, state='ready',
-                        permissions=[], tools=tools or [], receipts=[], session_id='original-thread', path='/project')
+                        permissions=[], tools=tools or [], receipts=receipts or [], session_id='original-thread', path='/project')
         a = {'provider_home': lambda _: '/private/claude',
              'claude_current_session': lambda *args: continuation,
              'conversations': lambda _: candidates or [],
@@ -67,9 +69,45 @@ class ClaudeBrokerMapping(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'continuation chain'):
             self.run_observation(continuation=None)
 
+    def test_withdrawn_prompts_do_not_block_handoff_but_queued_or_uncertain_do(self):
+        for state in ('completed','cancelled','expired'):
+            self.run_observation([{'linked':True,'session':'continued-thread'}],receipts=[dict(kind='prompt',state=state)])
+        for state in ('queued','claimed','uncertain','blocked'):
+            with self.subTest(state=state),self.assertRaisesRegex(ValueError,'receipts'):
+                self.run_observation(receipts=[dict(kind='prompt',state=state)])
+
     def test_in_progress_tools_block_before_mapping_or_handoff(self):
         with self.assertRaisesRegex(ValueError, 'tools to finish'):
             self.run_observation(tools=[{'status': 'in_progress'}])
+
+
+class RecoveryGuards(unittest.TestCase):
+    def check(self, live_pid=2147483647, child_pid=2147483646, linked_session='thread', identity='new', changed=False):
+        expected=dict(identity='old',provider='claude',project='/project',session='thread')
+        request=dict(mode='acp',broker=None,id='original',identity='new',session='$1',window='@1',pane='%1',plan=expected)
+        observation=dict(identity=identity,kind='claude',cwd='/project')
+        observations=iter([observation,dict(observation,identity='changed')if changed else observation])
+        a={'observe':lambda _:next(observations),'provider_home':lambda _:Path('/home'),
+           'claude_current_session':lambda *_:'thread',
+           'conversations':lambda _:[dict(linked=True,session=linked_session,id='conversation')]}
+        def read(path):
+            if path.endswith('target.json'):return request
+            if path.endswith('intent.json'):return dict(resume_session='thread')
+            return dict(boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),pid=live_pid,agent_pid=child_pid)
+        b={'target_root':lambda _:'/private/original','read_json':read}
+        return mode.recover(request,a,b)
+
+    def test_resolve_only_proven_native_recovery_without_mutation(self):
+        self.assertEqual(self.check()['state'],'recovered')
+
+    def test_running_original_broker_or_adapter_blocks_resolution(self):
+        for kwargs in ({'live_pid':os.getpid()},{'child_pid':os.getpid()}):
+            with self.subTest(kwargs=kwargs),self.assertRaisesRegex(ValueError,'still running'):
+                self.check(**kwargs)
+
+    def test_wrong_or_replaced_native_process_and_conversation_rejected(self):
+        for kwargs in ({'identity':'old'},{'identity':'stale'},{'linked_session':'unrelated'},{'changed':True}):
+            with self.subTest(kwargs=kwargs),self.assertRaises(ValueError):self.check(**kwargs)
 
 
 if __name__ == '__main__': unittest.main()

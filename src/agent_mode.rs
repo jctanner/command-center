@@ -193,6 +193,117 @@ pub(crate) async fn prepare(
 pub(crate) struct Operation {
     id: String,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Recovery {
+    id: String,
+    target: Target,
+}
+pub(crate) async fn recoverable(
+    State(s): State<Arc<AppState>>,
+    Path(host): Path<String>,
+    Query(target): Query<Target>,
+) -> Result<Json<Value>, ApiError> {
+    let _slot = s
+        .file_slots
+        .try_acquire()
+        .map_err(|_| conflict("Agent operations busy"))?;
+    let m = s.registry.get(&host).await?;
+    let _endpoint = m.file_writes.lock().await;
+    if target.connection_revision != m.connection_revision
+        || target.mode != "acp"
+        || target.broker.is_some()
+        || target.broker_instance.is_some()
+    {
+        return Err(conflict(
+            "Refresh the recovered native agent before inspecting its earlier switch",
+        ));
+    }
+    let endpoint = crate::attention::scope(&m.config, "", "", "").0;
+    let h = host.clone();
+    let t = target.clone();
+    let r=s.board.with(move|c|{
+        let mut statement=c.prepare("SELECT id FROM agent_mode_switches WHERE json_extract(data,'$.host')=?1 AND json_extract(data,'$.endpoint')=?2 AND json_extract(data,'$.target.session')=?3 AND json_extract(data,'$.target.window')=?4 AND json_extract(data,'$.target.pane')=?5 AND json_extract(data,'$.target.mode')='acp' AND json_extract(data,'$.state')='checking' LIMIT 2").map_err(storage)?;
+        let ids=statement.query_map(params![h,endpoint,t.session,t.window,t.pane],|row|row.get::<_,String>(0)).map_err(storage)?.collect::<Result<Vec<_>,_>>().map_err(storage)?;
+        if ids.len()!=1{return Err(conflict("No unique earlier switch matches this recovered pane"));}
+        read(c,&ids[0])
+    }).await?;
+    let mut request = target.request("recover");
+    request["id"] = json!(r.id);
+    request["plan"] = r.plan.clone();
+    let proof = agents::result(m.transport.mode_request(request).await?)?;
+    if proof["state"] != "recovered"
+        || proof["instance"] != target.instance
+        || s.registry.get(&host).await?.connection_revision != m.connection_revision
+    {
+        return Err(conflict("Native recovery could not be verified"));
+    }
+    let mut value = public(&r);
+    value["connection_revision"] = json!(m.connection_revision);
+    Ok(Json(value))
+}
+pub(crate) async fn recover(
+    State(s): State<Arc<AppState>>,
+    Path(host): Path<String>,
+    Json(body): Json<Recovery>,
+) -> Result<Json<Value>, ApiError> {
+    let _slot = s
+        .file_slots
+        .try_acquire()
+        .map_err(|_| conflict("Agent operations busy"))?;
+    let m = s.registry.get(&host).await?;
+    let _endpoint = m.file_writes.lock().await;
+    if m.connection_revision != body.target.connection_revision {
+        return Err(conflict("Machine changed; refresh agents"));
+    }
+    let id = body.id.clone();
+    let mut r = s.board.with(move |c| read(c, &id)).await?;
+    if r.host != host
+        || r.endpoint != crate::attention::scope(&m.config, "", "", "").0
+        || r.target.mode != "acp"
+        || body.target.mode != "acp"
+        || r.target.session != body.target.session
+        || r.target.window != body.target.window
+        || r.target.pane != body.target.pane
+        || body.target.broker.is_some()
+        || body.target.broker_instance.is_some()
+        || body.target.instance.len() != 64
+        || !body.target.instance.bytes().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err(conflict(
+            "Recovery target does not match the original switch",
+        ));
+    }
+    if r.state == "recovered" && r.plan["recovery"]["instance"] == body.target.instance {
+        let mut value = public(&r);
+        value["connection_revision"] = json!(m.connection_revision);
+        return Ok(Json(value));
+    }
+    if r.state != "checking" {
+        return Err(conflict(
+            "Only an unresolved switch can be resolved after recovery",
+        ));
+    }
+    let mut request = body.target.request("recover");
+    request["id"] = json!(r.id);
+    request["plan"] = r.plan.clone();
+    let proof = agents::result(m.transport.mode_request(request).await?)?;
+    if proof["state"] != "recovered"
+        || proof["instance"] != body.target.instance
+        || s.registry.get(&host).await?.connection_revision != m.connection_revision
+    {
+        return Err(conflict("Native recovery could not be verified"));
+    }
+    r.state = "recovered".into();
+    r.note="Earlier switch resolved after verified native recovery. Original receipt retained; no input sent or switch retried. Prepare and confirm a fresh switch separately.".into();
+    r.plan["recovery"] = json!({"instance":proof["instance"],"session":proof["session"],"conversation":proof["conversation"],"at":now()});
+    let saved = r.clone();
+    s.board.with(move |c| write(c, &saved)).await?;
+    s.queue.invalidate();
+    let mut value = public(&r);
+    value["connection_revision"] = json!(m.connection_revision);
+    Ok(Json(value))
+}
 pub(crate) async fn start(
     State(s): State<Arc<AppState>>,
     Path(host): Path<String>,
@@ -362,7 +473,13 @@ pub(crate) async fn status(
     }
     if matches!(
         r.state.as_str(),
-        "prepared" | "complete" | "not_sent" | "install_required" | "installed" | "install_failed"
+        "prepared"
+            | "complete"
+            | "recovered"
+            | "not_sent"
+            | "install_required"
+            | "installed"
+            | "install_failed"
     ) {
         let mut value = public(&r);
         value["connection_revision"] = json!(m.connection_revision);

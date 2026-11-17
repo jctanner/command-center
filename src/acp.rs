@@ -82,6 +82,9 @@ enum Action {
         option: String,
     },
     Cancel,
+    CancelQueued {
+        prompt: String,
+    },
     Close,
 }
 #[derive(Deserialize)]
@@ -278,6 +281,11 @@ async fn command(
             action["option"] = json!(option);
         }
         Action::Cancel => action["action"] = json!("cancel"),
+        Action::CancelQueued { prompt } => {
+            uuid(&prompt)?;
+            action["action"] = json!("cancel_queued");
+            action["prompt"] = json!(prompt);
+        }
         Action::Close => action["action"] = json!("close"),
     }
     let m = machine(&state, &host, &request.connection_revision).await?;

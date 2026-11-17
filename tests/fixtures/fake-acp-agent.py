@@ -10,11 +10,14 @@ for line in sys.stdin:
   session=m['params']['sessionId'];result={}
  elif method=='session/prompt':
   pending=m['id']
+  if m['params']['prompt'][0]['text']=='hold':continue
   if m['params']['prompt'][0]['text']=='permission':
    print(json.dumps({'jsonrpc':'2.0','id':'permission-call','method':'session/request_permission','params':{'sessionId':session,'toolCall':{'toolCallId':'tool1','title':'Fixture tool','rawInput':{'command':'echo test'}},'options':[{'optionId':'allow','name':'Allow once','kind':'allow_once'},{'optionId':'deny','name':'Reject once','kind':'reject_once'}]}}),flush=True);continue
   print(json.dumps({'jsonrpc':'2.0','method':'session/update','params':{'sessionId':session,'update':{'sessionUpdate':'agent_message_chunk','content':{'type':'text','text':'Fixture reply'}}}}),flush=True)
   result={'stopReason':'end_turn'}
- elif method=='session/cancel':continue
+ elif method=='session/cancel':
+  if pending:print(json.dumps({'jsonrpc':'2.0','id':pending,'result':{'stopReason':'cancelled'}}),flush=True);pending=None
+  continue
  elif m.get('id')=='permission-call':
   print(json.dumps({'jsonrpc':'2.0','id':pending,'result':{'stopReason':'end_turn'}}),flush=True);continue
  else:continue

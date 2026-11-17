@@ -3717,6 +3717,160 @@
           }
         }
       }
+    },
+    "/hosts/{host}/agents/connection-mode-recover": {
+      "post": {
+        "operationId": "recoverAgentConnectionMode",
+        "summary": "Resolve an earlier native-to-ACP switch after verified native recovery",
+        "description": "Explicit metadata-only human action. Requires the same stable endpoint and tmux target, a different exact native process linked to the original persisted conversation, and proof the original broker and adapter exited. Retains the original receipt and records recovered process/time. Sends no input, does not restart or switch agents, and never retries the old attempt. Only checking native-to-ACP receipts qualify. A fresh reviewed switch still observes message/answer barriers and requires separate confirmation.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentModeRecovery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Metadata-only receipt; no automatic retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentModeReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not idle, stale target, unsupported resume, unresolved receipt, or already consumed operation"
+          }
+        }
+      },
+      "get": {
+        "operationId": "inspectRecoverableAgentSwitch",
+        "summary": "Find a uniquely matching unresolved switch after verified native recovery",
+        "description": "Read-only lookup scoped to current endpoint, exact tmux target and process. Verifies native recovery and original broker/adapter exit before returning the unique checking receipt. Does not resolve, release, replay or send input. Supports recovery after browser cache removal. Explicit POST is required to resolve the returned receipt.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\$[0-9]+$"
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^@[0-9]+$"
+            }
+          },
+          {
+            "name": "pane",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^%[0-9]+$"
+            }
+          },
+          {
+            "name": "instance",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "native",
+                "acp"
+              ]
+            }
+          },
+          {
+            "name": "broker",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "broker_instance",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata-only receipt; no automatic retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentModeReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not idle, stale target, unsupported resume, unresolved receipt, or already consumed operation"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7377,6 +7531,37 @@
               "id",
               "action"
             ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connection_revision": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "const": "cancel_queued"
+              },
+              "prompt": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "connection_revision",
+              "instance",
+              "id",
+              "action",
+              "prompt"
+            ]
           }
         ]
       },
@@ -7441,7 +7626,11 @@
               "submitted",
               "completed",
               "failed",
-              "uncertain"
+              "uncertain",
+              "queued",
+              "cancelled",
+              "expired",
+              "blocked"
             ]
           },
           "kind": {
@@ -7449,7 +7638,8 @@
               "prompt",
               "permission",
               "cancel",
-              "close"
+              "close",
+              "cancel_queued"
             ]
           },
           "at": {
@@ -7613,6 +7803,23 @@
           "handoff_supported": {
             "type": "boolean",
             "description": "Broker implements serialized Codex/Claude handoff; absent in older brokers. Requires verified idle process, persisted native session and no unresolved permissions, tools or receipts."
+          },
+          "prompt_queue": {
+            "type": "boolean",
+            "description": "Busy-time FIFO queue capability for the loaded session. Missing/false on older brokers disables busy submissions."
+          },
+          "queued_prompts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 16
+          },
+          "queue_limit": {
+            "type": "integer",
+            "const": 16
+          },
+          "queue_blocked": {
+            "type": "boolean",
+            "description": "Queued prompts are held by failed/unavailable or unresolved delivery evidence; never replayed automatically."
           }
         }
       },
@@ -7795,7 +8002,8 @@
               "installing",
               "installed",
               "install_failed",
-              "install_uncertain"
+              "install_uncertain",
+              "recovered"
             ]
           },
           "note": {
@@ -7920,6 +8128,23 @@
           "project",
           "command",
           "python_venv"
+        ]
+      },
+      "AgentModeRecovery": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "target": {
+            "$ref": "#/components/schemas/AgentModeTarget"
+          }
+        },
+        "required": [
+          "id",
+          "target"
         ]
       }
     },

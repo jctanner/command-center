@@ -1,0 +1,3 @@
+# Coordinator ACP image-replay failure
+
+Read-only diagnosis of failed native→ACP handoff: historical image replay reached a frame exceeding the original1MiB adapter reader. Original conversation intact; broker failed, switch receipt remains checking and no replay was attempted. Source fix accepts bounded8MiB frames, discards image data as before and reports oversize failures specifically.31 ACP Python/92 Rust/Clippy checks passed. No live agent restarted, no service deploy/commit/push. Explicit recovery approval needed to replace failed broker and resume the same native conversation; no guessed/new session or automatic switch retry. See task0094 and bug0046 for evidence/limitations.

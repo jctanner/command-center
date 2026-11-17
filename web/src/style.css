@@ -1149,3 +1149,6 @@ button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 900px), (pointer: coarse) and (max-width: 1100px) {
   .acp-chat-titles { display:contents; }
 }
+
+.acp-message-delivery { display:flex;align-items:center;gap:6px;flex-wrap:wrap; }
+.acp-message-delivery button { font-size:11px;padding:4px 8px; }

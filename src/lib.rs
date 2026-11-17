@@ -203,6 +203,10 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
             get(agent_mode::status),
         )
         .route(
+            "/api/v1/hosts/{host}/agents/connection-mode-recover",
+            get(agent_mode::recoverable).post(agent_mode::recover),
+        )
+        .route(
             "/api/v1/hosts/{host}/agents/connection-mode-install",
             post(agent_mode::install),
         )

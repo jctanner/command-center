@@ -1,0 +1,25 @@
+# Task0094: Claude ACP resume with historical images
+
+Owner: CC dev; claimed2026-11-17; State: done (deployed; real ACP retry remains unperformed).
+
+Human coordinator switch failed. Read-only receipt is checking; replacement broker failed during native session replay at a historical image tool read. Native transcript preserved; metadata counts confirm records exceeding 1MiB. Broker read bound1MiB aborts legitimate large image frames with a generic stream error. Increase bounded adapter frames to8MiB, discard image payloads as before and distinguish oversize failure. Keep client snapshot limit1MiB and no automatic replay/restart. Add real subprocess fixture replay tests and retain receipt failure visibility. No live coordinator mutation authorized/performed; restoration requires explicit review.
+
+## Evidence / handoff
+
+Live read-only snapshot: broker failed with ACP stream error, correct original native session UUID retained, no pending permissions. Original mode-switch status GET reports checking with stream failure (no replay). Transcript metadata only: 12,233 records, two above1MiB, largest1,293,485 bytes,14 image blocks. Pane replay ended at historical image Read. Image-frame limit is the supported diagnosis; the old broker did not retain the original exception detail, so the exact wire bytes cannot be recovered without replay. No raw transcript/image payload stored in the work ledger.
+
+Fixed adapter read limit8MiB (client RPC response bound remains1MiB); over-limit error is now specific. Images remain ignored rather than persisted/rendered. Added subprocess fake-Claude session/load with2MiB image frame followed by successful prompt, and unit over-limit rejection. Python ACP suite31 passed; Rust library92 passed; Clippy all-targets -D warnings passed; formatting/diff checks passed. Logs .local/claude-image-resume-{python,rust,clippy}.log. No real-provider replay, restart, new session, native fallback, install, deploy, commit or push performed.
+
+Recovery pending human approval: replace only the failed coordinator broker/adapter in its original pane and explicitly resume the known native conversation using claude --resume. Preserve original conversation/log and ticket/card metadata. Do not automatically retry the old switch receipt or patch a running broker. A corrected ACP retry is a separate explicit recovery choice, not automatic fallback. Service deployment also requires approval and must account for unresolved checking handoff receipts before restart.
+
+## Human-approved native recovery
+
+Human answered Yes to replacing the failed broker and resuming the original native Claude conversation. Closed only exact broker PID/start/boot/instance through existing guarded ACP close API with a durable UUID, then verified its adapter exited. Original pane was retained dead with an empty PID; initial guard stopped before respawn. A separate continuation verified the same dead/empty pane, original mode marker and exited broker/adapter without reissuing close, then resumed the receipt's exact installed claude --resume UUID and allowlisted environment.
+
+Native process, original directory and unique process-linked native conversation verified; prior card metadata copied through revision-checked API only after that verification. Other pane PIDs unchanged during resume. Private journal .local/reviews/coordinator-native-recovery.json records verified recovery and original switch link. No prompts, approvals or tool calls were submitted. No backend deployment, commit or push. Old failed switch receipt remains historical checking/uncertain rather than falsely completed/not_sent; do not retry it. Source frame-limit fix still awaits deployment; future conversion needs a separately reviewed recovery/receipt-release path, not an automatic retry. Existing recovery journal prevents rerunning the script.
+
+## Approved deployment
+
+Human requested Deploy after native recovery. Final release build passed. Deployment2026-11-17 13:21:32 UTC verified four access paths, SSE, full served contract, index and running release binary. Configuration hashes, complete runtime arguments/environment and canonical tmux pane PIDs unchanged. Read-only queue confirms cc-coordinator native/Ready with its restored name.
+
+Preflight narrowly verified the exact historical failed handoff against its recovery journal, exited broker/adapter and current native process/conversation; no original receipt modified/released or uncertain action retried. All other checking handoffs/restarts still block deployment. An initial private deployment script indentation error occurred before execution; corrected and successful run followed. Private receipt .local/reviews/claude-image-resume-deployment.json and log .local/claude-image-resume-deploy.log. Existing running brokers are not patched/restarted; corrected source applies to future newly created brokers. Actual coordinator ACP retry remains explicitly unperformed; its historical uncertain receipt remains a barrier requiring separate reviewed recovery handling. No commit/push requested or performed.

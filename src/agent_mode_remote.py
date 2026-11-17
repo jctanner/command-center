@@ -35,7 +35,7 @@ def broker_observation(request,a,b):
         raise ValueError('Wait for ACP Ready with no pending permission')
     if any(t.get('status')in ('pending','in_progress')for t in value.get('tools',[])):
         raise ValueError('Wait for ACP tools to finish before switching')
-    if any(r.get('state')in ('claimed','uncertain') or r.get('kind')=='prompt' and r.get('state')!='completed' for r in value.get('receipts',[])):
+    if any(r.get('state')in ('claimed','uncertain') or r.get('kind')=='prompt' and r.get('state')not in ('completed','cancelled','expired') for r in value.get('receipts',[])):
         raise ValueError('Check unresolved ACP receipts before switching')
     session=value.get('session_id');b['canonical_uuid'](session)
     env={}
@@ -215,6 +215,38 @@ def status(request,a,b):
     return {'state':'complete','instance':observed['identity']}
 
 
+def recover(request,a,b):
+    expected=request['plan']
+    if request.get('mode')!='acp' or request.get('broker'):
+        raise ValueError('Only a failed native-to-ACP attempt recovered to native can be resolved')
+    observed=a['observe'](request)
+    if observed['identity']!=request['identity'] or observed['identity']==expected['identity'] or observed['kind']!=expected['provider'] or observed['cwd']!=expected['project']:
+        raise ValueError('Recovered native process or directory changed')
+    session=expected['session']
+    if observed['kind']=='claude':session=a['claude_current_session'](a['provider_home'](observed),observed['cwd'],session)
+    linked=[c for c in a['conversations'](observed)if c.get('linked')]
+    if not session or len(linked)!=1 or linked[0]['session']!=session:
+        raise ValueError('Recovered native conversation is not the original session')
+    path=b['target_root'](dict(request,broker=request['id']))
+    target=b['read_json'](os.path.join(path,'target.json'))
+    if any(target[k]!=request[k]for k in ('session','window','pane')):
+        raise ValueError('Original broker target changed')
+    intent=b['read_json'](os.path.join(path,'intent.json'))
+    if intent.get('resume_session')!=expected['session']:
+        raise ValueError('Original broker resume identity cannot be verified')
+    live=b['read_json'](os.path.join(path,'live.json'))
+    boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    if live['boot']==boot:
+        for key in ('pid','agent_pid'):
+            try:state=Path('/proc',str(live[key]),'stat').read_text().rsplit(')',1)[1].split()[0]
+            except FileNotFoundError:continue
+            if state!='Z':raise ValueError('Original broker or adapter is still running; inspect it before resolving')
+    fresh=a['observe'](request)
+    if fresh['identity']!=observed['identity'] or fresh['cwd']!=observed['cwd']:
+        raise ValueError('Recovered process changed during verification')
+    return dict(state='recovered',instance=observed['identity'],session=session,conversation=linked[0]['id'])
+
+
 def main(request):
     a,b=load_helpers(request)
     if request['action']=='prepare':return plan(request,a,b,True)
@@ -229,6 +261,7 @@ def main(request):
         return installer['start'](request['id'],request['plan']['installation'],request['_install_code'])
     if request['action']=='start':return start(request,a,b)
     if request['action']=='status':return status(request,a,b)
+    if request['action']=='recover':return recover(request,a,b)
     raise ValueError('Unsupported switch action')
 
 if __name__=='__main__':

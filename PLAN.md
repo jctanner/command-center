@@ -9,6 +9,14 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0097: release ACP queue](docs/tasks/current/0097-release-acp-prompt-queue.md) — authorized commit/push/deploy, preserving live agents.
+
+- [Task0096: ACP busy prompt queue](docs/tasks/done/0096-acp-busy-prompt-queue.md) — implemented/tested; ready, not deployed; live brokers require explicit upgrade/restart.
+
+- [Task0095: recovered switch receipts](docs/tasks/done/0095-resolve-recovered-mode-switch.md) — deployed; coordinator receipt recovered, fresh review verified; no switch performed.
+
+- [Task0094: Claude image resume](docs/tasks/done/0094-claude-large-image-resume.md) — image-frame fix deployed; coordinator remains native/Ready; historical receipt retained.
+
 - [Task0093: ended-agent cards](docs/tasks/done/0093-ended-agent-card-retention.md) — deployed with approval; complete scans remove ended agents; access paths/PIDs verified.
 
 - [Task0092: mobile ACP header](docs/tasks/done/0092-mobile-acp-header.md) — frontend deployed; aligned/unclipped Details; seven browser checks passed.
