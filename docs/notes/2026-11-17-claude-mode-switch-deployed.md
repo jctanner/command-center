@@ -1,0 +1,3 @@
+# Claude mode switching deployed
+
+Human requested commit, push and deploy. Implementation 1a5cf9e is pushed and deployed. Final release/frontend builds passed. Deployment at 2026-11-17 11:57:56 UTC verified all four access paths, SSE, complete OpenAPI contract, frontend index and running binary. Exact arguments/environment, configuration and tmux pane PIDs were preserved. Backups and private verification receipt are recorded in task0089. No real-agent test, conversion, adapter installation or agent input occurred. Real-provider testing remains a separate checkpoint; existing brokers without handoff capability remain unsupported.

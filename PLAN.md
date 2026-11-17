@@ -9,13 +9,13 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0089: release Claude handoff](docs/tasks/current/0089-release-claude-mode-switch.md) — human-authorized commit, push and deploy in progress.
+- [Task0089: release Claude handoff](docs/tasks/done/0089-release-claude-mode-switch.md) — deployed; four access paths healthy and tmux pane PIDs unchanged.
 
-- [Task0088: Claude switch and adapter install](docs/tasks/done/0088-claude-mode-switch-install.md) — both-provider handoff and pinned installation fixture-verified; ready, not deployed.
+- [Task0088: Claude switch and adapter install](docs/tasks/done/0088-claude-mode-switch-install.md) — deployed; both-provider handoff and reviewed pinned installation.
 
-- [Task0087: missing ACP adapter installation](docs/tasks/done/0087-install-missing-acp-adapter.md) — reviewed pinned install verified; ready, not deployed.
+- [Task0087: missing ACP adapter installation](docs/tasks/done/0087-install-missing-acp-adapter.md) — deployed; reviewed pinned adapter installation.
 
-- [Task0086: Codex first message](docs/tasks/done/0086-codex-first-message.md) — verified pending-session identity/first input; ready, not deployed.
+- [Task0086: Codex first message](docs/tasks/done/0086-codex-first-message.md) — deployed; guarded pending-session identity and first input.
 
 - [Task0084: native/ACP switch](docs/tasks/current/0084-agent-mode-switch.md) — deployed with approval; real test permission pending.
 
