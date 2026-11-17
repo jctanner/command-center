@@ -78,7 +78,7 @@ Existing target-side authentication/configuration is used; CC does not log in or
 
 ## Switching Codex or Claude connection mode
 
-Codex and Claude cards offer **Switch connection mode…** in the context menu. Review the exact native session UUID, folder and destination; Cancel starts focused. Native→ACP uses the installed adapter's advertised ACP v1 `session/load`, never `session/new`; ACP→native uses the validated installed `codex resume UUID` or `claude --resume UUID`. Both retain the original tmux session/window/pane and directory. Native remains the default for ordinary launches.
+Codex and Claude offer **Switch connection mode…** in the card context menu and the chat **Details** panel. On touch devices, open the agent, tap **Details**, then **Switch connection mode…**; ACP chats expose the same action for returning to native mode. Review the exact native session UUID, folder and destination; Cancel starts focused. Native→ACP uses the installed adapter's advertised ACP v1 `session/load`, never `session/new`; ACP→native uses the validated installed `codex resume UUID` or `claude --resume UUID`. Both retain the original tmux session/window/pane and directory. Native remains the default for ordinary launches.
 
 Definite preflight rejection is recorded as `not_sent`; only a fresh explicit review can try again. Uncertain outcomes remain held for inspection.
 

@@ -47,6 +47,7 @@ export class AttentionQueue {
   private notifications = new AgentNotifications();
   private mute = node('button', 'Mute notifications');
   private modeSwitcher:AgentModeSwitcher;
+  private switchMode=node('button','Switch connection mode…');
   private restartAgent=node('button','Restart agent…');private agentRestarter:AgentRestarter;
   private closeAgent=node('button','Close agent…');private agentCloser:AgentCloser;private cardMenu=node('div');private editCard=node('button','Edit card');private cardNotes=node('p');private cardVersions=new Map<string,AgentCard>();private cardEditor:AgentCardEditor;
   private visible = false;
@@ -118,6 +119,7 @@ export class AttentionQueue {
   constructor(private open: (target: QueueTarget) => Promise<void>,private openFile:(target:AgentFileTarget)=>Promise<void>) {
     this.modeSwitcher=new AgentModeSwitcher(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
     this.agentRestarter=new AgentRestarter(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
+    this.switchMode.type='button';this.switchMode.onclick=()=>{const c=this.chosen();if(c)this.openModeSwitch(c.h,c.item);};
     this.restartAgent.type='button';this.restartAgent.onclick=()=>{const c=this.chosen();if(c)this.openAgentRestart(c.h,c.item);};
     this.agentCloser=new AgentCloser(async()=>{this.body.dataset.detail='false';await this.refresh();});
     this.closeAgent.type='button';this.closeAgent.className='danger';this.closeAgent.onclick=()=>{const c=this.chosen();if(c)this.openAgentClose(c.h,c.item);};
@@ -236,12 +238,12 @@ export class AttentionQueue {
     this.deliveryReview.onclick = () => { this.uncertain.delete(this.draftKey()); this.deliveryReview.hidden = true; this.sendFeedback.textContent = ''; void this.loadDetail(); };
     form.append(this.deliveryReview);
     const chatHeader = node('div'); chatHeader.className = 'queue-chat-header'; chatHeader.append(actions, this.title, this.subtitle);
-    this.cardNotes.className='agent-card-notes';this.metadata.append(agentOutbox(),this.editCard,this.restartAgent,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
+    this.cardNotes.className='agent-card-notes';this.metadata.append(agentOutbox(),this.editCard,this.restartAgent,this.switchMode,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
     this.history.append(this.older);
     this.approvalCard.className = 'agent-approval'; this.approvalCard.setAttribute('aria-label', 'Tool approval'); this.approvalCard.hidden = true;
     this.liveActivity.className = 'agent-live-activity'; this.liveActivity.setAttribute('role', 'status'); this.liveActivity.setAttribute('aria-live', 'polite');
     this.nativeNodes=[chatHeader,this.tokenMetrics.element,this.chatNotice,this.metadata,this.backgroundTasks.element,this.history,this.liveActivity,this.approvalCard,form];
-    this.acpChat=new AcpChat({back:()=>{delete this.body.dataset.detail;this.syncPresentation();},edit:()=>{const c=this.chosen();if(c)this.openCardEditor(c.h,c.item);},mute:()=>this.mute.click(),ticket:()=>createTicket.click(),open:()=>openButton.click(),file:async path=>{const c=this.chosen();if(c)await this.openFile({host:c.h.id,connection:c.h.connection_revision,path});},observe:snapshot=>this.observeAcp(snapshot),unavailable:()=>{const c=this.chosen();if(c?.item.acp){c.item.activity={state:'disconnected',source:'acp_stream',reason:'ACP connection unavailable',observed_at:Date.now()/1000};this.render();}},closed:()=>{void this.refresh();}});
+    this.acpChat=new AcpChat({mode:()=>{const c=this.chosen();if(c)this.openModeSwitch(c.h,c.item);},back:()=>{delete this.body.dataset.detail;this.syncPresentation();},edit:()=>{const c=this.chosen();if(c)this.openCardEditor(c.h,c.item);},mute:()=>this.mute.click(),ticket:()=>createTicket.click(),open:()=>openButton.click(),file:async path=>{const c=this.chosen();if(c)await this.openFile({host:c.h.id,connection:c.h.connection_revision,path});},observe:snapshot=>this.observeAcp(snapshot),unavailable:()=>{const c=this.chosen();if(c?.item.acp){c.item.activity={state:'disconnected',source:'acp_stream',reason:'ACP connection unavailable',observed_at:Date.now()/1000};this.render();}},closed:()=>{void this.refresh();}});
     this.detail.append(...this.nativeNodes);
     this.render(); void this.refresh();
     window.setInterval(() => { if (!document.hidden || this.notifications.enabled()) void this.refresh(); if(!document.hidden&&this.visible)void this.outbox.refresh(); }, 6000);
@@ -405,7 +407,7 @@ export class AttentionQueue {
       this.acpChat.setTarget(undefined);this.acpChat.element.remove();
       if(this.nativeHidden.size){this.detail.append(...this.nativeNodes);for(const [node,hidden]of this.nativeHidden)node.hidden=hidden;this.nativeHidden.clear();}
     for(const button of this.agentOutboxes)button.disabled=!chosen?.item.attention?.instance;
-    this.restartAgent.disabled=this.closeAgent.disabled=this.editCard.disabled=!chosen?.item.attention?.instance||stateOf(chosen.item)==='disconnected';this.cardNotes.textContent=chosen?.item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;
+    this.restartAgent.disabled=this.closeAgent.disabled=this.editCard.disabled=!chosen?.item.attention?.instance||stateOf(chosen.item)==='disconnected';this.switchMode.disabled=this.editCard.disabled||!chosen||!['codex','claude'].includes(chosen.item.agent);this.switchMode.title=chosen&&['codex','claude'].includes(chosen.item.agent)?'Resume this conversation in '+(chosen.item.acp?'native':'ACP')+' mode':'Pi resume handoffs are not verified';this.cardNotes.textContent=chosen?.item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;
     this.mute.hidden = !chosen?.item.attention;
     if (chosen?.item.attention) { this.mute.textContent = this.notifications.isMuted(JSON.stringify([chosen.item.attention.key, chosen.item.attention.instance])) ? 'Unmute notifications' : 'Mute notifications'; }
     this.subtitle.textContent = chosen ? `${chosen.h.name} · ${projectName(chosen.item.project)}${this.detailData?.association === 'project' && this.detailKey === this.selected ? ' · Project history' : ''}` : '';

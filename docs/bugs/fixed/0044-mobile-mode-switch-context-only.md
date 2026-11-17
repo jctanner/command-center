@@ -1,0 +1,3 @@
+# Bug0044: Connection-mode switching requires right-click
+
+Reported 2026-11-17. Mobile had no accessible switch action: only card contextmenu/Shift+F10 exposed it. Earlier 393px tests still used mouse right-click, so did not cover touch access. Add Switch connection mode to both native and ACP conversation Details panels, keeping backend preparation, exact-target guards and explicit confirmation unchanged. Regression tests use a touch-enabled mobile context and tap through both directions for Codex and Claude, verifying no terminal sockets and no switch before confirmation. See task0090 for validation and release status.

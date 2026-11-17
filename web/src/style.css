@@ -1141,3 +1141,11 @@ button:disabled { opacity: .5; cursor: default; }
 .agent-protocol {font-size:10px;border:1px solid var(--cc-border);border-radius:4px;padding:0 4px;}
 .acp-tool-activity {max-height:140px;overflow:auto;font-size:12px;}
 .acp-integrated-chat .agent-approval pre {white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;}
+
+@media (max-width: 900px), (pointer: coarse) and (max-width: 1100px) {
+  .acp-integrated-chat .composer-input>.acp-cancel-turn::before { content:'■'; font-size:16px; }
+}
+
+@media (max-width: 900px), (pointer: coarse) and (max-width: 1100px) {
+  .acp-chat-titles { display:contents; }
+}

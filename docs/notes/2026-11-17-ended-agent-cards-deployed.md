@@ -1,0 +1,3 @@
+# Ended-agent cleanup deployed
+
+Human authorized deploy/commit/push. Deployment at2026-11-17 13:03:30 UTC verified four access paths, SSE, served contract, frontend index, release binary and unchanged runtime args/env/config/tmux pane PIDs. Complete scans now remove ended cards promptly, including retained dead tmux panes; unavailable/incomplete scans keep grace. Five queue Rust tests, seven ACP browser checks, Clippy/format/build/diff checks passed before release. Includes pending mobile switch/composer/header fixes0090–92. No live-agent action. Private receipt .local/reviews/ended-agent-cleanup-deployment.json. See task0093.

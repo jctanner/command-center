@@ -9,6 +9,14 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0093: ended-agent cards](docs/tasks/done/0093-ended-agent-card-retention.md) — deployed with approval; complete scans remove ended agents; access paths/PIDs verified.
+
+- [Task0092: mobile ACP header](docs/tasks/done/0092-mobile-acp-header.md) — frontend deployed; aligned/unclipped Details; seven browser checks passed.
+
+- [Task0091: compact ACP composer](docs/tasks/done/0091-compact-acp-composer.md) — frontend deployed; compact inline input/buttons, seven ACP browser checks passed.
+
+- [Task0090: mobile mode switching](docs/tasks/done/0090-mobile-mode-switch.md) — frontend deployed; touch-accessible Details action in native and ACP chat; 24 browser checks pass.
+
 - [Task0089: release Claude handoff](docs/tasks/done/0089-release-claude-mode-switch.md) — deployed; four access paths healthy and tmux pane PIDs unchanged.
 
 - [Task0088: Claude switch and adapter install](docs/tasks/done/0088-claude-mode-switch-install.md) — deployed; both-provider handoff and reviewed pinned installation.

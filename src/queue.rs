@@ -259,8 +259,8 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                         let activity=Activity::from_value(&observed["activity"],"");
                         let attention=serde_json::from_value(observed["read_state"].clone()).unwrap_or_default();
                         result.items.push(Item{acp:Some(json!({"broker":agent["broker"],"instance":agent["instance"],"conversation":agent["session_id"],"endpoint":crate::attention::scope(&machine.config,"","","").0})),id:format!("{}/{}/{}/{}/{}",host.id,host.connection_revision,session.id,window.id,pane.id),session:session.id.clone(),session_name:session.name.clone(),window:window.id.clone(),window_name:window.name.clone(),pane:pane.id.clone(),project:agent["path"].as_str().unwrap_or("").into(),agent:agent["provider"].as_str().unwrap_or("claude").into(),prompt:agent["permission_title"].as_str().unwrap_or("ACP agent").into(),context:String::new(),status:if activity.state==AgentState::Approval{"attention"}else if activity.state==AgentState::Disconnected{"disconnected"}else{"live"}.into(),activity,last_seen:now(),attention,card:Default::default(),background_tasks:Value::Null,folder_trust:Value::Null,token_metrics:Value::Null});
-                    }}
-                }
+                    }} else { result.limited=true; }
+                } else { result.limited=true; }
                 let discovery=machine.transport.agent_request(json!({"action":"discover_agents"})).await;
                 let mut providers=std::collections::HashMap::new();
                 if let Ok(value)=discovery && let Some(agents)=value["ok"]["agents"].as_array() {
@@ -328,6 +328,11 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                 result.items.clear(); result.error = Some("Machine changed; refreshing".into()); return result;
             }
             let reason = if result.error.is_some() { "Machine unavailable; showing last observed agent" } else if result.limited { "Agent was not observed within the scan limit" } else { "Agent is no longer foreground in this pane" };
+            // A complete scan establishes absence, including exited agents whose
+            // tmux pane remains alive. Only incomplete/unavailable scans need grace.
+            if result.error.is_none() && !result.limited {
+                present=Some(result.items.iter().map(|item|(item.session.clone(),item.window.clone(),item.pane.clone())).collect());
+            }
             retain_disconnected(&mut result.items, &before, now(), reason,present.as_ref());
             result
         }

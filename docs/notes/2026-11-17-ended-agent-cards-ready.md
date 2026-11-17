@@ -1,0 +1,3 @@
+# Ended-agent cards cleanup ready
+
+Human-reported switchme2 linger was the five-minute disconnected grace despite a successful host scan confirming absence. Complete scans now remove absent agents promptly; incomplete/outage observations retain the existing grace without refreshing last_seen. ACP discovery failure marks the scan incomplete. Five queue Rust and seven ACP browser checks, Clippy/build/format/diff passed; new regression keeps the dead pane while confirming card removal. No live agent changed. Task0093 remains current until a backend restart is approved; the release build passed. No commit/push/deploy.
