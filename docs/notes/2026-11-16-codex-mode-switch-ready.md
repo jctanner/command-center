@@ -5,3 +5,8 @@ Task0084 adds right-click Switch connection mode… for Codex, with a human revi
 Validation: frontend/debug/release builds,91 Rust library tests,18 Python broker/helper tests, six served OpenAPI checks and all-target Clippy passed. Optimized release passed17 focused Playwright regressions, including desktop/mobile round trips, busy/stale/unsupported and changed-screen rejection, not_sent and lost-response/reload recovery; existing ACP and native restart paths passed. Final stable-endpoint scoping is covered by the Rust regression and all six final focused release mode-switch checks. Bug0041 documents the pre-release stopped-pane PID correction. A load-time permission remains Approval, never false Ready.
 
 Implementation remains uncommitted and undeployed. No production agent was touched. Human approval was requested for installing a pinned isolated Codex adapter on corsair and running one disposable real round-trip conversation; no response received. Do not run that test or restart/deploy services until authorized. Claude/pi switches remain future work after validating Codex. Deployment preflight must include active agent_mode_switches checking receipts alongside existing message/question/trust/export checks.
+
+
+## Deployment follow-up
+
+Human subsequently authorized commit/push/deploy. Implementationc10a343 pushed and deployed; four paths/SSE/contracts/artifact hashes healthy, runtime/environment/listeners/configuration/native pane PIDs unchanged. Live desktop/mobile menu and native-default checks pass with zero errors, writes, terminal sockets or switch preparations. No agent conversion or adapter installation. Reload once. Real-provider verification remains pending separate permission.

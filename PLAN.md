@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0084: native/ACP switch](docs/tasks/current/0084-agent-mode-switch.md) — Codex implementation/fixtures ready; real test permission pending, not deployed.
+- [Task0084: native/ACP switch](docs/tasks/current/0084-agent-mode-switch.md) — deployed with approval; real test permission pending.
 
 - [Task0083: Codex ACP](docs/tasks/done/0083-codex-acp.md) — deployed with approval; real-provider test permission pending.
 

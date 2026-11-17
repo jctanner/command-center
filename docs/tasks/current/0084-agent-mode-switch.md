@@ -1,6 +1,6 @@
 # Task0084: Guarded native/ACP mode switch
 
-Owner: CC dev; claimed 2026-11-16; State: implementation verified; disposable real-provider test approval pending.
+Owner: CC dev; claimed 2026-11-16; State: deployed with approval; disposable real-provider test approval pending.
 
 Human approved Codex-first bidirectional switching from agent card context menu. Same tmux pane/directory and exact native conversation: native uses codex resume UUID; ACP uses negotiated session/load UUID. Verify persisted native transcript, exact process/start/endpoint, idle state and unresolved receipts; one-use durable receipt before mutation, read-only recovery, no automatic retry/fallback/new conversation. Preserve shared card metadata after verified replacement. Existing agents are not test targets. Fixture validation first; no real-provider test launches or disruptive deploy without explicit approval. Claude/pi unsupported initially with honest UI explanation.
 
@@ -26,3 +26,8 @@ No deployment, commit or push authorized/performed for task0084. The last pushed
 Optimized release plus17 focused Playwright regressions passed: six new mode-switch checks and existing ACP chat/native Codex/Claude/pi restart and phone recovery coverage. Eighteen Python broker/helper tests,91 Rust library tests, six served OpenAPI tests and all-target Clippy with warnings denied passed. The final endpoint-scope tightening passed the Rust guard regression and all six focused release mode-switch scenarios. Frontend TypeScript/Vite build passed. No new real-provider session, deployment, commit or push occurred.
 
 Real round-trip authorization remains pending. Existing old ACP brokers intentionally lack the private handoff capability; they fail closed and are not upgraded automatically. Claude and pi switching has not been implemented in this Codex-first slice. Verify the real Codex adapter before widening support. All live ticket/run history remains unchanged; task records do not mirror Board status.
+
+
+## Approved deployment
+
+Human requested commit, push and deploy. Implementationc10a343 pushed and deployed with one brief backend restart. Preflight found no active message/question/trust/export or checking handoff/restart operations. Four access paths, initial SSE, native/ACP/mode-switch contracts, frontend index and running binary hash verified; exact runtime/environment/listener arguments, configuration hashes and canonical tmux pane/PIDs retained. Live desktop/mobile read-only smoke confirms enabled Codex context-menu action and native launcher default, with zero page errors, writes, terminal sockets or switch preparations. No adapter installed, agent launched/switched/restarted or permission answered. Reload clients once. Real corsair round-trip approval remains separate and pending.
