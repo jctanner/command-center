@@ -29,6 +29,8 @@ class BrokerTests(unittest.TestCase):
         executable = self.root / 'fake-agent'
         executable.write_text(FAKE)
         executable.chmod(0o700)
+        if self._testMethodName.startswith('test_codex_'):
+            (self.root/'intent.json').write_text(json.dumps({'id':str(uuid.uuid4()),'prepared':{'provider':'codex'},'resume_session':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}));(self.root/'intent.json').chmod(0o600)
         self.broker = MOD.Broker(str(self.root), str(executable), str(self.root))
         wait(lambda: self.broker.state == 'ready')
 
@@ -41,6 +43,50 @@ class BrokerTests(unittest.TestCase):
 
     def action(self, **kwargs):
         return dict(instance=self.broker.instance, id=str(uuid.uuid4()), **kwargs)
+
+    def test_codex_load_retains_native_thread_and_handoff_is_one_use(self):
+        self.assertEqual('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',self.broker.session)
+        self.assertTrue(self.broker.snapshot()['handoff_supported'])
+        command=self.action(action='handoff')
+        self.assertEqual('completed',self.broker.dispatch(command)['state'])
+        self.assertIsNotNone(self.broker.agent.poll())
+        self.assertEqual('completed',self.broker.dispatch(command)['state'])
+        with self.assertRaisesRegex(ValueError,'busy|ready|Ready'):
+            self.broker.dispatch(self.action(action='prompt',text='must not send'))
+
+    def test_codex_load_without_capability_fails_without_a_new_session(self):
+        path=self.root/'unsupported';path.mkdir(mode=0o700)
+        executable=path/'fake';executable.write_text(FAKE.replace("'loadSession':True","'loadSession':False"));executable.chmod(0o700)
+        (path/'intent.json').write_text(json.dumps({'id':str(uuid.uuid4()),'prepared':{'provider':'codex'},'resume_session':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}));(path/'intent.json').chmod(0o600)
+        broker=MOD.Broker(str(path),str(executable),str(path))
+        try:
+            wait(lambda:broker.state!='starting')
+            self.assertEqual('failed',broker.state);self.assertIsNone(broker.session)
+            self.assertIn('session/load',broker.failure)
+        finally:
+            broker.closed=True;broker.agent.terminate();broker.agent.wait(timeout=5);broker.server.close()
+
+    def test_codex_load_cannot_hide_a_permission_emitted_during_replay(self):
+        path=self.root/'load-approval';path.mkdir(mode=0o700)
+        permission={'jsonrpc':'2.0','id':'load-permission','method':'session/request_permission','params':{'sessionId':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','toolCall':{'toolCallId':'load','title':'Load permission'},'options':[{'optionId':'allow','name':'Allow once','kind':'allow_once'}]}}
+        source=FAKE.replace("session=m['params']['sessionId'];result={}","session=m['params']['sessionId'];print("+repr(json.dumps(permission))+",flush=True);result={}")
+        executable=path/'fake';executable.write_text(source);executable.chmod(0o700)
+        (path/'intent.json').write_text(json.dumps({'id':str(uuid.uuid4()),'prepared':{'provider':'codex'},'resume_session':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}));(path/'intent.json').chmod(0o600)
+        broker=MOD.Broker(str(path),str(executable),str(path))
+        try:
+            wait(lambda:broker.state=='approval')
+            self.assertTrue(broker.permissions)
+            with self.assertRaisesRegex(ValueError,'ready|busy|Ready'):broker.dispatch({'action':'prompt','instance':broker.instance,'id':str(uuid.uuid4()),'text':'not yet'})
+        finally:
+            broker.closed=True;broker.agent.terminate();broker.agent.wait(timeout=5);broker.server.close()
+
+    def test_codex_handoff_rejects_unresolved_receipts_and_changed_instance(self):
+        command=self.action(action='prompt',text='held');self.broker.receipt(command['id'],command)
+        with self.assertRaisesRegex(ValueError,'unresolved'):
+            self.broker.dispatch(self.action(action='handoff'))
+        with self.assertRaisesRegex(ValueError,'Stale'):
+            self.broker.dispatch(dict(self.action(action='handoff'),instance=str(uuid.uuid4())))
+        self.assertIsNone(self.broker.agent.poll())
 
     def test_prompt_receipt_dedup_conflict_and_stale_instance(self):
         command = self.action(action='prompt', text='hello')

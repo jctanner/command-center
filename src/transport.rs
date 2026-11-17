@@ -231,6 +231,19 @@ impl Transport {
     ) -> Result<serde_json::Value> {
         self.helper_request(include_str!("jira_bootstrap.py"),serde_json::json!({"project":project,"code":include_str!("jira_remote.py"),"request":request})).await
     }
+    pub(crate) async fn mode_request(
+        &self,
+        mut request: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        request["socket"] = serde_json::json!(self.host.socket);
+        request["_agent_code"] = serde_json::json!(include_str!("agent_remote.py"));
+        request["_acp_code"] = serde_json::json!(include_str!("acp_remote.py"));
+        if request["action"] == "start" {
+            request["_broker_code"] = serde_json::json!(include_str!("acp_broker.py"));
+        }
+        self.helper_request(include_str!("agent_mode_remote.py"), request)
+            .await
+    }
     pub(crate) async fn acp_request(
         &self,
         mut request: serde_json::Value,

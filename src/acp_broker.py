@@ -62,6 +62,7 @@ class Broker:
         self.turn = None
         self.failure = None
         self.provider = 'claude'
+        self.resume_session = None
         self.initial_prompt = None
         self.initial_message_id = None
         intent_path = os.path.join(root, 'intent.json')
@@ -72,6 +73,9 @@ class Broker:
             self.provider = intent.get('prepared', {}).get('provider', 'claude')
             if self.provider not in ('claude', 'codex'):
                 raise ValueError('Unsupported ACP provider')
+            self.resume_session = intent.get('resume_session')
+            if self.resume_session is not None and (self.provider!='codex' or str(uuid.UUID(self.resume_session))!=self.resume_session):
+                raise ValueError('Unsupported resume session')
             prompt = intent.pop('initial_prompt', None)
             if prompt:
                 if not isinstance(prompt, str) or len(prompt.encode()) > 12000:
@@ -129,7 +133,7 @@ class Broker:
 
     def snapshot(self):
         with self.lock:
-            return dict(instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
+            return dict(instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider=='codex', path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
                         messages=list(self.messages), tools=list(self.tools.values()), permissions=list(self.permissions.values()), receipts=[json.loads(r[0]) for r in self.db.execute('select data from receipts order by rowid desc limit 40')])
 
     def rpc(self, method, params, callback):
@@ -150,14 +154,21 @@ class Broker:
             if 'error' in reply or reply.get('result', {}).get('protocolVersion') != 1:
                 self.fail('ACP v1 initialization failed')
                 return
-            self.rpc('session/new', dict(cwd=self.cwd, mcpServers=[]), created)
+            if self.resume_session:
+                if reply.get('result',{}).get('agentCapabilities',{}).get('loadSession') is not True:
+                    self.fail('Adapter does not support session/load; original session was not replaced with a new one');return
+                self.session=self.resume_session
+                self.rpc('session/load', dict(cwd=self.cwd,mcpServers=[],sessionId=self.resume_session),created)
+            else:self.rpc('session/new', dict(cwd=self.cwd, mcpServers=[]), created)
         def created(reply):
-            session = reply.get('result', {}).get('sessionId')
+            session = reply.get('result', {}).get('sessionId',self.resume_session)
+            if 'error' in reply or self.resume_session and session!=self.resume_session:
+                self.fail('Exact session/load failed; no new conversation created');return
             if not isinstance(session, str) or not session or len(session) > 512:
                 self.fail('Session creation/authentication failed; inspect adapter login outside CC')
                 return
             with self.lock:
-                self.session, self.state = session, 'ready'
+                self.session, self.state = session, 'approval' if self.permissions else 'ready'
             self.emit()
             if self.initial_prompt:
                 prompt,self.initial_prompt=self.initial_prompt,None
@@ -211,12 +222,13 @@ class Broker:
 
     def update(self, update):
         kind = update.get('sessionUpdate')
-        if kind == 'agent_message_chunk':
+        if kind == 'agent_message_chunk' or kind=='user_message_chunk' and self.state=='starting' and self.resume_session:
+            role='user' if kind=='user_message_chunk' else 'assistant'
             content = update.get('content', {})
             if content.get('type') == 'text' and isinstance(content.get('text'), str):
                 text = content['text'][:24000]
-                if not self.messages or self.messages[-1]['role'] != 'assistant' or self.messages[-1].get('turn') != self.turn:
-                    self.messages.append(dict(id=str(uuid.uuid4()), role='assistant', text='', turn=self.turn))
+                if not self.messages or self.messages[-1]['role'] != role or self.messages[-1].get('turn') != self.turn:
+                    self.messages.append(dict(id=str(uuid.uuid4()), role=role, text='', turn=self.turn))
                 self.messages[-1]['text'] = (self.messages[-1]['text'] + text)[-64000:]
                 self.messages = self.messages[-MAX_HISTORY:]
                 display(text, end='', flush=True)
@@ -288,6 +300,19 @@ class Broker:
             if request.get('instance') != self.instance:
                 raise ValueError('Stale broker process instance')
             ident = request.get('id', '')
+            if action == 'handoff':
+                if self.db.execute('select id from receipts where id=?',(ident,)).fetchone():return self.receipt(ident,request)[0]
+                unresolved=any(r.get('state')in ('claimed','uncertain')or r.get('kind')=='prompt'and r.get('state')!='completed'for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
+                if self.provider!='codex' or self.state!='ready' or self.permissions or unresolved:
+                    raise ValueError('Handoff requires idle Codex with no unresolved receipts')
+                value,_=self.receipt(ident,request);self.state='switching';self.emit()
+                try:
+                    if self.agent.poll() is None:os.killpg(self.agent.pid,signal.SIGTERM)
+                    self.agent.wait(timeout=5)
+                    self.finish_receipt(value,'completed')
+                except Exception:
+                    self.finish_receipt(value,'uncertain');raise
+                return value
             if action == 'prompt':
                 text = request.get('text')
                 if not isinstance(text, str) or not text.strip() or len(text.encode()) > 12000 or any(ord(c) < 32 and c not in '\n\t' for c in text):
@@ -419,6 +444,7 @@ class Broker:
                         except ProcessLookupError:pass
             raise SystemExit(0)
         signal.signal(signal.SIGTERM, stop)
+        signal.signal(signal.SIGHUP, stop)
         signal.signal(signal.SIGINT, lambda *_: self.cancel_terminal())
         display('CC ACP broker (experimental). CC may disconnect; this pane remains usable.', flush=True)
         while not self.closed and self.agent.poll() is None:

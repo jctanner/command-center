@@ -142,7 +142,7 @@ def observe(request):
         # Read only allowlisted provider/environment identity metadata. Never return environments.
         for value in (agent_base / 'environ').read_bytes().decode(errors='replace').split('\0'):
             key, _, val = value.partition('=')
-            if key in ('VIRTUAL_ENV','CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CC_LAUNCH_ID', 'PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'CC_RESTART_ID'):
+            if key in ('VIRTUAL_ENV','CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CC_LAUNCH_ID', 'PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'CC_RESTART_ID','CC_MODE_SWITCH_ID'):
                 env[key] = val
         boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
         basis=f'{boot}:{info[0]}:{start}:{foreground}:{agent_start}:{kind}'

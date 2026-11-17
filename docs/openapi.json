@@ -3453,6 +3453,210 @@
           }
         }
       }
+    },
+    "/hosts/{host}/agents/connection-mode": {
+      "get": {
+        "operationId": "prepareAgentConnectionMode",
+        "summary": "Review an explicit same-conversation Codex native/ACP handoff",
+        "description": "Read-only source observation plus bounded initialize-only adapter capability probe. No source process stopped. Requires verified Ready and persisted exact native session; no new-conversation fallback. Old brokers lacking handoff support reject. Returned grant expires after120 seconds.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\$[0-9]+$"
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^@[0-9]+$"
+            }
+          },
+          {
+            "name": "pane",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^%[0-9]+$"
+            }
+          },
+          {
+            "name": "instance",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "native",
+                "acp"
+              ]
+            }
+          },
+          {
+            "name": "broker",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "broker_instance",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata-only receipt; no automatic retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentModeReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not idle, stale target, unsupported resume, unresolved receipt, or already consumed operation"
+          }
+        }
+      },
+      "post": {
+        "operationId": "switchAgentConnectionMode",
+        "summary": "Consume one prepared Codex mode-switch receipt before process replacement",
+        "description": "Explicit human action only. Persist attempt before shared transport IO; serialize endpoint changes and message delivery, reject unresolved sends/answers. Existing pane is respawned only after fresh process/directory/executable/conversation/idle checks. Lost or uncertain outcomes never replay. Native uses codex resume UUID; ACP negotiates session/load with the same UUID. No arbitrary command/flags, approvals or trust bypass.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Metadata-only receipt; no automatic retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentModeReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not idle, stale target, unsupported resume, unresolved receipt, or already consumed operation"
+          }
+        }
+      }
+    },
+    "/hosts/{host}/agents/connection-mode-status": {
+      "get": {
+        "operationId": "agentConnectionModeStatus",
+        "summary": "Read and verify an existing Codex handoff; never replace a process",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata-only receipt; no automatic retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentModeReceipt"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not idle, stale target, unsupported resume, unresolved receipt, or already consumed operation"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7332,6 +7536,10 @@
           },
           "card": {
             "type": "object"
+          },
+          "handoff_supported": {
+            "type": "boolean",
+            "description": "Broker implements the private serialized handoff; absent in older brokers. Actual availability requires verified idle Codex, persisted thread and no unresolved receipts."
           }
         }
       },
@@ -7445,6 +7653,116 @@
           "revision",
           "name",
           "notes"
+        ]
+      },
+      "AgentModeTarget": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connection_revision": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string",
+            "pattern": "^\\$[0-9]+$"
+          },
+          "window": {
+            "type": "string",
+            "pattern": "^@[0-9]+$"
+          },
+          "pane": {
+            "type": "string",
+            "pattern": "^%[0-9]+$"
+          },
+          "instance": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "native",
+              "acp"
+            ]
+          },
+          "broker": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "broker_instance": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "connection_revision",
+          "session",
+          "window",
+          "pane",
+          "instance",
+          "mode"
+        ]
+      },
+      "AgentModeReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "prepared",
+              "checking",
+              "complete",
+              "not_sent"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "native",
+              "acp"
+            ]
+          },
+          "provider": {
+            "const": "codex"
+          },
+          "session": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "project": {
+            "type": "string"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "python_venv": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "note",
+          "mode",
+          "provider",
+          "session",
+          "project",
+          "command",
+          "python_venv"
         ]
       }
     },

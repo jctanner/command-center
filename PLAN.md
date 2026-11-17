@@ -9,6 +9,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0084: native/ACP switch](docs/tasks/current/0084-agent-mode-switch.md) — Codex implementation/fixtures ready; real test permission pending, not deployed.
+
 - [Task0083: Codex ACP](docs/tasks/done/0083-codex-acp.md) — deployed with approval; real-provider test permission pending.
 
 - [Task0082: integrated ACP agents](docs/tasks/done/0082-integrated-acp-agents.md) — deployed with approval; regular cards/chat and automatic preparation.
@@ -429,3 +431,6 @@ This ledger does not mirror or change live CC Board tickets. CC-1 remains ongoin
 - [Bug0040: ACP project loading race](docs/bugs/fixed/0040-acp-project-loading-race.md) — fixed; delayed-discovery recovery regression passes.
 
 - [2026-11-16: Codex ACP ready](docs/notes/2026-11-16-codex-acp-ready.md)
+
+- [2026-11-16: Codex connection-mode handoff](docs/notes/2026-11-16-codex-mode-switch-ready.md)
+- [Bug0041: stopped-pane identity during handoff](docs/bugs/fixed/0041-mode-switch-dead-pane-identity.md) — fixed in fixture verification.

@@ -1,5 +1,6 @@
 mod acp;
 mod agent_cards;
+mod agent_mode;
 mod agent_restart;
 mod agents;
 mod attachments;
@@ -192,6 +193,14 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
         .route(
             "/api/v1/health",
             get(|| async { Json(json!({"status":"ok", "version":env!("CARGO_PKG_VERSION")})) }),
+        )
+        .route(
+            "/api/v1/hosts/{host}/agents/connection-mode",
+            get(agent_mode::prepare).post(agent_mode::start),
+        )
+        .route(
+            "/api/v1/hosts/{host}/agents/connection-mode-status",
+            get(agent_mode::status),
         )
         .route("/api/v1/queue", get(queue::snapshot))
         .route("/api/v1/attention/read", post(attention::read))

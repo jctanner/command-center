@@ -2,6 +2,7 @@ import {AcpChat,type AcpTarget,type AcpSnapshot} from './acp-chat';
 import {AgentTokenMetrics,type TokenMetrics} from './agent-token-metrics';
 import {QuestionControls,type InputQuestion} from './agent-question';
 import {BackgroundTasks,backgroundLabel,type BackgroundSnapshot} from './agent-background';
+import {AgentModeSwitcher} from './agent-mode';
 import {AgentRestarter} from './agent-restart';
 import {AgentCloser} from './agent-close';
 import {chatMarkdown} from './chat-markdown';
@@ -45,6 +46,7 @@ export class AttentionQueue {
   private acpChat!:AcpChat;private nativeNodes:HTMLElement[]=[];private nativeHidden=new Map<HTMLElement,boolean>();
   private notifications = new AgentNotifications();
   private mute = node('button', 'Mute notifications');
+  private modeSwitcher:AgentModeSwitcher;
   private restartAgent=node('button','Restart agent…');private agentRestarter:AgentRestarter;
   private closeAgent=node('button','Close agent…');private agentCloser:AgentCloser;private cardMenu=node('div');private editCard=node('button','Edit card');private cardNotes=node('p');private cardVersions=new Map<string,AgentCard>();private cardEditor:AgentCardEditor;
   private visible = false;
@@ -114,6 +116,7 @@ export class AttentionQueue {
   private filterPanel = node('details');
   private inboxControls = node('div');
   constructor(private open: (target: QueueTarget) => Promise<void>,private openFile:(target:AgentFileTarget)=>Promise<void>) {
+    this.modeSwitcher=new AgentModeSwitcher(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
     this.agentRestarter=new AgentRestarter(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
     this.restartAgent.type='button';this.restartAgent.onclick=()=>{const c=this.chosen();if(c)this.openAgentRestart(c.h,c.item);};
     this.agentCloser=new AgentCloser(async()=>{this.body.dataset.detail='false';await this.refresh();});
@@ -282,11 +285,15 @@ export class AttentionQueue {
   private acpTarget(host:Host,item:Item):AcpTarget{return{host:host.id,connection_revision:host.connection_revision,endpoint:item.acp!.endpoint||host.connection_revision,broker:item.acp!.broker,instance:item.acp!.instance,label:agentTitle(item),machine:host.name,path:item.project,session:item.session,window:item.window,pane:item.pane,disconnected:!!host.error||stateOf(item)==='disconnected',muted:item.attention?this.notifications.isMuted(JSON.stringify([item.attention.key,item.attention.instance])):false};}
   private observeAcp(snapshot:AcpSnapshot){const chosen=this.chosen();if(!chosen?.item.acp||chosen.item.acp.instance!==snapshot.instance)return;const before=JSON.stringify([chosen.item.activity?.state,chosen.item.attention]);chosen.item.activity=snapshot.activity;chosen.item.status=snapshot.activity?.state==='approval'?'attention':snapshot.activity?.state==='disconnected'?'disconnected':'live';chosen.item.attention=snapshot.read_state as ReadState;chosen.item.acp.conversation=snapshot.session_id;if(snapshot.card&&snapshot.card_instance)this.mergeCard(chosen.item,snapshot.card_instance,snapshot.card);if(before!==JSON.stringify([chosen.item.activity?.state,chosen.item.attention]))this.render();}
   private mergeCard(item:Item,instance:string,card:AgentCard){const key=`${item.id}/${instance}`,old=this.cardVersions.get(key);if(old&&old.revision>card.revision)item.card=old;else{item.card=card;this.cardVersions.set(key,card);}if(this.cardVersions.size>512)this.cardVersions.delete(this.cardVersions.keys().next().value!);}
+  private openModeSwitch(host:Host,item:Item){
+    const instance=item.attention?.instance;if(!instance||item.agent!=='codex'||stateOf(item)==='disconnected')return;
+    void this.modeSwitcher.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`,mode:item.acp?'native':'acp',...(item.acp?{broker:item.acp.broker,broker_instance:item.acp.instance}:{})});
+  }
   private openAgentRestart(host:Host,item:Item){if(item.acp){this.feedback.textContent="ACP restart/resume is not supported yet.";return;}const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentRestarter.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
   private openAgentClose(host:Host,item:Item){if(item.acp){void this.acpChat.closeTarget(this.acpTarget(host,item));return;}const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentCloser.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
   private openCardActions(host:Host,item:Item,x:number,y:number){
     const action=(text:string,run:()=>void)=>{const button=node('button',text);button.type='button';button.setAttribute('role','menuitem');button.onclick=()=>{this.cardMenu.hidden=true;run();};button.disabled=!item.attention?.instance||stateOf(item)==='disconnected';return button;};
-    const edit=action('Edit card',()=>this.openCardEditor(host,item));const pin=action(item.card?.pinned?'Unpin card':'Pin card',()=>{void this.setCardPinned(host,item);});const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';const restart=action('Restart agent…',()=>this.openAgentRestart(host,item));restart.disabled ||= !!item.acp;restart.title=item.acp?'ACP restart/resume is not verified':'';this.cardMenu.replaceChildren(edit,pin,restart,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
+    const edit=action('Edit card',()=>this.openCardEditor(host,item));const pin=action(item.card?.pinned?'Unpin card':'Pin card',()=>{void this.setCardPinned(host,item);});const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';const restart=action('Restart agent…',()=>this.openAgentRestart(host,item));restart.disabled ||= !!item.acp;restart.title=item.acp?'ACP restart/resume is not verified':'';const mode=action('Switch connection mode…',()=>this.openModeSwitch(host,item));mode.disabled ||= item.agent!=='codex';mode.title=item.agent==='codex'?'Resume the same Codex conversation in '+(item.acp?'native':'ACP')+' mode':'Codex only; Claude and pi resume handoffs are not verified';this.cardMenu.replaceChildren(edit,pin,restart,mode,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
   }
   private async setCardPinned(host:Host,item:Item){const instance=item.attention?.instance;if(!instance)return;try{await this.cardEditor.setPinned({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,...(item.acp?{acp:item.acp.broker}:{}),label:agentTitle(item)},!item.card?.pinned);}catch(error){this.feedback.dataset.error='true';this.feedback.textContent=`${String(error)} Refresh this card before trying again.`;}}
   private openCardEditor(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected'){this.feedback.textContent='Refresh this agent before editing its card.';return;}void this.cardEditor.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,...(item.acp?{acp:item.acp.broker}:{}),label:agentTitle({...item,card:undefined})});}
