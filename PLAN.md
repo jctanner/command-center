@@ -9,13 +9,13 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0128: release compact launcher](docs/tasks/current/0128-release-compact-launcher.md) — commit, push and frontend-only deployment authorized.
+- [Task0128: release compact launcher](docs/tasks/done/0128-release-compact-launcher.md) — committed/pushed/deployed; four access paths/assets and unchanged backend/tmux PIDs verified.
 
-- [Task0127: compact Start agent modal](docs/tasks/done/0127-compact-agent-launch-modal.md) — complete; responsive grouped fields, persistent actions, clear advanced summaries;71 browser cases pass, not deployed.
+- [Task0127: compact Start agent modal](docs/tasks/done/0127-compact-agent-launch-modal.md) — complete; responsive grouped fields, persistent actions, clear advanced summaries;71 browser cases pass; deployed in task0128.
 
 - [Task0126: Start agent modal reviews](docs/tasks/done/0126-start-agent-modal-independent-reviews.md) — complete; independent reviews agree on compact grouping and persistent actions; bugs0053/0054 recorded.
 
-- [Task0125: ACP file-link context](docs/tasks/done/0125-acp-file-link-context.md) — fixed/deployed frontend only; CC-75 menu and HTML verified, source uncommitted.
+- [Task0125: ACP file-link context](docs/tasks/done/0125-acp-file-link-context.md) — fixed/deployed frontend only; CC-75 menu and HTML verified; committed/pushed in task0128.
 
 - [Task0124: release file downloads](docs/tasks/done/0124-release-file-downloads.md) — committed/pushed/deployed; four binary access paths and unchanged tmux processes verified.
 
