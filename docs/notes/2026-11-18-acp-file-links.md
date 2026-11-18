@@ -1,0 +1,3 @@
+# ACP file-link correction
+
+Task[0125](../tasks/done/0125-acp-file-link-context.md) fixes bug[0052](../bugs/fixed/0052-acp-file-actions-and-relative-paths.md): ACP lacked file-download context; home/relative worktree artifact names resolved incorrectly. Shared conservative reference handling and native media actions now work in both chats.30 browser checks passed, plus read-only live CC-75 menu and actual HTML Preview verification. Frontend-only correction is live on all four paths, backend/pane processes unchanged. No agent messages/acknowledgements or service restart. Source remains uncommitted/unpushed; details stay private in.local.

@@ -13,6 +13,7 @@ export class AgentLauncher {
   private dialog = element('dialog');private protocol=element('select');private nativeProvider='codex';private acpReceipt?:{host:string;connection_revision:string;broker:string;endpoint:string;provider?:string};
   private containerPrepared?:{token:string;broker:string;endpoint:string;path:string;provider:string;container_review:unknown};private containerProfiles:ContainerProfile[]=[];private containerAdvanced=element('details');private containerEditor=new ContainerConfigEditor(()=>{this.invalidate();this.update();});
   private containerProfile=element('select');private containerHelp=element('small');private profileGeneration=0;
+  private dismiss=element('button','×');private locationSummary=element('p');private sessionOptions=element('details');private environmentOptions=element('details');private permissionOptions=element('details');private sessionSummary=element('summary');private environmentSummary=element('summary');private permissionSummary=element('summary');
   private machine = element('select');
   private project = element('select');
   private path = element('input');
@@ -49,38 +50,30 @@ export class AgentLauncher {
       const saved = JSON.parse(localStorage.getItem('cc.pending-agent-launch.v1') || 'null');
       if (saved && typeof saved.host === 'string' && typeof saved.revision === 'string' && /^[a-f0-9]{64}$/.test(saved.endpoint) && /^[a-f0-9-]{36}$/.test(saved.id)) this.receipt = saved;
     } catch { /* Storage is optional; in-page recovery remains available. */ }
-    this.dialog.className = 'agent-launch-dialog'; this.dialog.setAttribute('aria-label', 'Start an agent');
-    const heading = element('h2', 'Start an agent');
-    const intro = element('p', 'Choose where to work. Projects are shared with Files.');
-    const fields = element('div'); fields.className = 'agent-launch-fields';
-    const label = (text: string, control: HTMLElement) => { const l = element('label', text); l.append(control); fields.append(l); };
-    this.machine.setAttribute('aria-label', 'Agent machine'); this.project.setAttribute('aria-label', 'Agent project');
-    this.path.setAttribute('aria-label', 'Project directory'); this.path.placeholder = '/absolute/directory or ~/project';
-    this.model.setAttribute('aria-label', 'Agent model'); this.model.placeholder = 'Harness default'; this.model.maxLength = 200; this.model.autocomplete = 'off';
-    this.provider.setAttribute('aria-label', 'Agent provider'); this.conversation.setAttribute('aria-label', 'Start or resume');this.destination.setAttribute('aria-label','Agent tmux destination');
-    for (const value of ['codex', 'claude', 'pi']) { const o = element('option', value === 'codex' ? 'Codex' : value === 'pi' ? 'pi' : 'Claude'); o.value = value; this.provider.append(o); }
-    const gooseOption=new Option('Goose','goose');this.provider.append(gooseOption);
-    this.pin.type = 'checkbox'; this.name.placeholder = 'Optional project name'; this.name.setAttribute('aria-label', 'Pinned project name');
-    const protocol=this.protocol;protocol.setAttribute('aria-label','Agent connection protocol');protocol.append(new Option('Native tmux (default)','native'),new Option('ACP broker · Claude','acp'),new Option('ACP broker · Codex','acp-codex'),new Option('ACP container · Goose','acp-goose'));label('Connection protocol',protocol);protocol.onchange=()=>{this.invalidate();if(protocol.value.startsWith('acp')){if(!this.provider.closest('label')!.hidden)this.nativeProvider=this.provider.value;this.provider.value=protocol.value==='acp-goose'?'goose':protocol.value==='acp-codex'?'codex':'claude';this.conversation.replaceChildren(new Option('New conversation',''));this.model.value='';this.preTrust.checked=false;this.approvalPolicy.value='';}else this.provider.value=this.nativeProvider;this.update();if(protocol.value==='acp-goose')void this.loadContainerProfiles();if(!this.projects&&this.host())void this.loadProjects();else if(protocol.value==='native'&&this.path.value)void this.prepare();};
-    this.containerProfile.setAttribute('aria-label','Goose container profile');label('Reviewed container profile',this.containerProfile);this.containerProfile.parentElement!.append(this.containerHelp);this.containerProfile.onchange=()=>{this.invalidate();this.resetContainerEditor();this.update();};const summary=element('summary','Advanced container options (this launch only)');this.containerAdvanced.className='container-launch-options';this.containerAdvanced.append(summary,this.containerEditor.element);fields.append(this.containerAdvanced);
-    label('Machine', this.machine); label('Project', this.project); label('Directory', this.path); label('Agent', this.provider); label('Model (optional)', this.model);
-    this.venv.setAttribute('aria-label','Python venv');this.venv.placeholder='None, .venv or /absolute/venv';this.venv.maxLength=4096;label('Python venv (optional)',this.venv);this.rememberVenv.type='checkbox';const remember=element('label','Remember venv for this project');remember.className='agent-launch-pin';remember.prepend(this.rememberVenv);fields.append(remember,element('small','Uses the venv for commands the agent runs. Does not source activation scripts. Remembering a venv also pins the project.'));
-    fields.append(element('small', 'Enter a model name or alias, or leave blank for no override.'));
-    this.approvalPolicy.setAttribute('aria-label','Codex approval policy');
-    this.approvalPolicy.append(new Option('Harness default',''),new Option('Automatic review (workspace-write)','approve-for-me'));
-    label('Codex approval policy',this.approvalPolicy);
-    fields.append(element('small','Automatic review uses --approve-for-me and keeps the workspace-write sandbox. Requires a supported Codex version.'));
-    this.preTrust.type='checkbox';this.preTrust.setAttribute('aria-label','Trust exact directory for this launch');label('Trust exact directory for this launch (Claude/Codex; default off)',this.preTrust);fields.append(element('small','Preauthorizes one guarded native folder-trust confirmation for this launch only. Wider repository scopes require separate review. No trust-file edits or permission bypass.'));
-    this.preTrust.onchange=()=>{this.invalidate();this.update();};
-    label('Tmux destination',this.destination);this.sessionName.setAttribute('aria-label','Named tmux session');this.sessionName.placeholder='work';this.sessionName.maxLength=64;label('Session name (create or reuse)',this.sessionName);
-    label('Conversation', this.conversation);
-    this.initialPrompt.setAttribute('aria-label','Initial prompt');this.initialPrompt.rows=5;this.initialPrompt.maxLength=24000;this.initialPrompt.placeholder='What should the agent work on?';this.promptHelp.id='agent-launch-prompt-help';this.initialPrompt.setAttribute('aria-describedby',this.promptHelp.id);
-    label('Initial prompt (optional)',this.initialPrompt);fields.append(this.promptHelp);this.initialPrompt.oninput=()=>this.update();
-    const pinLabel = element('label', 'Keep this project in Files and the launcher'); pinLabel.className = 'agent-launch-pin'; pinLabel.prepend(this.pin); fields.append(pinLabel, this.name);
-    this.feedback.setAttribute('role', 'status'); this.context.hidden = true;
-    const actions = element('div'); actions.className = 'agent-launch-actions'; this.start.className = 'primary';
-    for (const b of [this.check, this.start, this.recover, this.another, this.close]) b.type = 'button';
-    actions.append(this.check, this.start, this.recover, this.another, this.close); this.dialog.append(heading, intro, fields, this.feedback, this.context, actions); document.body.append(this.dialog);
+    this.dialog.className = 'agent-launch-dialog launcher-compact'; this.dialog.setAttribute('aria-label', 'Start an agent');
+    const header=element('div');header.className='launcher-header';const titles=element('div');titles.append(element('h2','Start an agent'),element('p','Choose where to work and what to run.'));this.dismiss.type='button';this.dismiss.className='launcher-dismiss';this.dismiss.setAttribute('aria-label','Close launch dialog');this.dismiss.onclick=()=>this.close.click();
+    const body=element('div');body.className='launcher-body';const fields=element('div');fields.className='agent-launch-fields launcher-fields';body.append(fields);
+    const label=(text:string,control:HTMLElement,parent:HTMLElement=fields)=>{const l=element('label',text);l.append(control);parent.append(l);return l;};
+    const help=(control:HTMLElement,text:string,id:string)=>{const note=element('small',text);note.id=id;note.className='launcher-help';control.setAttribute('aria-describedby',id);control.closest('label')!.append(note);return note;};
+    this.machine.setAttribute('aria-label','Agent machine');this.project.setAttribute('aria-label','Agent project');this.path.setAttribute('aria-label','Project directory');this.path.placeholder='/absolute/directory or ~/project';
+    this.model.setAttribute('aria-label','Agent model');this.model.placeholder='Harness default';this.model.maxLength=200;this.model.autocomplete='off';this.provider.setAttribute('aria-label','Agent provider');this.conversation.setAttribute('aria-label','Start or resume');this.destination.setAttribute('aria-label','Agent tmux destination');
+    for(const [value,title]of [['codex','Codex'],['claude','Claude'],['pi','pi'],['goose','Goose']])this.provider.append(new Option(title,value));
+    this.pin.type='checkbox';this.name.placeholder='Optional project name';this.name.setAttribute('aria-label','Pinned project name');
+    const protocol=this.protocol;protocol.setAttribute('aria-label','Agent connection protocol');protocol.append(new Option('Native tmux (default)','native'),new Option('ACP broker · Claude','acp'),new Option('ACP broker · Codex','acp-codex'),new Option('ACP container · Goose','acp-goose'));const connection=label('Connection',protocol,header);connection.className='launcher-connection';header.prepend(titles);header.append(this.dismiss);
+    protocol.onchange=()=>{this.invalidate();if(protocol.value.startsWith('acp')){if(!this.provider.closest('label')!.hidden)this.nativeProvider=this.provider.value;this.provider.value=protocol.value==='acp-goose'?'goose':protocol.value==='acp-codex'?'codex':'claude';this.conversation.replaceChildren(new Option('New conversation',''));this.model.value='';this.preTrust.checked=false;this.approvalPolicy.value='';}else this.provider.value=this.nativeProvider;this.feedback.textContent=protocol.value==='acp-goose'?'Choose a profile, then review its container settings.':protocol.value==='native'?'Check the project before starting.':`${this.provider.value==='codex'?'Codex':'Claude'} ACP · configuration is checked when you start.`;this.update();if(protocol.value==='acp-goose')void this.loadContainerProfiles();if(!this.projects&&this.host())void this.loadProjects();else if(protocol.value==='native'&&this.path.value)void this.prepare();};
+    label('Machine',this.machine).className='launcher-machine';label('Agent',this.provider).className='launcher-provider';label('Model (optional)',this.model).className='launcher-model';help(this.model,'Blank uses the harness default.','agent-launch-model-help');
+    label('Project',this.project).className='launcher-project';label('Conversation',this.conversation).className='launcher-conversation';label('Directory',this.path).className='launcher-directory';this.locationSummary.className='launcher-location';fields.append(this.locationSummary);
+    this.containerProfile.setAttribute('aria-label','Goose container profile');label('Reviewed container profile',this.containerProfile).className='launcher-container-profile';this.containerProfile.parentElement!.append(this.containerHelp);this.containerProfile.onchange=()=>{this.invalidate();this.resetContainerEditor();this.update();};
+    this.initialPrompt.setAttribute('aria-label','Initial prompt');this.initialPrompt.rows=4;this.initialPrompt.maxLength=24000;this.initialPrompt.placeholder='What should the agent work on?';label('Initial prompt (optional)',this.initialPrompt).className='launcher-prompt';this.promptHelp.id='agent-launch-prompt-help';this.promptHelp.className='launcher-help';this.initialPrompt.setAttribute('aria-describedby',this.promptHelp.id);this.initialPrompt.closest('label')!.append(this.promptHelp);this.initialPrompt.oninput=()=>this.update();
+    const options=element('div');options.className='launcher-option-groups';fields.append(options);for(const [group,summary,cls]of [[this.sessionOptions,this.sessionSummary,'launcher-session'],[this.environmentOptions,this.environmentSummary,'launcher-environment'],[this.permissionOptions,this.permissionSummary,'launcher-permissions']]as const){group.className='launcher-options '+cls;group.append(summary);options.append(group);}
+    label('Tmux destination',this.destination,this.sessionOptions);this.sessionName.setAttribute('aria-label','Named tmux session');this.sessionName.placeholder='work';this.sessionName.maxLength=64;label('Session name (create or reuse)',this.sessionName,this.sessionOptions);
+    this.venv.setAttribute('aria-label','Python venv');this.venv.placeholder='None, .venv or /absolute/venv';this.venv.maxLength=4096;label('Python venv (optional)',this.venv,this.environmentOptions);help(this.venv,'Used for commands the agent runs; activation scripts are not sourced.','agent-launch-venv-help');
+    this.rememberVenv.type='checkbox';const remember=label('Remember venv for this project',this.rememberVenv,this.environmentOptions);remember.className='agent-launch-pin launcher-checkbox';remember.prepend(this.rememberVenv);help(this.rememberVenv,'Remembering also pins the project.','agent-launch-remember-help');
+    const pinLabel=label('Keep this project in Files and the launcher',this.pin,this.environmentOptions);pinLabel.className='agent-launch-pin launcher-checkbox';pinLabel.prepend(this.pin);this.environmentOptions.append(this.name);
+    this.approvalPolicy.setAttribute('aria-label','Codex approval policy');this.approvalPolicy.append(new Option('Harness default',''),new Option('Automatic review (workspace-write)','approve-for-me'));label('Codex approval policy',this.approvalPolicy,this.permissionOptions);help(this.approvalPolicy,'Automatic review keeps the workspace-write sandbox and requires CLI support.','agent-launch-policy-help');
+    this.preTrust.type='checkbox';this.preTrust.setAttribute('aria-label','Trust exact directory for this launch');const trust=label('Trust exact directory for this launch',this.preTrust,this.permissionOptions);trust.className='agent-launch-pin launcher-checkbox';trust.prepend(this.preTrust);help(this.preTrust,'Default off. Applies only to this launch; wider scopes and other permissions still need review.','agent-launch-trust-help');this.preTrust.onchange=()=>{this.invalidate();this.update();};
+    const summary=element('summary','Advanced container options (this launch only)');this.containerAdvanced.className='container-launch-options';this.containerAdvanced.append(summary,this.containerEditor.element);fields.append(this.containerAdvanced);
+    this.feedback.setAttribute('role','status');this.context.hidden=true;body.append(this.context);const footer=element('div');footer.className='launcher-footer';const actions=element('div');actions.className='agent-launch-actions';this.start.className='primary';for(const button of [this.check,this.start,this.recover,this.another,this.close])button.type='button';actions.append(this.check,this.recover,this.another,this.close,this.start);footer.append(this.feedback,actions);this.dialog.append(header,body,footer);document.body.append(this.dialog);
     this.machine.onchange = () => { this.preTrust.checked=false;void this.loadProjects(); };
     this.project.onchange = () => { this.preTrust.checked=false;this.invalidate(); const manual = this.project.value === ''; this.path.value = this.project.value; this.venv.value=this.projects?.projects.find(p=>p.path===this.project.value)?.python_venv||'';this.rememberVenv.checked=false; this.path.readOnly = !manual; this.pin.checked = false; this.name.value = this.projects?.projects.find(p => p.path === this.project.value)?.name || ''; this.update(); if (!manual) void this.prepare(); };
     this.path.oninput = () => { this.preTrust.checked=false;this.invalidate(); this.update(); };
@@ -88,7 +81,7 @@ export class AgentLauncher {
     this.model.oninput = () => { this.invalidate(); this.feedback.textContent = 'Model changed. Check project to continue.'; this.update(); };
     this.model.onchange = () => { if (this.path.value.trim()) void this.prepare(); };
     this.approvalPolicy.onchange = () => { this.invalidate(); this.update(); if (this.path.value.trim()) void this.prepare(); };
-    this.provider.onchange = () => { this.preTrust.checked=false;this.approvalPolicy.value = ''; this.model.value = ''; this.invalidate(); if (this.path.value.trim()) void this.prepare(); };
+    this.provider.onchange = () => { this.preTrust.checked=false;this.approvalPolicy.value = ''; this.model.value = ''; this.invalidate();this.update(); if (this.path.value.trim()) void this.prepare(); };
     this.destination.onchange=()=>{this.invalidate();this.update();if(this.path.value.trim()&&this.destination.value!=='named')void this.prepare();};this.sessionName.oninput=()=>{this.invalidate();this.update();};
     this.conversation.onchange = () => this.update(); this.pin.onchange = () => this.update();
     this.check.onclick = () => { if(this.protocol.value==='acp-goose')void this.prepareContainer();else void this.prepare(); }; this.start.onclick = () => { void this.launch(); };
@@ -97,7 +90,7 @@ export class AgentLauncher {
     this.another.onclick = () => { if (!this.busy && this.checkedReceipt) { const host = this.receipt?.host; this.clearReceipt();this.acpReceipt=undefined;localStorage.removeItem('cc.acp.launch.v1'); this.checkedReceipt = false; this.invalidate(); this.dialog.close(); void this.open(host); } };
     this.dialog.addEventListener('cancel', e => { if (this.busy) e.preventDefault(); });
     try{const saved=JSON.parse(localStorage.getItem('cc.acp.launch.v1')||'null');if(saved&&typeof saved.host==='string'&&typeof saved.connection_revision==='string'&&typeof saved.broker==='string'&&typeof saved.endpoint==='string')this.acpReceipt=saved;}catch{}
-    if(this.acpReceipt&&!this.receipt)this.protocol.value=this.acpReceipt.provider==='goose'?'acp-goose':this.acpReceipt.provider==='codex'?'acp-codex':'acp';
+    if(this.acpReceipt&&!this.receipt){this.protocol.value=this.acpReceipt.provider==='goose'?'acp-goose':this.acpReceipt.provider==='codex'?'acp-codex':'acp';this.provider.value=this.acpReceipt.provider||'claude';}
     this.update();
   }
   private saveReceipt() {
@@ -109,7 +102,7 @@ export class AgentLauncher {
   }
   async open(preferredHost?: string) {
     if (this.dialog.open) return;
-    this.preTrust.checked=false;this.dialog.showModal();
+    this.preTrust.checked=false;this.dialog.showModal();this.machine.focus({preventScroll:true});
     if (this.receipt||this.acpReceipt) { this.update(); return; }
     this.invalidate(); this.feedback.textContent = 'Loading machines…';
     try {
@@ -120,7 +113,7 @@ export class AgentLauncher {
       await this.loadProjects();
     } catch (e) { this.feedback.textContent = String(e); this.update(); }
   }
-  private invalidate() { this.containerPrepared=undefined;this.context.classList.remove('container-launch-review');this.generation++; this.prepared = undefined; this.checking = false; this.conversation.replaceChildren(); this.context.hidden = true; }
+  private invalidate() { this.containerPrepared=undefined;this.context.classList.remove('container-launch-review');this.generation++; this.prepared = undefined; this.checking = false; this.conversation.replaceChildren(); this.context.hidden = true;this.feedback.textContent=this.busy?'':this.protocol.value==='native'?'Settings changed. Check project to continue.':this.protocol.value==='acp-goose'?'Container settings changed. Review before starting.':'Configuration is checked when you start ACP.'; }
   private host() { return this.hosts.find(h => h.id === this.machine.value); }
   private url(host: string, action: string) { return `/api/v1/hosts/${encodeURIComponent(host)}/agents/${action}`; }
   private update() {
@@ -135,16 +128,21 @@ export class AgentLauncher {
     this.initialPrompt.disabled=locked||!this.projects||resumed;
     this.promptHelp.textContent=resumed?'Resume keeps the existing conversation. Send follow-up instructions from its chat.':tooLong?'Prompt is too long. Shorten it to continue.':'Sent once when starting a new conversation. Leave blank to open the agent without a prompt.';
     this.start.disabled = locked || !this.prepared || this.checking || (!resumed&&tooLong);
-    this.close.disabled = this.busy; this.close.textContent = this.receipt||this.acpReceipt ? 'Close' : 'Cancel';
+    this.dismiss.disabled=this.busy;this.close.disabled = this.busy; this.close.textContent = this.receipt||this.acpReceipt ? 'Close' : 'Cancel';
     this.another.hidden = (!this.receipt&&!this.acpReceipt) || !this.checkedReceipt; this.another.disabled = this.busy;
     this.recover.hidden = !this.receipt&&!this.acpReceipt; this.recover.disabled = this.busy;
     this.start.hidden = !!this.receipt; this.check.hidden = !!this.receipt;
     this.pin.parentElement!.hidden = !!this.projects?.projects.find(p => p.path === this.project.value && p.pinned);
     this.name.hidden = !this.pin.checked;
     for(const field of [this.provider,this.model,this.venv,this.rememberVenv,this.preTrust,this.approvalPolicy,this.destination,this.conversation]){field.closest('label')!.hidden=acp;if(acp)field.disabled=true;}
-    for(const small of this.dialog.querySelectorAll('.agent-launch-fields>small'))(small as HTMLElement).hidden=acp&&small!==this.promptHelp;
+    this.sessionOptions.hidden=this.environmentOptions.hidden=acp;this.sessionOptions.parentElement!.hidden=acp;this.permissionOptions.hidden=acp||!['codex','claude'].includes(this.provider.value);
+    this.path.closest('label')!.hidden=!!this.project.value;this.locationSummary.hidden=!this.path.value;this.locationSummary.textContent=`${this.machine.selectedOptions[0]?.textContent||'Machine'} › ${this.path.value}`;this.locationSummary.title=this.path.value;this.locationSummary.setAttribute('aria-label',this.prepared?'Resolved directory':'Working directory');
+    this.sessionSummary.textContent='Tmux · '+(this.destination.value==='named'?`Named session: ${this.sessionName.value||'choose a name'}`:this.destination.selectedOptions[0]?.textContent||'New dedicated session');
+    this.environmentSummary.textContent='Environment · '+(this.venv.value.trim()?`Python venv: ${this.venv.value.trim()}`:'No venv')+(this.rememberVenv.checked?' · remember (pins project)':this.pin.checked?' · pin project':'');
+    this.permissionSummary.textContent=`Permissions · ${this.approvalPolicy.value?'Automatic review':'Harness default'} · trust ${this.preTrust.checked?'ON (this launch)':'off'}`;this.permissionSummary.dataset.changed=String(!!this.approvalPolicy.value||this.preTrust.checked);
+    if(this.preTrust.checked)this.permissionOptions.open=true;
     this.pin.closest('label')!.hidden=acp||!!this.projects?.projects.find(p=>p.path===this.project.value&&p.pinned);this.name.hidden=acp||!this.pin.checked;
-    if(acp){this.check.hidden=true;this.start.hidden=!!this.acpReceipt;this.start.disabled=locked||!this.projects||!this.path.value.trim()||tooLong||this.protocol.value==='acp-goose'&&!this.containerProfile.value;this.initialPrompt.disabled=locked||!this.projects;this.promptHelp.textContent=tooLong?'ACP initial prompt is limited to12,000 UTF-8 bytes.':'New '+(this.provider.value==='goose'?'Goose':this.provider.value==='codex'?'Codex':'Claude')+' ACP conversation in a dedicated tmux session. Preparation runs automatically when you start. Model/resume/venv/pre-trust overrides are not yet supported.';}
+    if(acp){this.check.hidden=true;this.start.hidden=!!this.acpReceipt;this.start.disabled=locked||!this.projects||!this.path.value.trim()||tooLong||this.protocol.value==='acp-goose'&&!this.containerProfile.value;this.initialPrompt.disabled=locked||!this.projects;this.promptHelp.textContent=tooLong?'ACP initial prompt is limited to12,000 UTF-8 bytes.':'New '+(this.provider.value==='goose'?'Goose':this.provider.value==='codex'?'Codex':'Claude')+' ACP conversation. Model, resume, venv and pre-trust overrides are unavailable.';}
 
     if(this.protocol.value==='acp-goose')this.promptHelp.textContent='Goose runs only in the reviewed container, with human tool approvals. Choose a host directory permitted by the profile; review its container mounts and runtime settings before Start. No project copying or synchronization.';
     this.check.textContent=this.protocol.value==='acp-goose'?'Review container launch':'Check project';if(this.protocol.value==='acp-goose'){this.check.hidden=!!this.acpReceipt;this.check.disabled=locked||this.checking||!this.projects||!this.path.value.trim()||!this.containerProfile.value;this.start.disabled=locked||this.checking||!this.containerPrepared||tooLong;}
@@ -181,7 +179,7 @@ export class AgentLauncher {
       this.prepared = data; this.path.value = data.project;
       const fresh = element('option', 'New conversation'); fresh.value = ''; this.conversation.replaceChildren(fresh);
       for (const c of data.conversations) { const o = element('option', `${c.active ? 'Already running' : 'Resume'}: ${c.title} · ${c.timestamp ? new Date(c.timestamp).toLocaleString() : c.session.slice(0, 8)}`); o.value = c.id; o.disabled = c.active; this.conversation.append(o); }
-      this.feedback.textContent = `${data.provider === 'goose' ? 'Goose' : data.provider === 'pi' ? 'pi' : data.provider === 'claude' ? 'Claude' : 'Codex'} available · ${data.approval_policy==='approve-for-me'?'Automatic review (workspace-write) · ':''}${data.python_venv?'Python venv: '+data.python_venv+' · ':''}${data.pre_trust?'PRE-TRUST: '+data.project+' (this launch only) · ':'Folder trust: native prompt · '}${data.conversations.length} project conversation${data.conversations.length === 1 ? '' : 's'}. ${this.destination.value==='named'?'Named session: '+this.sessionName.value:(this.destination.selectedOptions[0]?.textContent||'New dedicated session')}.`;
+      this.feedback.textContent = `Ready · ${data.provider==='goose'?'Goose':data.provider==='pi'?'pi':data.provider==='claude'?'Claude':'Codex'} · ${data.conversations.length} saved conversation${data.conversations.length===1?'':'s'}${data.approval_policy==='approve-for-me'?' · Automatic review (workspace-write)':''}${data.pre_trust?' · PRE-TRUST: '+data.project:''}`;
     } catch (e) { if (generation === this.generation) this.feedback.textContent = String(e); }
     finally { if (generation === this.generation) { this.checking = false; this.update(); } }
   }
