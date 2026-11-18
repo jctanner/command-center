@@ -24,6 +24,13 @@ MAX_QUEUED = 16
 QUEUE_TTL = 24 * 60 * 60
 COMMAND_TIMEOUT = 120
 COMMAND_OUTPUT_BYTES = 32768
+NATIVE_SHELL_METHOD = "_cc/session/shell"
+NATIVE_SHELL_META = "command-center/native-shell"
+NATIVE_SHELL_EXECUTION = "codex_native_full_access"
+NATIVE_SHELL_CAPABILITY = dict(version=1,method=NATIVE_SHELL_METHOD,execution=NATIVE_SHELL_EXECUTION,contextIncluded=True,timeoutMs=120000,outputBytes=32768)
+
+def native_shell_capability(value):
+    return type(value)is dict and value==NATIVE_SHELL_CAPABILITY and all(type(value[k])is type(v)for k,v in NATIVE_SHELL_CAPABILITY.items())
 
 def start_identity(pid):
     with open('/proc/%d/stat' % pid) as f:
@@ -40,6 +47,17 @@ def display(*args, **kwargs):
     def safe(text):
         return ''.join(c if c in '\n\t' or ord(c) >= 32 and not 127 <= ord(c) <= 159 else '\ufffd' for c in str(text))
     print(*(safe(arg) for arg in args), **kwargs)
+
+def terminal_request(text,harness=False):
+    if text.startswith('/broker '):
+        command=text[len('/broker '):].strip()
+        if not command:raise ValueError('Use /broker COMMAND for explicit CC broker execution')
+        return dict(action='local_command',execution='cc_broker',text='!'+command)
+    if text=='/broker':raise ValueError('Use /broker COMMAND for explicit CC broker execution')
+    if text.lstrip().startswith('!'):
+        if harness:return dict(action='harness_command',execution=NATIVE_SHELL_EXECUTION,text=text)
+        raise ValueError('Native harness shell commands are unavailable over this ACP adapter. Nothing sent or executed. Use native mode, or /broker COMMAND for separate broker execution outside harness context.')
+    return dict(action='prompt',text=text)
 
 def send_line(stream, data):
     raw = json.dumps(data, ensure_ascii=False).encode() + b'\n'
@@ -69,6 +87,8 @@ class Broker:
         self.turn = None
         self.failure = None
         self.active_command = None
+        self.harness_shell = False
+        self.native_command = None
         directory_stat=os.stat(cwd)
         self.directory_identity=(directory_stat.st_dev,directory_stat.st_ino)
         self.host_commands = True
@@ -159,7 +179,7 @@ class Broker:
             self.expire_queue()
             queued=self.db.execute('select count(*) from prompt_queue').fetchone()[0]
             blocked=bool(queued and(self.state in ('failed','exited')or self.unresolved_sends()))
-            return dict(local_commands=self.host_commands and self.prompt_session_ready,command_running=bool(self.active_command),command_id=self.active_command['id']if self.active_command else None,command_timeout=COMMAND_TIMEOUT,command_output_limit=COMMAND_OUTPUT_BYTES,usage=self.usage,queue_blocked=blocked,prompt_queue=self.prompt_session_ready,queued_prompts=queued,queue_limit=MAX_QUEUED,instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
+            return dict(harness_commands=self.harness_shell,harness_command_scope=NATIVE_SHELL_EXECUTION if self.harness_shell else None,harness_command_running=bool(self.native_command),local_commands=self.host_commands and self.prompt_session_ready,command_running=bool(self.active_command),command_id=self.active_command['id']if self.active_command else None,command_timeout=COMMAND_TIMEOUT,command_output_limit=COMMAND_OUTPUT_BYTES,usage=self.usage,queue_blocked=blocked,prompt_queue=self.prompt_session_ready,queued_prompts=queued,queue_limit=MAX_QUEUED,instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
                         messages=list(self.messages), tools=list(self.tools.values()), permissions=list(self.permissions.values()), receipts=self.receipt_snapshot())
 
     def receipt_snapshot(self):
@@ -185,6 +205,8 @@ class Broker:
             if 'error' in reply or reply.get('result', {}).get('protocolVersion') != 1:
                 self.fail('ACP v1 initialization failed')
                 return
+            capability=reply.get('result',{}).get('agentCapabilities',{}).get('_meta',{}).get(NATIVE_SHELL_META)
+            self.harness_shell=self.provider=='codex' and self.host_commands and native_shell_capability(capability)
             if self.resume_session:
                 if reply.get('result',{}).get('agentCapabilities',{}).get('loadSession') is not True:
                     self.fail('Adapter does not support session/load; original session was not replaced with a new one');return
@@ -254,6 +276,11 @@ class Broker:
 
     def update(self, update):
         kind = update.get('sessionUpdate')
+        metadata=update.get('_meta')
+        native=metadata.get(NATIVE_SHELL_META)if type(metadata)is dict else None
+        if self.native_command and type(native)is dict and native.get('requestId')==self.native_command['id']:
+            self.native_output(native)
+
         if kind=='usage_update':
             def count(value,positive=False):
                 return value if type(value)is int and (value>0 if positive else value>=0)and value<=9007199254740991 else None
@@ -324,6 +351,8 @@ class Broker:
         if self.db.execute('select count(*) from receipts').fetchone()[0] >= 512:
             raise ValueError('Receipt capacity reached')
         value = dict(id=ident, state='claimed', kind=payload['action'], at=time.time())
+        if payload['action']=='local_command':value.update(execution='cc_broker',context_included=False)
+        elif payload['action']=='harness_command':value.update(execution=NATIVE_SHELL_EXECUTION,context_included=None)
         self.db.execute('insert into receipts values(?,?,?)', (ident, digest, json.dumps(value)))
         self.db.commit() # Intent before ACP IO; never replay claimed/uncertain receipts.
         return value, True
@@ -342,7 +371,7 @@ class Broker:
             self.finish_receipt(value,'expired')
 
     def unresolved_sends(self):
-        return any(r.get('state')in ('claimed','uncertain')or r.get('kind')in ('prompt','local_command')and r.get('state')in ('submitted','blocked')or r.get('kind')=='prompt'and r.get('state')=='failed'for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
+        return any(r.get('state')in ('claimed','uncertain')or r.get('kind')in ('prompt','local_command','harness_command')and r.get('state')in ('submitted','blocked')or r.get('kind')in ('prompt','harness_command')and r.get('state')=='failed'for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
 
     def drain_queue(self,raise_io=False):
         # Always called under the dispatcher lock, never concurrent session/prompt.
@@ -361,6 +390,8 @@ class Broker:
         self.finish_receipt(value,'claimed')
         if value['kind']=='local_command':
             self.start_local_command(value,text);return
+        if value['kind']=='harness_command':
+            self.start_native_command(value,text);return
         self.state='working';self.turn=ident
         def completed(reply):
             with self.lock:
@@ -375,6 +406,55 @@ class Broker:
         except Exception:
             self.finish_receipt(value,'uncertain');self.state='failed';self.emit()
             if raise_io:raise
+
+    def native_output(self,output):
+        if not self.native_command or type(output.get('version'))is not int or output.get('version')!=1 or output.get('execution')!=NATIVE_SHELL_EXECUTION or output.get('requestId')!=self.native_command['id']:return False
+        text=output.get('text');turn=output.get('turnId')
+        if not isinstance(text,str)or len(text.encode())>COMMAND_OUTPUT_BYTES+3 or not isinstance(turn,str)or not turn or len(turn)>512:return False
+        previous=self.native_command.get('turn')
+        if previous and previous!=turn:return False
+        self.native_command['turn']=turn
+        code=output.get('exitCode');code=code if type(code)is int else None
+        suffix=('\n[Output truncated]'if output.get('truncated')is True else'')
+        if output.get('done')is True:suffix+='\n[Exit '+str(code)+']'
+        message=next((m for m in self.messages if m['id']==self.native_command['output']),None)
+        if message is None:
+            message=dict(id=self.native_command['output'],role='assistant',kind='harness_command_output',turn=self.native_command['id'],text='');self.messages.append(message)
+        message['text']=(text or '(command produced no output)'if output.get('done')is True else text or 'Codex shell running…')+suffix
+        previous_text=self.native_command.get('displayed','')
+        chunk=text[len(previous_text):]if text.startswith(previous_text)else'\n'+text
+        try:
+            if chunk:display(chunk,end='',flush=True)
+            if output.get('done')is True and not self.native_command.get('printed_final'):
+                display(suffix,flush=True);self.native_command['printed_final']=True
+        except OSError:pass
+        self.native_command['displayed']=text
+        self.trim_messages();self.emit();return True
+
+    def start_native_command(self,value,text):
+        self.state='working';self.turn=value['id']
+        self.native_command=dict(id=value['id'],output=str(uuid.uuid4()))
+        self.messages.append(dict(id=self.native_command['output'],role='assistant',kind='harness_command_output',turn=value['id'],text='Codex is running your shell command…'))
+        def completed(reply):
+            with self.lock:
+                result=reply.get('result',{});meta=result.get('_meta',{})
+                output=meta.get(NATIVE_SHELL_META)if type(meta)is dict else None
+                valid=result.get('stopReason')in ('end_turn','cancelled') and type(output)is dict and output.get('done')is True and type(output.get('contextIncluded'))is bool and self.native_output(output)
+                if result.get('stopReason')!='cancelled':valid=valid and output.get('contextIncluded')is True and type(output.get('exitCode'))is int
+                if 'error'in reply or not valid:
+                    self.state='failed';self.failure='Native Codex shell failed or is unsupported; no model or broker fallback.'if 'error'in reply else'Native command completion could not be verified; inspect the receipt, never retry automatically.'
+                    message=next((m for m in self.messages if m['id']==self.native_command['output']),None)
+                    if message is not None:message['text']=self.failure+'\n[Completion unverified; no retry]'
+                    self.finish_receipt(value,'failed'if 'error'in reply else'uncertain')
+                else:
+                    value.update(exit_code=output.get('exitCode')if type(output.get('exitCode'))is int else None,context_included=output.get('contextIncluded')is True,output_truncated=output.get('truncated')is True)
+                    self.state='ready';self.finish_receipt(value,'cancelled'if result.get('stopReason')=='cancelled'else'completed')
+                self.native_command=None;self.permissions.clear();self.calls.clear();self.trim_messages();self.emit();self.drain_queue()
+        try:
+            self.rpc(NATIVE_SHELL_METHOD,dict(sessionId=self.session,command=text.lstrip()[1:].lstrip(),requestId=value['id'],execution=NATIVE_SHELL_EXECUTION),completed)
+            self.finish_receipt(value,'submitted')
+        except Exception:
+            self.finish_receipt(value,'uncertain');self.state='failed';self.native_command=None;self.emit()
 
     def trim_messages(self):
         self.messages=self.messages[-MAX_HISTORY:]
@@ -481,7 +561,7 @@ class Broker:
             ident = request.get('id', '')
             if action == 'handoff':
                 if self.db.execute('select id from receipts where id=?',(ident,)).fetchone():return self.receipt(ident,request)[0]
-                unresolved=any(r.get('state')in ('claimed','uncertain')or r.get('kind')=='prompt'and r.get('state')not in ('completed','cancelled','expired')or r.get('kind')=='local_command'and r.get('state')not in ('completed','cancelled','expired','failed')for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
+                unresolved=any(r.get('state')in ('claimed','uncertain')or r.get('kind')in ('prompt','harness_command')and r.get('state')not in ('completed','cancelled','expired')or r.get('kind')=='local_command'and r.get('state')not in ('completed','cancelled','expired','failed')for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
                 if self.provider not in ('codex','claude') or self.state!='ready' or self.permissions or self.active_command or unresolved or any(t.get('status')in ('pending','in_progress')for t in self.tools.values()):
                     raise ValueError('Handoff requires an idle agent with no unresolved receipts')
                 value,_=self.receipt(ident,request);self.state='switching';self.emit()
@@ -492,11 +572,12 @@ class Broker:
                 except Exception:
                     self.finish_receipt(value,'uncertain');raise
                 return value
-            if action in ('prompt','local_command'):
+            if action in ('prompt','local_command','harness_command'):
                 text = request.get('text')
                 if not isinstance(text, str) or not text.strip() or len(text.encode()) > 12000 or any(ord(c) < 32 and c not in '\n\t' for c in text):
                     raise ValueError('Prompt must be 1–12000 UTF-8 bytes without control characters')
-                if action=='local_command'and(not self.host_commands or not text.lstrip().startswith('!')or not text.lstrip()[1:].strip()):raise ValueError('Direct local commands unavailable or empty; nothing executed')
+                if action=='local_command'and(request.get('execution')!='cc_broker' or not self.host_commands or not text.lstrip().startswith('!')or not text.lstrip()[1:].strip()):raise ValueError('Direct local commands unavailable or empty; nothing executed')
+                if action=='harness_command'and(not self.harness_shell or request.get('execution')!=NATIVE_SHELL_EXECUTION or not text.lstrip().startswith('!')or not text.lstrip()[1:].strip()):raise ValueError('Native harness commands unavailable or empty; nothing executed')
                 row=self.db.execute('select id from receipts where id=?',(ident,)).fetchone()
                 self.expire_queue()
                 if not row:
@@ -507,7 +588,7 @@ class Broker:
                 value['state']='queued'
                 self.db.execute('insert into prompt_queue values(?,?,?,?,?)',(ident,self.instance,self.session,text,time.time()+QUEUE_TTL))
                 self.db.execute('update receipts set data=? where id=?',(json.dumps(value),ident));self.db.commit()
-                self.messages.append(dict(id=ident,role='user',text=text,**({'kind':'command'}if action=='local_command'else{})));self.messages=self.messages[-MAX_HISTORY:]
+                self.messages.append(dict(id=ident,role='user',text=text,**({'kind':'command'}if action=='local_command'else{'kind':'harness_command'}if action=='harness_command'else{})));self.messages=self.messages[-MAX_HISTORY:]
                 while len(json.dumps(self.messages).encode())>256000 and len(self.messages)>1:del self.messages[0]
                 self.emit();self.drain_queue(raise_io=True)
                 return json.loads(self.db.execute('select data from receipts where id=?',(ident,)).fetchone()[0])
@@ -665,7 +746,8 @@ class Broker:
                     if prompt:
                         self.terminal_action(dict(action='permission', permission=parts[1], revision=prompt['revision'], option=parts[2]))
             elif text.strip():
-                self.terminal_action(dict(action='local_command'if text.lstrip().startswith('!')else'prompt', text=text))
+                try:self.terminal_action(terminal_request(text,self.harness_shell))
+                except ValueError as error:display(str(error),flush=True)
 
     def terminal_action(self, request):
         try:

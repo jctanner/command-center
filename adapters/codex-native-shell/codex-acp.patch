@@ -1,0 +1,157 @@
+--- a/src/CodexAcpServer.ts
++++ b/src/CodexAcpServer.ts
+@@ -1,3 +1,4 @@
++import {CC_SHELL_CAPABILITY, CC_SHELL_METHOD, CC_SHELL_META, nativeShellParams, type NativeShell, NativeShellReceipts} from './CcNativeShell';
+ import * as acp from "@agentclientprotocol/sdk/unstable";
+ import {RequestError, type SessionId, type SessionModeState} from "@agentclientprotocol/sdk/unstable";
+ import {CodexEventHandler, type CompletedPlan, failureWasShownAsMessage, SessionFailureIds} from "./CodexEventHandler";
+@@ -104,7 +105,7 @@
+ } from "./ModelConfigOption";
+ import type {TokenCount} from "./TokenCount";
+ import {PromptTokenUsage, toPromptUsage, ZERO_TOKEN_COUNT} from "./TokenCount";
+-import {CodexCommands} from "./CodexCommands";
++import {CodexCommands, type CommandHandleOptions} from "./CodexCommands";
+ import {SteeringQueue} from "./SteeringQueue";
+ import type {QuotaMeta} from "./QuotaMeta";
+ import {logger} from "./Logger";
+@@ -506,6 +507,7 @@
+     private readonly getExitCode: () => number | null;
+     private readonly getRecentStderr: () => string;
+     private readonly sessionFailureIds: SessionFailureIds;
++    private readonly ccNativeShellReceipts = new NativeShellReceipts();
+     private availableCommands: CodexCommands;
+     private clientInfo: acp.Implementation | null;
+     private clientCapabilities: acp.ClientCapabilities | null;
+@@ -862,6 +864,7 @@
+                     // Presence means "this agent pushes `_auth/status_update`". It
+                     // never carries a payload, and the client never asks for one.
+                     [AUTH_STATUS_META_KEY]: authStatusCapability(),
++                    [CC_SHELL_META]: CC_SHELL_CAPABILITY,
+                 },
+             },
+             authMethods: getCodexAuthMethods(_params.clientCapabilities),
+@@ -989,6 +992,18 @@
+     }
+ 
+     async extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
++        if(method === CC_SHELL_METHOD) {
++            const shell = nativeShellParams(params);
++            return this.ccNativeShellReceipts.run(shell,async () => {
++            this.getSessionState(shell.sessionId);
++            if(this.activePrompts.has(shell.sessionId) || this.isCodexTurnRunning(shell.sessionId)) throw new Error('Wait for idle Codex');
++            shell.publish = output => new ACPSessionConnection(this.connection,shell.sessionId).update({
++                sessionUpdate:'tool_call_update',toolCallId:'cc-shell-'+shell.requestId,
++                status:output.done?'completed':'in_progress',_meta:{[CC_SHELL_META]:{...output}}});
++            const result = await this.prompt({sessionId:shell.sessionId,prompt:[]},undefined,undefined,undefined,undefined,shell);
++            return {...result,_meta:{[CC_SHELL_META]:shell.output ?? {version:1,requestId:shell.requestId,execution:CC_SHELL_CAPABILITY.execution,contextIncluded:false,done:true}}};
++            });
++        }
+         const methodRequest = { method: method, params: params };
+         if (!isExtMethodRequest(methodRequest)) {
+             return {};
+@@ -4885,6 +4900,7 @@
+         onTurnStarted?: () => void,
+         insertion?: UserMessageInsertion,
+         reservation?: TurnStartReservation,
++        nativeShell?: NativeShell,
+     ): Promise<acp.PromptResponse> {
+         assertPromptContentSupported(params);
+         this.assertInstructionsReady(params.sessionId);
+@@ -4897,7 +4913,7 @@
+             await activeReservation.wait;
+         }
+         try {
+-            return await this.promptAfterReservation(params, signal, onTurnStarted, insertion);
++            return await this.promptAfterReservation(params, signal, onTurnStarted, insertion, nativeShell);
+         } finally {
+             if (ownsReservation) {
+                 activeReservation.release();
+@@ -4910,6 +4926,7 @@
+         signal?: AbortSignal,
+         onTurnStarted?: () => void,
+         insertion?: UserMessageInsertion,
++        nativeShell?: NativeShell,
+     ): Promise<acp.PromptResponse> {
+         if (this.providerUpdate !== null) {
+             await this.waitForProviderUpdate();
+@@ -5114,7 +5131,7 @@
+                 return cancelledPromptResponse();
+             }
+ 
+-            const commandPromise = promptCommands.tryHandleCommand(params.prompt, sessionState, {
++            const commandOptions: CommandHandleOptions = {
+                 signal: activePrompt.signal,
+                 onTurnStartPending: () => {
+                     this.beginPromptTokenUsage(sessionState);
+@@ -5144,7 +5161,13 @@
+                         value,
+                     });
+                 },
+-            });
++            };
++            const commandPromise = nativeShell ? (async () => {
++                commandOptions.onTurnStartPending?.();
++                const turnCompleted = await promptClient.runNativeShell(params.sessionId,nativeShell,
++                    id => commandOptions.onTurnStarted?.(id,params.sessionId));
++                return {handled:true as const,turnCompleted};
++            })() : promptCommands.tryHandleCommand(params.prompt,sessionState,commandOptions);
+             void commandPromise.catch((err) => {
+                 if (this.activePrompts.get(params.sessionId) !== activePrompt) {
+                     logger.error(`Command for cancelled prompt ${params.sessionId} failed after prompt returned`, err);
+--- a/src/CodexAcpClient.ts
++++ b/src/CodexAcpClient.ts
+@@ -1,3 +1,4 @@
++import type {NativeShell} from './CcNativeShell';
+ import {
+     type ApiKeyAuthRequest,
+     CODEX_API_KEY_ENV_VAR,
+@@ -1412,6 +1413,10 @@
+         });
+     }
+ 
++    async runNativeShell(threadId: string, shell: NativeShell, onTurnStarted?: (id: string) => void): Promise<TurnCompletedNotification> {
++        return this.codexClient.runNativeShell(threadId,shell,onTurnStarted);
++    }
++
+     async sendPrompt(
+         request: acp.PromptRequest,
+         agentMode: AgentMode,
+--- a/src/CodexAppServerClient.ts
++++ b/src/CodexAppServerClient.ts
+@@ -1,3 +1,4 @@
++import {runNativeShell, type NativeShell} from './CcNativeShell';
+ import {type MessageConnection, RequestType} from "vscode-jsonrpc/node";
+ import {AppServerConnectionLostError, ConnectionLoss} from "./app-server-recovery/ConnectionLoss";
+ import {explainCodexError} from "./CodexErrorExplanations";
+@@ -326,6 +327,16 @@
+         return response;
+     }
+ 
++    async runNativeShell(threadId: string, shell: NativeShell, onTurnStarted?: (id: string) => void): Promise<TurnCompletedNotification> {
++        if(this.runningTurnId(threadId)) throw new Error('Wait for Codex idle before native shell execution');
++        return runNativeShell(this.connection,threadId,shell,onTurnStarted,(method,callback) => {
++            const release = this.onClientTransportEvent(event => {
++                if(event.eventType === 'notification' && event.method === method) callback(event.params);
++            });
++            return {dispose:release};
++        });
++    }
++
+     async turnStart(params: ExperimentalTurnStartParams): Promise<TurnStartResponse> {
+         return await this.sendRequest({ method: "turn/start", params: params });
+     }
+--- a/src/AcpAgentRouter.ts
++++ b/src/AcpAgentRouter.ts
+@@ -1,3 +1,4 @@
++import {CC_SHELL_METHOD, CC_SHELL_EXECUTION} from './CcNativeShell';
+ import * as acp from "@agentclientprotocol/sdk/unstable";
+ import * as acpV2 from "@agentclientprotocol/sdk/experimental/v2/unstable";
+ import {McpOverAcpHttpBridge} from "@agentclientprotocol/sdk/experimental/mcp-http";
+@@ -209,6 +210,7 @@
+         .onRequest(acp.methods.agent.providers.disable, (ctx) => getAgent().disableProvider(ctx.params))
+         .onRequest(acp.methods.agent.session.prompt, (ctx) => getAgent(ctx.params).prompt(ctx.params, ctx.signal))
+         .onNotification(acp.methods.agent.session.cancel, (ctx) => getAgent().cancel(ctx.params))
++        .onRequest(CC_SHELL_METHOD,z.object({sessionId:z.string().min(1).max(512),command:z.string().min(1).max(12000),requestId:z.string().uuid(),execution:z.literal(CC_SHELL_EXECUTION)}).strict(),ctx => getAgent(ctx.params).extMethod(CC_SHELL_METHOD,ctx.params))
+         .onRequest("authentication/status", emptyExtensionParamsParser, (ctx) => getAgent().extMethod("authentication/status", ctx.params))
+         .onRequest("authentication/logout", emptyExtensionParamsParser, (ctx) => getAgent().extMethod("authentication/logout", ctx.params))
+         .onRequest(LEGACY_SET_SESSION_MODEL_METHOD, legacySetSessionModelParamsParser, (ctx) => getAgent(ctx.params).extMethod(LEGACY_SET_SESSION_MODEL_METHOD, ctx.params))

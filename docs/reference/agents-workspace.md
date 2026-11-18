@@ -18,7 +18,7 @@ Card usage summaries show reported context use and capacity/percentage when know
 
 ## Optional ACP agents
 
-ACP brokers share the agent cards, filters, card metadata, notifications/read state and ticket context capture. Their badge identifies the protocol; selecting one opens broker-backed chat in the normal detail pane. Native launching/polling remains default. ACP launch preparation is internal to Start Claude (ACP). Prompts, permissions, cancellation and receipts use only the guarded broker path, never native terminal input. Explicit close is supported; busy-time queueing is capability-gated; unsupported general restart/resume is labeled honestly. See [ACP broker](acp-broker.md).
+ACP brokers share the agent cards, filters, card metadata, notifications/read state and ticket context capture. Their badge identifies the protocol; selecting one opens broker-backed chat in the normal detail pane. Native launching/polling remains default. ACP launch preparation is internal to Start Claude (ACP). Prompts, permissions, cancellation and receipts use only the guarded broker path, never native terminal input. Explicit close is supported; busy-time queueing is capability-gated; Restart & update broker resumes the same verified Claude/Codex ACP conversation using current deployed broker code; unsupported resume paths fail closed. See [ACP broker](acp-broker.md).
 
 
 ## Fresh Codex sessions before their first message
@@ -32,3 +32,5 @@ Once a transcript is persisted, Submitted becomes Seen only from matching user t
 Codex and Claude cards and the conversation **Details** panel offer **Switch connection mode…** for an explicitly reviewed, exact-conversation native/ACP handoff. If its adapter is missing, the dialog offers a separate pinned isolated install, followed by a fresh switch review. Claude requires Node.js >=22 for that install. Native remains default; pi conversion and old brokers without handoff capability are unsupported. See the [handoff and installer details](acp-broker.md#switching-codex-or-claude-connection-mode).
 
 ACP cards and chat consume reported usage_update context occupancy/capacity through the same meter as native agents. Context snapshots are not cumulative tokens: unknown session totals remain unknown and are excluded from token accumulation. Updates are scoped to the live broker/session; stale status and older unreported brokers remain labeled.
+
+Agent **Details** opens a centered, scrollable modal on desktop, preserving the conversation layout. Close it with Close, Escape or a backdrop click. Compact clients retain the inline expanding panel. Changing the selected agent, workspace or compact/desktop layout closes Details; unsent message drafts remain intact. Automatic conversation read acknowledgements pause while the desktop Details modal is open.

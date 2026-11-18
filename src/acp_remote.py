@@ -295,7 +295,7 @@ def main(request):
         with sqlite3.connect('file:'+file+'?mode=ro',uri=True) as db:
             has_queue=db.execute("select 1 from sqlite_master where type='table'and name='prompt_queue'").fetchone()
             query="select data from receipts where rowid in(select rowid from receipts order by rowid desc limit 40)"
-            if has_queue:query+=" or id in(select id from prompt_queue) or (json_extract(data,'$.kind')in('prompt','local_command')and json_extract(data,'$.state')in('claimed','submitted','uncertain'))"
+            if has_queue:query+=" or id in(select id from prompt_queue) or (json_extract(data,'$.kind')in('prompt','local_command','harness_command')and json_extract(data,'$.state')in('claimed','submitted','uncertain'))"
             return [json.loads(row[0])for row in db.execute(query+' order by rowid desc limit 512')]
     if action == 'inventory':
         items=main(dict(request,action='list'));out=[];started=time.monotonic();limited=False

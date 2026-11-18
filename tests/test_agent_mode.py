@@ -72,9 +72,10 @@ class ClaudeBrokerMapping(unittest.TestCase):
     def test_withdrawn_prompts_do_not_block_handoff_but_queued_or_uncertain_do(self):
         for state in ('completed','cancelled','expired'):
             self.run_observation([{'linked':True,'session':'continued-thread'}],receipts=[dict(kind='prompt',state=state)])
-        for state in ('queued','claimed','uncertain','blocked'):
-            with self.subTest(state=state),self.assertRaisesRegex(ValueError,'receipts'):
-                self.run_observation(receipts=[dict(kind='prompt',state=state)])
+        for kind in ('prompt','harness_command'):
+            for state in ('queued','claimed','uncertain','blocked'):
+                with self.subTest(kind=kind,state=state),self.assertRaisesRegex(ValueError,'receipts'):
+                    self.run_observation(receipts=[dict(kind=kind,state=state)])
 
     def test_local_command_and_queued_shell_receipts_block_handoff(self):
         with self.assertRaisesRegex(ValueError,'local command'):
@@ -118,3 +119,29 @@ class RecoveryGuards(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class BrokerRestartPlan(unittest.TestCase):
+    def plan(self, code='reviewed source', prepared=None, probe=False):
+        request=dict(mode='acp_restart',broker='old',pane='%1',_broker_code=code)
+        a={'tmux':lambda *args:'123','proc':lambda pid:(None,'start')}
+        b={'target_root':lambda req:'/broker','read_json':lambda path:{'prepared':prepared or {}},
+           'options':lambda req:dict(executable='/adapter',provider='claude',path='/project')}
+        with patch.object(mode,'broker_observation',return_value={'project':'/project','provider':'claude','session':'same'}):
+            return mode.plan(request,a,b,probe)
+
+    def test_restart_binds_exact_broker_source_and_session(self):
+        first=self.plan();second=self.plan('changed source')
+        self.assertEqual('same',first['session']);self.assertEqual('acp_restart',first['mode'])
+        self.assertNotEqual(first['broker_digest'],second['broker_digest'])
+        self.assertEqual('/adapter',first['adapter']['executable'])
+
+    def test_container_profile_restart_cannot_escape_to_host(self):
+        for key in ('profile','container','container_profile'):
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'no host fallback'):
+                self.plan(prepared={key:'managed'})
+
+    def test_changed_plan_rejects_before_any_terminal_mutation(self):
+        request={'plan':{'broker_digest':'old'},'mode':'acp_restart'}
+        with patch.object(mode,'plan',return_value={'broker_digest':'new'}),self.assertRaisesRegex(ValueError,'changed'):
+            mode.perform_start(request,{}, {},{'mutating':False})

@@ -1,0 +1,8 @@
+Command Center native shell extension: Copyright 2026 Command Center contributors.
+Apache License, Version 2.0; see the repository LICENSE.
+
+codex-acp.patch modifies agentclientprotocol/codex-acp, licensed Apache-2.0:
+https://github.com/agentclientprotocol/codex-acp
+Reviewed upstream commit: b9503aef790c5ca473348fb5580de9869bb5174a
+Upstream source/dependencies/binaries remain external; original license/notices
+must be retained when applying or distributing a built adapter.

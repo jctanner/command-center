@@ -71,6 +71,16 @@ pub(crate) struct Command {
     action: Action,
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CommandExecution {
+    CcBroker,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum NativeShellExecution {
+    CodexNativeFullAccess,
+}
+#[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 enum Action {
     Prompt {
@@ -78,6 +88,11 @@ enum Action {
     },
     LocalCommand {
         text: String,
+        execution: CommandExecution,
+    },
+    HarnessCommand {
+        text: String,
+        execution: NativeShellExecution,
     },
     CancelCommand {
         command: String,
@@ -255,9 +270,24 @@ async fn command(
     uuid(&request.id)?;
     uuid(&request.instance)?;
     let mut action = json!({"id":request.id,"instance":request.instance});
-    let local_command = matches!(&request.action, Action::LocalCommand { .. });
+    let local_command = matches!(
+        &request.action,
+        Action::LocalCommand {
+            execution: CommandExecution::CcBroker,
+            ..
+        }
+    );
+    let harness_command = matches!(
+        &request.action,
+        Action::HarnessCommand {
+            execution: NativeShellExecution::CodexNativeFullAccess,
+            ..
+        }
+    );
     match request.action {
-        Action::Prompt { text } | Action::LocalCommand { text } => {
+        Action::Prompt { text }
+        | Action::LocalCommand { text, .. }
+        | Action::HarnessCommand { text, .. } => {
             if text.trim().is_empty()
                 || text.len() > 12000
                 || text
@@ -266,11 +296,19 @@ async fn command(
             {
                 return Err(ApiError(StatusCode::BAD_REQUEST, "Invalid prompt".into()));
             }
-            action["action"] = json!(if local_command {
+            action["action"] = json!(if harness_command {
+                "harness_command"
+            } else if local_command {
                 "local_command"
             } else {
                 "prompt"
             });
+            if harness_command {
+                action["execution"] = json!("codex_native_full_access");
+            }
+            if local_command {
+                action["execution"] = json!("cc_broker");
+            }
             action["text"] = json!(text);
         }
         Action::CancelCommand { command } => {
@@ -587,9 +625,30 @@ mod tests {
         assert!(metrics["model"].is_null());
     }
     #[test]
-    fn local_commands_have_no_client_shell_directory_or_environment_overrides() {
-        let input = json!({"connection_revision":"r","instance":uuid::Uuid::new_v4().to_string(),"id":uuid::Uuid::new_v4().to_string(),"action":"local_command","text":"!pwd"});
+    fn harness_commands_require_exact_native_execution_scope() {
+        let input = json!({"connection_revision":"r","instance":uuid::Uuid::new_v4().to_string(),"id":uuid::Uuid::new_v4().to_string(),"action":"harness_command","text":"!pwd","execution":"codex_native_full_access"});
         assert!(serde_json::from_value::<Command>(input.clone()).is_ok());
+        for scope in [json!("cc_broker"), json!("sandboxed"), Value::Null] {
+            let mut wrong = input.clone();
+            wrong["execution"] = scope;
+            assert!(serde_json::from_value::<Command>(wrong).is_err());
+        }
+        for field in ["method", "cwd", "shell", "timeoutMs", "environment"] {
+            let mut wrong = input.clone();
+            wrong[field] = json!("override");
+            assert!(serde_json::from_value::<Command>(wrong).is_err());
+        }
+    }
+    #[test]
+    fn local_commands_have_no_client_shell_directory_or_environment_overrides() {
+        let input = json!({"connection_revision":"r","instance":uuid::Uuid::new_v4().to_string(),"id":uuid::Uuid::new_v4().to_string(),"action":"local_command","text":"!pwd","execution":"cc_broker"});
+        assert!(serde_json::from_value::<Command>(input.clone()).is_ok());
+        let mut missing = input.clone();
+        missing.as_object_mut().unwrap().remove("execution");
+        assert!(serde_json::from_value::<Command>(missing).is_err());
+        let mut wrong = input.clone();
+        wrong["execution"] = json!("harness");
+        assert!(serde_json::from_value::<Command>(wrong).is_err());
         for key in ["cwd", "shell", "env", "pid", "flags"] {
             let mut invalid = input.clone();
             invalid[key] = json!("untrusted override");

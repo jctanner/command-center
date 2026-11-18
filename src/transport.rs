@@ -239,7 +239,7 @@ impl Transport {
         request["_agent_code"] = serde_json::json!(include_str!("agent_remote.py"));
         request["_acp_code"] = serde_json::json!(include_str!("acp_remote.py"));
         request["_install_code"] = serde_json::json!(include_str!("acp_install.py"));
-        if request["action"] == "start" {
+        if matches!(request["action"].as_str(), Some("start" | "prepare")) {
             request["_broker_code"] = serde_json::json!(include_str!("acp_broker.py"));
         }
         self.helper_request(include_str!("agent_mode_remote.py"), request)

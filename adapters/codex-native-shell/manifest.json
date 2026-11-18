@@ -1,0 +1,37 @@
+{
+  "upstream_commit": "b9503aef790c5ca473348fb5580de9869bb5174a",
+  "package": "@agentclientprotocol/codex-acp",
+  "version": "2.7.0",
+  "license": "Apache-2.0",
+  "files": {
+    "src/CodexAcpServer.ts": {
+      "before": "9247101ff6086fe1ac6898eba1e71895cd9d530af73779d39ad692f21494a8d9",
+      "after": "c3c3a2cf72df51387487f5449505276a5068013b68ea560f30a6ef86d5ba2b58"
+    },
+    "src/CodexAcpClient.ts": {
+      "before": "550b1f5a2f1d01d5f4935ede51acd39ded21edb718df25507fe064f87c8f102f",
+      "after": "a2c9de1d6df547d8f60a3fd81c2670245940130ac2575e2aa7b7762bd8061abe"
+    },
+    "src/CodexAppServerClient.ts": {
+      "before": "7b7f03ec21470ebeee4c1a9838f646c6d2182e6be028846757a6b389d00dc267",
+      "after": "41e87b323431b3c6a8834b18dacf4e1c2722ca2c8d00742f773bae816025c787"
+    },
+    "src/AcpAgentRouter.ts": {
+      "before": "c396c22c3f92a715046097940888c80e4cd10ca0b10687b31d82bc71f6f9cf44",
+      "after": "3138f2649fad4ea5d19e6be7ed44690fad08973cf4d28f8b8455d2b196c6bf8b"
+    },
+    "package.json": {
+      "before": "0626a71895bcc49ef0b09b7ea4a0905c9cbf680c0a55651842f081904af735f2",
+      "after": "0626a71895bcc49ef0b09b7ea4a0905c9cbf680c0a55651842f081904af735f2"
+    },
+    "package-lock.json": {
+      "before": "3ce5f947c385150f72d86814dbee69d4df77873a42a00f9db324f7870830571c",
+      "after": "3ce5f947c385150f72d86814dbee69d4df77873a42a00f9db324f7870830571c"
+    }
+  },
+  "patch_sha256": "e6f722685dc9cc3d3257e0ecbf95cbe6db90fa0bb7c3d9440b3ae8147cfdfb03",
+  "additions": {
+    "src/CcNativeShell.ts": "CcNativeShell.ts",
+    "src/__tests__/CodexACPAgent/cc-native-shell.test.ts": "cc-native-shell.test.ts"
+  }
+}

@@ -1158,3 +1158,13 @@ button:disabled { opacity: .5; cursor: default; }
 @media (max-width:900px), (pointer:coarse) and (max-width:1100px) {
  .agent-composer .composer-input>button[data-command=true]::before {content:'>_';font-size:16px;}
 }
+
+.agent-details-dialog { width:min(760px,calc(100vw - 48px)); max-height:calc(100dvh - 64px); padding:0; overflow:auto; }
+.agent-details-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; padding:20px 24px; border-bottom:1px solid var(--cc-border); }
+.agent-details-heading h2 { margin:0; font-size:20px; }
+.agent-details-heading p { margin:6px 0 0; color:var(--cc-muted); font-size:13px; overflow-wrap:anywhere; }
+.agent-details-heading>button { flex-shrink:0; }
+.agent-details-dialog>.queue-agent-metadata { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; max-height:none; overflow:visible; padding:24px; margin:0; border:0; background:transparent; }
+.agent-details-dialog>.queue-agent-metadata>:is(p,small,select,details,div) { grid-column:1 / -1; min-width:0; overflow-wrap:anywhere; }
+.agent-details-dialog>.queue-agent-metadata>button { min-height:38px; text-align:left; padding:10px 12px; }
+.agent-details-dialog>.queue-agent-metadata pre { white-space:pre-wrap; overflow-wrap:anywhere; }

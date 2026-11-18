@@ -9,6 +9,22 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0113: deploy agent Details modal](docs/tasks/done/0113-deploy-agent-details-modal.md) — deployed; four paths verified, backend and agents unchanged.
+
+- [Task0112: desktop agent Details modal](docs/tasks/done/0112-desktop-agent-details-modal.md) — implemented and verified (44 browser tests); desktop modal, compact drawer retained; deployed in task0113.
+
+- [Task0111: deploy Codex native shell](docs/tasks/done/0111-deploy-codex-native-shell.md) — p15 adapter installed/deployed; four paths healthy, existing agents unchanged.
+
+- [Task0110: Codex native shell adapter](docs/tasks/done/0110-codex-native-shell-adapter.md) — real Codex0.166.0 test passed; p15 install/rollout completed in task0111.
+
+- [Task0109: deploy command ownership clarification](docs/tasks/done/0109-deploy-command-owner-clarification.md) — deployed; all access paths healthy, agents unchanged.
+
+- [Task0108: harness-owned shell commands](docs/tasks/blocked/0108-harness-owned-shell-commands.md) — ownership correction tested locally; actual native ACP execution blocked on adapter integration.
+
+- [Task0107: deploy ACP restart](docs/tasks/done/0107-deploy-acp-broker-restart.md) — deployed; four access paths healthy, agent pane PIDs unchanged.
+
+- [Task0106: ACP restart updates broker](docs/tasks/done/0106-acp-restart-upgrades-broker.md) — deployed; direct reviewed ACP resume updates broker.
+
 - [Task0105: release ACP local commands](docs/tasks/done/0105-release-acp-local-commands.md) — 0ec1840 pushed/deployed; four access paths healthy, pane PIDs unchanged.
 
 - [Task0104: ACP local commands](docs/tasks/done/0104-acp-local-command-execution.md) — 0ec1840 deployed; existing-broker upgrades remain explicit.

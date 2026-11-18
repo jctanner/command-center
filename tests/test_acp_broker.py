@@ -34,6 +34,7 @@ class BrokerTests(unittest.TestCase):
         source=FAKE
         if self._testMethodName=='test_claude_load_replays_large_image_without_retaining_bytes':
             source=source.replace("session=m['params']['sessionId'];result={}", "session=m['params']['sessionId'];result={};print(json.dumps({'jsonrpc':'2.0','method':'session/update','params':{'sessionId':session,'update':{'sessionUpdate':'agent_message_chunk','content':{'type':'image','data':'X'*(2*1024*1024),'mimeType':'image/png'}}}}),flush=True)")
+        if self._testMethodName.startswith('test_codex_native'):(self.root/'enable-native-shell').touch()
         executable.write_text(source)
         executable.chmod(0o700)
         if self._testMethodName.startswith(('test_codex_','test_claude_')):
@@ -53,7 +54,71 @@ class BrokerTests(unittest.TestCase):
         self.temp.cleanup()
 
     def action(self, **kwargs):
-        return dict(instance=self.broker.instance, id=str(uuid.uuid4()), **kwargs)
+        return dict(instance=self.broker.instance, id=str(uuid.uuid4()), **({'execution':'cc_broker'} if kwargs.get('action')=='local_command' else {'execution':'codex_native_full_access'} if kwargs.get('action')=='harness_command' else {}), **kwargs)
+
+    def test_bang_is_not_silently_executed_by_broker_terminal(self):
+        for text in ('!pwd','  !echo hello','!!pwd'):
+            with self.subTest(text=text),self.assertRaisesRegex(ValueError,'Nothing sent or executed'):
+                MOD.terminal_request(text)
+        self.assertEqual({'action':'local_command','execution':'cc_broker','text':'!pwd'},MOD.terminal_request('/broker pwd'))
+        self.assertEqual({'action':'prompt','text':'hello'},MOD.terminal_request('hello'))
+        with self.assertRaises(ValueError):MOD.terminal_request('/broker')
+        with self.assertRaises(ValueError):MOD.terminal_request('/broker   ')
+        self.assertFalse(self.broker.snapshot()['harness_commands'])
+        with self.assertRaisesRegex(ValueError,'unavailable'):
+            self.broker.dispatch(dict(instance=self.broker.instance,id=str(uuid.uuid4()),action='local_command',text='!pwd'))
+
+    def test_native_capability_rejects_unknown_versions_scopes_and_wrong_types(self):
+        self.assertTrue(MOD.native_shell_capability(dict(MOD.NATIVE_SHELL_CAPABILITY)))
+        for changes in ({'version':True},{'version':2},{'execution':'cc_broker'},{'contextIncluded':False},{'outputBytes':1},{'method':'session/prompt'},{'extra':'unsupported'}):
+            with self.subTest(changes=changes):self.assertFalse(MOD.native_shell_capability(dict(MOD.NATIVE_SHELL_CAPABILITY,**changes)))
+
+    def test_codex_native_command_uses_extension_and_native_context_not_broker_shell(self):
+        self.assertTrue(self.broker.snapshot()['harness_commands'])
+        request=self.action(action='harness_command',text='!pwd')
+        with unittest.mock.patch.object(MOD.subprocess,'Popen',side_effect=AssertionError('broker must not spawn a shell')),unittest.mock.patch.object(MOD,'display')as rendered:
+            self.broker.dispatch(request);wait(lambda:self.broker.dispatch(request)['state']=='completed')
+        self.assertEqual(1,''.join(str(call.args[0])for call in rendered.call_args_list).count('[Exit 0]'))
+        self.assertEqual('harness_command',MOD.terminal_request('!pwd',True)['action'])
+        receipt=self.broker.dispatch(request);self.assertTrue(receipt['context_included']);self.assertEqual('codex_native_full_access',receipt['execution'])
+        self.assertTrue(any(m.get('kind')=='harness_command_output'and str(self.root)in m['text']for m in self.broker.messages))
+        calls=[json.loads(l)for l in(self.root/'native-fixture-calls.jsonl').read_text().splitlines()]
+        self.assertEqual(['_cc/session/shell'],[v['method']for v in calls]);self.assertEqual(self.broker.session,calls[0]['params']['sessionId'])
+        self.broker.dispatch(request);self.assertEqual(1,len((self.root/'native-fixture-calls.jsonl').read_text().splitlines()))
+        normal=self.action(action='prompt',text='native-context');self.broker.dispatch(normal);wait(lambda:self.broker.dispatch(normal)['state']=='completed')
+        self.assertTrue(any(m.get('turn')==normal['id']and str(self.root)in m['text']for m in self.broker.messages))
+
+    def test_codex_native_command_queues_cancels_and_rejects_foreign_output(self):
+        request=self.action(action='harness_command',text='!hold-native');self.broker.dispatch(request)
+        wait(lambda:bool(self.broker.native_command.get('turn')))
+        before=json.dumps(self.broker.messages)
+        with self.broker.lock:self.broker.update({'sessionUpdate':'tool_call_update','_meta':{MOD.NATIVE_SHELL_META:{'requestId':str(uuid.uuid4()),'text':'secret'}}})
+        self.assertEqual(before,json.dumps(self.broker.messages))
+        queued=self.action(action='harness_command',text='!pwd');self.assertEqual('queued',self.broker.dispatch(queued)['state'])
+        self.broker.dispatch(self.action(action='cancel'));wait(lambda:self.broker.dispatch(request)['state']=='cancelled');wait(lambda:self.broker.dispatch(queued)['state']=='completed')
+
+    def test_codex_native_output_survives_bounded_history_eviction(self):
+        request=self.action(action='harness_command',text='!hold-native');self.broker.dispatch(request)
+        wait(lambda:bool(self.broker.native_command.get('turn')))
+        with self.broker.lock:self.broker.messages.clear()
+        self.broker.dispatch(self.action(action='cancel'));wait(lambda:self.broker.dispatch(request)['state']=='cancelled')
+        self.assertTrue(any(m.get('kind')=='harness_command_output'and'[Exit -15]'in m['text']for m in self.broker.messages))
+
+    def test_codex_native_success_requires_persisted_context_proof(self):
+        request=self.action(action='harness_command',text='!missing-context');self.broker.dispatch(request)
+        wait(lambda:self.broker.dispatch(request)['state']=='uncertain')
+        self.assertEqual('failed',self.broker.state)
+        self.assertIsNone(self.broker.dispatch(request)['context_included'])
+
+    def test_codex_native_command_invalid_proof_holds_followups_without_fallback(self):
+        request=self.action(action='harness_command',text='!invalid-proof');self.broker.dispatch(request);wait(lambda:self.broker.dispatch(request)['state']=='uncertain')
+        self.assertEqual('failed',self.broker.state)
+        self.assertEqual(['_cc/session/shell'],[json.loads(l)['method']for l in(self.root/'native-fixture-calls.jsonl').read_text().splitlines()])
+
+    def test_native_command_unavailable_never_becomes_prompt_or_broker_execution(self):
+        with self.assertRaisesRegex(ValueError,'unavailable'):
+            self.broker.dispatch(self.action(action='harness_command',text='!pwd'))
+        self.assertEqual([],self.broker.messages)
 
     def completed_command(self,text):
         request=self.action(action='local_command',text=text)
@@ -65,7 +130,7 @@ class BrokerTests(unittest.TestCase):
         original=self.broker.rpc
         self.broker.rpc=Mock(wraps=original)
         request,receipt=self.completed_command('!pwd')
-        self.assertEqual('completed',receipt['state']);self.assertEqual(0,receipt['exit_code'])
+        self.assertEqual('completed',receipt['state']);self.assertEqual(0,receipt['exit_code']);self.assertEqual('cc_broker',receipt['execution']);self.assertFalse(receipt['context_included'])
         output=next(m for m in self.broker.messages if m.get('kind')=='command_output')
         self.assertEqual(str(self.root)+'\n\n[Exit 0]',output['text'])
         self.broker.rpc.assert_not_called();self.assertEqual('ready',self.broker.state)

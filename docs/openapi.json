@@ -7594,6 +7594,11 @@
                 "minLength": 1,
                 "maxLength": 12000,
                 "description": "Explicit user shell input including leading !. Noninteractive /bin/sh -c in the immutable broker project directory; never forwarded to the model. Capability-gated; queues in FIFO with prompts."
+              },
+              "execution": {
+                "type": "string",
+                "const": "cc_broker",
+                "description": "Explicit broker ownership acknowledgement; required so old cached bang composers fail without executing."
               }
             },
             "required": [
@@ -7601,8 +7606,10 @@
               "instance",
               "id",
               "action",
-              "text"
-            ]
+              "text",
+              "execution"
+            ],
+            "description": "Explicit CC broker /bin/sh subprocess execution. Not native harness shell mode; stdout/stderr are not added to model context. Never an implicit fallback for ! input."
           },
           {
             "type": "object",
@@ -7634,6 +7641,46 @@
               "action",
               "command"
             ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connection_revision": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "action": {
+                "const": "harness_command"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 12000,
+                "description": "Explicit user shell input including leading !. Noninteractive /bin/sh -c in the immutable broker project directory; never forwarded to the model. Capability-gated; queues in FIFO with prompts."
+              },
+              "execution": {
+                "type": "string",
+                "const": "codex_native_full_access",
+                "description": "Explicit acknowledgement of native Codex shell full-account execution, outside the model sandbox."
+              }
+            },
+            "required": [
+              "connection_revision",
+              "instance",
+              "id",
+              "action",
+              "text",
+              "execution"
+            ],
+            "description": "Native Codex thread/shellCommand via the versioned negotiated CC adapter extension. No model turn/start and no broker subprocess fallback. Native provider owns shell, transcript/context and cancellation."
           }
         ]
       },
@@ -7713,7 +7760,8 @@
               "close",
               "cancel_queued",
               "local_command",
-              "cancel_command"
+              "cancel_command",
+              "harness_command"
             ]
           },
           "at": {
@@ -7730,6 +7778,21 @@
           },
           "output_truncated": {
             "type": "boolean"
+          },
+          "execution": {
+            "type": "string",
+            "enum": [
+              "cc_broker",
+              "codex_native_full_access"
+            ],
+            "description": "Explicit executor/scope for command receipts; native scope is full-account Codex execution."
+          },
+          "context_included": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "False for broker subprocesses; null until native provider proof; true only after verified native source=userShell completion."
           }
         },
         "required": [
@@ -7803,7 +7866,9 @@
                   "type": "string",
                   "enum": [
                     "command",
-                    "command_output"
+                    "command_output",
+                    "harness_command",
+                    "harness_command_output"
                   ]
                 }
               }
@@ -7936,7 +8001,7 @@
           },
           "local_commands": {
             "type": "boolean",
-            "description": "Explicit host-local command capability; false/missing on old brokers or container profiles. No model/native fallback."
+            "description": "Explicit CC broker subprocess capability, not harness-owned shell mode. Output is outside provider context. Never automatically use this for a harness ! command."
           },
           "command_running": {
             "type": "boolean"
@@ -7955,6 +8020,24 @@
           "command_output_limit": {
             "type": "integer",
             "const": 32768
+          },
+          "harness_commands": {
+            "type": "boolean",
+            "description": "True only for the exact versioned Codex native-shell capability. Unsupported/stock adapters false; never infer from provider name or bang text."
+          },
+          "harness_command_scope": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "codex_native_full_access",
+              null
+            ]
+          },
+          "harness_command_running": {
+            "type": "boolean",
+            "description": "A guarded native shell request is active, separate from model token generation and CC broker subprocess execution."
           }
         }
       },
@@ -8097,8 +8180,10 @@
             "type": "string",
             "enum": [
               "native",
-              "acp"
-            ]
+              "acp",
+              "acp_restart"
+            ],
+            "description": "acp_restart directly replaces a verified idle ACP broker with current deployed source and resumes the exact conversation, preserving the tmux pane; explicit review and confirmation required."
           },
           "broker": {
             "type": "string",
@@ -8148,8 +8233,10 @@
             "type": "string",
             "enum": [
               "native",
-              "acp"
-            ]
+              "acp",
+              "acp_restart"
+            ],
+            "description": "acp_restart directly replaces a verified idle ACP broker with current deployed source and resumes the exact conversation, preserving the tmux pane; explicit review and confirmation required."
           },
           "provider": {
             "type": "string",

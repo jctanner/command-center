@@ -121,7 +121,7 @@ fn pending(
     Ok(())
 }
 fn public(r: &Receipt) -> Value {
-    json!({"id":r.id,"state":r.state,"note":r.note,"provider":r.plan["provider"],"session":r.plan["session"],"project":r.plan["project"],"installation":if r.plan["installation"].is_object(){json!({"package":r.plan["installation"]["package"],"version":r.plan["installation"]["version"],"prefix":r.plan["installation"]["prefix"],"scripts":false,"registry":r.plan["installation"]["registry"],"timeout_seconds":r.plan["installation"]["timeout_seconds"]})}else{Value::Null},"command":if r.plan["installation"].is_object() {json!(["CC isolated install",format!("{}@{}",r.plan["installation"]["package"].as_str().unwrap_or(""),r.plan["installation"]["version"].as_str().unwrap_or("")),r.plan["installation"]["prefix"]])} else if r.target.mode=="acp" {json!([r.plan["adapter"]["executable"],"ACP session/load",r.plan["session"]])} else {r.plan["command"].clone()},"python_venv":r.plan["python_venv"],"mode":r.target.mode})
+    json!({"id":r.id,"state":r.state,"note":r.note,"provider":r.plan["provider"],"session":r.plan["session"],"project":r.plan["project"],"installation":if r.plan["installation"].is_object(){json!({"package":r.plan["installation"]["package"],"version":r.plan["installation"]["version"],"prefix":r.plan["installation"]["prefix"],"scripts":false,"registry":r.plan["installation"]["registry"],"timeout_seconds":r.plan["installation"]["timeout_seconds"]})}else{Value::Null},"command":if r.plan["installation"].is_object() {json!(["CC isolated install",format!("{}@{}",r.plan["installation"]["package"].as_str().unwrap_or(""),r.plan["installation"]["version"].as_str().unwrap_or("")),r.plan["installation"]["prefix"]])} else if matches!(r.target.mode.as_str(),"acp"|"acp_restart") {json!([r.plan["adapter"]["executable"],"ACP session/load",r.plan["session"]])} else {r.plan["command"].clone()},"python_venv":r.plan["python_venv"],"mode":r.target.mode})
 }
 pub(crate) async fn prepare(
     State(s): State<Arc<AppState>>,
@@ -136,11 +136,14 @@ pub(crate) async fn prepare(
     if m.connection_revision != target.connection_revision {
         return Err(conflict("Machine changed; refresh agents"));
     }
-    if !matches!(target.mode.as_str(), "native" | "acp")
+    if !matches!(target.mode.as_str(), "native" | "acp" | "acp_restart")
         || target.instance.len() != 64
         || !target.instance.bytes().all(|c| c.is_ascii_hexdigit())
     {
         return Err(conflict("Invalid switch target"));
+    }
+    if target.mode == "acp_restart" && target.broker.is_none() {
+        return Err(conflict("Broker restart requires a verified ACP target"));
     }
     if let Some(broker) = &target.broker {
         let raw = target
@@ -527,7 +530,7 @@ pub(crate) async fn status(
             .ok_or_else(|| conflict("No verified replacement process"))?
             .to_owned();
         r.state = "complete".into();
-        r.note="Connection mode switched; exact conversation resumed. Card settings retained; old drafts and message receipts remain for review.".into();
+        r.note=if r.target.mode == "acp_restart" { "Broker restarted and updated; exact conversation resumed. Card settings retained; old drafts and message receipts remain for review." } else { "Connection mode switched; exact conversation resumed. Card settings retained; old drafts and message receipts remain for review." }.into();
         let saved = r.clone();
         s.board
             .with(move |c| {

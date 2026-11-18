@@ -1,0 +1,9 @@
+# Task0112: Desktop agent Details modal
+
+Owner CC dev; claimed2026-11-17; State done. Human requests desktop Details as a modal while retaining compact expanding panels. Share implementation for native/ACP chat with existing compactViewport policy; reuse/move live controls rather than clone them, preserve drafts/history/targets, accessible close/Escape/focus return and bounded scrolling. Close on agent/process/workspace/viewport changes. No terminal traffic or automatic read acknowledgement behind modal. Frontend build and focused desktop/mobile behavior checks; no backend/deploy/commit/push requested.
+
+Implementation: shared AgentDetails controller moves the original controls into a native desktop dialog, with contextual heading, two-column actions, bounded scrolling, Close/Escape/backdrop dismissal and focus return. Compact clients use the existing inline controls. Selection/process/workspace/layout changes collapse the panel; drafts and conversation dimensions are preserved. Native and ACP automatic read state excludes an open desktop modal. No backend or transport changes.
+
+Validation: frontend TypeScript/Vite build passed (`npm --prefix web run build -- --outDir dist-next`); existing chunk-size warning remains. Focused native Playwright test passed (1/1): desktop modal, Escape/backdrop/focus, resize and compact inline controls. ACP launch tests cover both harnesses at desktop/mobile sizes, preserved draft and chat geometry, nested actions and no terminal WebSockets. Synthetic desktop screenshot inspected at `test-results/agent-details-claude-desktop.png`. Full focused-suite result recorded below. No deployment or commit/push performed.
+
+Full focused Playwright run: 43/43 passed (`acp.spec.ts agent-mode.spec.ts`), plus the separately added native Details regression 1/1. Git diff whitespace check passed.
