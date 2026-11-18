@@ -178,6 +178,33 @@ impl Transport {
     }
     // No daemon is installed. The SSH helper takes bounded JSON on stdin;
     // filenames/content never become remote shell syntax or command arguments.
+    pub(crate) async fn download_process(
+        &self,
+        request: serde_json::Value,
+    ) -> Result<tokio::process::Child> {
+        let (program, args) = self.command_invocation(
+            "python3",
+            vec!["-c".into(), include_str!("file_download_remote.py").into()],
+            false,
+        )?;
+        let mut child = Command::new(program)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .context("starting file download transport")?;
+        let mut body = serde_json::to_vec(&request)?;
+        ensure!(body.len() < 32768, "download request exceeds limit");
+        body.push(b'\n');
+        let mut input = child.stdin.take().context("download stdin unavailable")?;
+        tokio::time::timeout(Duration::from_secs(15), input.write_all(&body))
+            .await
+            .context("download connection timed out")??;
+        drop(input);
+        Ok(child)
+    }
     pub(crate) async fn file_request(
         &self,
         request: serde_json::Value,

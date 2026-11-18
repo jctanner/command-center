@@ -7,6 +7,7 @@ mod attachments;
 mod attention;
 mod board;
 pub mod config;
+mod downloads;
 mod email;
 mod features;
 mod filesystem;
@@ -60,6 +61,7 @@ pub struct AppState {
     pub terminal_slots: Arc<Semaphore>,
     connection_tests: Semaphore,
     file_slots: Arc<Semaphore>,
+    download_slots: Arc<Semaphore>,
     queue: queue::Queue,
     token_metrics: token_metrics::Metrics,
     questions: questions::Questions,
@@ -123,6 +125,7 @@ impl AppState {
             terminal_slots: Arc::new(Semaphore::new(16)),
             connection_tests: Semaphore::new(4),
             file_slots: Arc::new(Semaphore::new(8)),
+            download_slots: Arc::new(Semaphore::new(2)),
             runtime,
         }))
     }
@@ -287,6 +290,7 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
             "/api/v1/hosts/{host}/projects",
             get(filesystem::projects).put(filesystem::pin),
         )
+        .route("/api/v1/hosts/{host}/file/download", get(downloads::get))
         .route("/api/v1/hosts/{host}/fs", get(filesystem::list))
         .route(
             "/api/v1/hosts/{host}/file",

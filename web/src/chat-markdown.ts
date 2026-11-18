@@ -1,12 +1,13 @@
+import {bindFileActions,fileActionsButton} from './file-actions';
 import { highlightChatCode } from './chat-code';
 import { markdownContent } from './markdown';
 
-export type ChatFileContext={project:string;machine:string;openFile:(path:string)=>Promise<void>};
-function filePath(href:string,project:string):string|null{
+export type ChatFileContext={project:string;machine:string;download?:{host:string;connection:string};openFile:(path:string)=>Promise<void>};
+function filePath(href:string,project:string,literal=false):string|null{
   try{
     const raw=href.trim();
     if(!raw||raw.startsWith('#')||/^[a-z][a-z0-9+.-]*:/i.test(raw)||raw.startsWith('//'))return null;
-    const path=decodeURIComponent(raw.split(/[?#]/,1)[0]);
+    const path=literal?raw:decodeURIComponent(raw.split(/[?#]/,1)[0]);
     if(!path||path.startsWith('//')||path.startsWith('~')||/^[a-z][a-z0-9+.-]*:/i.test(path)||/[\\\x00-\x1f\x7f-\x9f]/.test(path))return null;
     if(!path.startsWith('/')&&!project.startsWith('/'))return null;
     const parts:string[]=[];
@@ -16,11 +17,11 @@ function filePath(href:string,project:string):string|null{
     return '/'+parts.join('/');
   }catch{return null;}
 }
-function fileButton(content:HTMLElement,files:ChatFileContext,path:string):HTMLButtonElement{
+function fileButton(content:HTMLElement,files:ChatFileContext,path:string):HTMLElement{
   const button=document.createElement('button');button.type='button';button.className='chat-file-link';
   if(content.tagName==='CODE')button.append(content);else button.append(...content.childNodes);
   button.title=`${files.machine} › ${path}`;button.setAttribute('aria-label',`Open ${button.textContent||'file'} in Files on ${files.machine}`);
-  button.onclick=()=>{void files.openFile(path).catch(error=>{if(!button.isConnected)return;const note=document.createElement('span');note.className='chat-file-error';note.setAttribute('role','status');note.textContent=String(error);button.after(note);});};return button;
+  button.onclick=()=>{void files.openFile(path).catch(error=>{if(!button.isConnected)return;const note=document.createElement('span');note.className='chat-file-error';note.setAttribute('role','status');note.textContent=String(error);button.after(note);});};if(files.download){const location={...files.download,path,machine:files.machine,open:()=>button.click()};bindFileActions(button,location);const group=document.createElement('span');group.className='chat-file-reference';group.append(button,fileActionsButton(location));return group;}return button;
 }
 export function chatMarkdown(text: string,files?:ChatFileContext): HTMLElement {
   const body = document.createElement('div'); body.className = 'agent-markdown';
@@ -36,10 +37,11 @@ export function chatMarkdown(text: string,files?:ChatFileContext): HTMLElement {
     if(code.closest('pre,a,button'))continue;
     const value=code.textContent||'';
     // Whole, file-like tokens only; don't reinterpret code, URLs or shell paths.
-    if(!/^(?:\/|\.\.?\/)?[a-z0-9_@+.-]+(?:\/[a-z0-9_@+.-]+)*\.(?:html?|md|markdown|txt|json|jsonl|ya?ml|toml|csv|ts|tsx|js|jsx|py|rs|sh|css|sql|log|svg|png|jpe?g|gif|webp|pdf)$/i.test(value))continue;
-    const path=filePath(value,files.project);if(!path)continue;
+    if(!(/^(?:\/|\.\.?\/)?[a-z0-9_@+.-]+(?:\/[a-z0-9_@+.-]+)*\.(?:html?|md|markdown|txt|json|jsonl|ya?ml|toml|csv|ts|tsx|js|jsx|py|rs|sh|css|sql|log|svg|png|jpe?g|gif|webp|pdf|mp4|webm|mov|mkv|m4v|avi|mp3|wav|flac|ogg|zip|gz|tar|7z)$/i.test(value)||/^\/[^\\\x00-\x1f\x7f]+\.(?:html?|md|txt|json|png|jpe?g|gif|webp|svg|pdf|mp4|webm|mov|mkv|m4v|avi|mp3|wav|flac|ogg|zip|gz|tar|7z)$/i.test(value)))continue;
+    const path=filePath(value,files.project,true);if(!path)continue;
     const button=fileButton(code.cloneNode(true) as HTMLElement,files,path);code.replaceWith(button);
   }
+  if(files){const walker=document.createTreeWalker(body,NodeFilter.SHOW_TEXT);const nodes:Text[]=[];while(walker.nextNode()){const n=walker.currentNode as Text;if(!n.parentElement?.closest('pre,code,a,button'))nodes.push(n);}for(const n of nodes){const text=n.data,pattern=/(?:^|[\s(])(\/(?!\/)[^\s<>"'`(),;]+\.(?:html?|md|txt|json|png|jpe?g|gif|webp|pdf|mp4|webm|mov|mkv|m4v|avi|mp3|wav|flac|ogg|zip|gz|tar|7z))(?=$|[\s),.;])/gi;let end=0,matched=false;const fragment=document.createDocumentFragment();for(const m of text.matchAll(pattern)){const start=m.index!+m[0].length-m[1].length,path=filePath(m[1],files.project,true);if(!path)continue;fragment.append(text.slice(end,start));const label=document.createElement('span');label.textContent=m[1];fragment.append(fileButton(label,files,path));end=start+m[1].length;matched=true;}if(matched){fragment.append(text.slice(end));n.replaceWith(fragment);}}}
   for (const table of body.querySelectorAll('table')) {
     const scroll = document.createElement('div'); scroll.className = 'chat-table-scroll';
     scroll.tabIndex = 0; scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', 'Message table');

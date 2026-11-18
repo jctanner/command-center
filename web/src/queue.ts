@@ -632,7 +632,7 @@ export class AttentionQueue {
         if(focused&&!focused.startsWith('run:'))groupMembers.add(focused);
         const entries: {position: number; order: number; element: HTMLElement;activity?:AgentActivityEntry}[] = data.messages.map(message => {
           const article = node('article'); article.className = `agent-message ${message.role}`; article.dataset.messageId=message.id;
-          const body=message.kind?node('pre',message.text):message.role === 'assistant' ? chatMarkdown(message.text,{project:data.project||item.project,machine:h.name,openFile:path=>this.openFile({host:h.id,connection:h.connection_revision,path})}) : node('div', message.text);
+          const body=message.kind?node('pre',message.text):message.role === 'assistant' ? chatMarkdown(message.text,{project:data.project||item.project,machine:h.name,download:{host:h.id,connection:h.connection_revision},openFile:path=>this.openFile({host:h.id,connection:h.connection_revision,path})}) : node('div', message.text);
           if(message.kind)body.classList.add('agent-command-text');else if(message.role==='user')body.classList.add('agent-user-text');
           article.append(node('small', `${message.kind==='command'?'Command':message.kind==='command_output'?'Command output':message.role === 'user' ? 'You' : 'Agent'}${message.timestamp ? ` · ${new Date(message.timestamp).toLocaleString()}` : ''}`), body);
           if (message.truncated) article.append(node('small', 'Message shortened for this view. Open the CLI for the full text.'));

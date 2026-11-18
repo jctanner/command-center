@@ -4036,6 +4036,111 @@
           }
         }
       }
+    },
+    "/hosts/{host}/file/download": {
+      "get": {
+        "operationId": "downloadMachineFile",
+        "summary": "Stream a regular file as a browser attachment over shared local/SSH transport.",
+        "description": "8 GiB maximum, two simultaneous downloads, bounded 64 KiB chunks, 30-second idle and 15-minute transfer limit. No server-side copy or browser Blob accumulation. Regular files only; editor text limit does not apply. Filename uses RFC5987 UTF-8. Files/machine endpoint changes or disconnects abort and close this request transport; no automatic retry or Range/resume support. HTML is forced attachment with nosniff/sandbox/no-store.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "description": "Literal absolute path or ~/path on this machine, readable by its configured account. Any regular binary/text file; project roots are not access fences."
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact observed machine connection revision; changes before/during transfer abort it."
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-fA-F0-9]{64}$"
+            },
+            "description": "Optional x-cc-file-version from an earlier download; rejects changed files before binary data."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw file bytes. Native browser download, not an editor or inline preview.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "attachment; filename fallback and UTF-8 filename*."
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer",
+                  "maximum": 8589934592
+                }
+              },
+              "x-cc-file-version": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account cannot read the file or origin guard rejected the request."
+          },
+          "404": {
+            "description": "Machine/file no longer exists."
+          },
+          "409": {
+            "description": "Machine endpoint or requested file version changed."
+          },
+          "413": {
+            "description": "File exceeds 8 GiB."
+          },
+          "415": {
+            "description": "Not a regular file (devices, directories and FIFOs cannot be downloaded)."
+          },
+          "429": {
+            "description": "Two downloads are already active."
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {

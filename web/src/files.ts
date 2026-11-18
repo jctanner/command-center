@@ -1,3 +1,4 @@
+import {bindFileActions,fileActionsButton,fileDownloadUrl} from './file-actions';
 import {htmlPreview} from './html-preview';
 import { basicSetup } from 'codemirror';
 import { Compartment, EditorState } from '@codemirror/state';
@@ -90,7 +91,7 @@ export class FileWorkspace {
       </aside>
       <section id="file-editor" aria-label="File editor">
         <nav id="file-tabs" aria-label="Open files"></nav>
-        <div class="editor-toolbar"><button id="toggle-browser" aria-pressed="true">Browser</button><span id="editor-location">Choose a file to begin</span><span id="markdown-modes" role="group" aria-label="Markdown view" hidden><button id="markdown-source" aria-pressed="true">Source</button><button id="markdown-rendered" aria-pressed="false">Preview</button></span><button id="reload-file">Reload</button><button id="save-file">Save</button></div>
+        <div class="editor-toolbar"><button id="toggle-browser" aria-pressed="true">Browser</button><span id="editor-location">Choose a file to begin</span><span id="markdown-modes" role="group" aria-label="Markdown view" hidden><button id="markdown-source" aria-pressed="true">Source</button><button id="markdown-rendered" aria-pressed="false">Preview</button></span><a id="download-file" class="file-download-link" download hidden>Download</a><button id="reload-file">Reload</button><button id="save-file">Save</button></div>
         <div id="file-conflict" hidden><p id="file-conflict-message"></p><div><button id="review-disk">Review disk version</button><button id="reload-disk">Reload from disk</button><button id="overwrite-file">Save my version</button></div><textarea id="disk-preview" aria-label="Disk version" readonly hidden></textarea></div>
         <div id="editor-placeholder">Open a project directory, or browse anywhere.<br>Each file stays attached to its machine.</div>
         <div id="code-editor" hidden></div><div id="markdown-preview" tabindex="0" role="region" aria-label="Rendered Markdown" hidden></div><div id="html-preview" tabindex="0" role="region" aria-label="HTML preview" hidden><p>Untrusted HTML · sandboxed static preview. Scripts, network resources and navigation are disabled.</p><div id="html-preview-content"></div></div><div id="editor-status" role="status"></div>
@@ -247,7 +248,7 @@ export class FileWorkspace {
   private entries(container: HTMLElement, host: string, data: Listing) {
     const nodes = data.entries.map(entry => {
       if (entry.kind === 'directory') return this.folder(host, entry.path, entry.name + (entry.symlink ? ' ↗' : ''));
-      const b = button(entry.name + (entry.symlink ? ' ↗' : ''), () => void this.openFile(host, entry.path)); b.className = 'file-entry'; b.title = `${this.machineName(host)} › ${entry.path}`; b.disabled = entry.kind !== 'file'; return b;
+      const b = button(entry.name + (entry.symlink ? ' ↗' : ''), () => void this.openFile(host, entry.path)); b.className = 'file-entry'; b.title = `${this.machineName(host)} › ${entry.path}`; b.disabled = entry.kind !== 'file';if(entry.kind==='file'){const location={host,connection:data.connection_revision,path:entry.path,machine:this.machineName(host),open:()=>b.click()};bindFileActions(b,location);const row=document.createElement('div');row.className='file-entry-row';row.append(b,fileActionsButton(location));return row;}return b;
     });
     container.replaceChildren(...nodes);
     if (!nodes.length) container.textContent = 'Empty directory';
@@ -338,6 +339,7 @@ export class FileWorkspace {
 
     const available = doc && this.hosts.find(h => h.id === doc.host)?.connection_revision === doc.connection;
     el('editor-location').textContent = doc ? `${this.machineName(doc.host)} › ${doc.path}` : 'Choose a file to begin';
+    const download=el<HTMLAnchorElement>('download-file');download.hidden=!doc?.connection||!available;if(doc?.connection&&available){download.href=fileDownloadUrl({host:doc.host,connection:doc.connection,path:doc.path});download.download=basename(doc.path);download.title='Download the saved file from '+this.machineName(doc.host);}
     el<HTMLButtonElement>('save-file').disabled = !doc || !available || !this.dirty(doc) || !!doc.readonly || doc.saving;
     el<HTMLButtonElement>('reload-file').disabled = !doc || !available || doc.saving;
     el('editor-status').textContent = !doc ? '' : doc.saving ? 'Saving…' : !available ? 'Machine connection unavailable or changed. Your editor text is preserved.' : doc.readonly ? `Read-only · ${doc.readonly}` : this.dirty(doc) ? 'Unsaved changes · Ctrl/Cmd+S to save' : 'Saved · UTF-8';

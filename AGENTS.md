@@ -329,3 +329,7 @@ Native tmux launching and polling remain default. ACP broker launching is explic
 ## Native Goose
 
 The human retired the initial container-only rule on2026-11-18. Native Goose installation/use is allowed, including rhlaptop; native tmux is separate from optional container ACP. Read docs/reference/native-goose.md. Verify foreground process and explicit session ID/unique launch name; shared SQLite access, cwd or newest row never proves association. Read bounded native SQLite pages without writes/migrations and use session-row positions for receipts. Keep provider activity Unknown without lifecycle evidence; the guarded empty-editor/stdin-read capability permits requested message dispatch, not inferred Ready or approvals. Preserve native provider-home/venv identity on resume/restart. No implicit installation, credential configuration or conversion during launch.
+
+## Binary file downloads
+
+Chat/Files download actions use the originating machine ID, observed connection revision and literal path through the shared transport. Stream bounded raw bytes to browser attachments; do not reuse the1 MiB text editor API, accumulate browser Blobs or SCP/cache copies. Keep regular-file/size/time/capacity guards, per-chunk endpoint checks, final file/transport verification and producer cleanup on disconnect. Force attachment/nosniff/sandbox/no-store, encode UTF-8 filenames safely and preserve drafts/terminal isolation. See docs/reference/file-downloads.md.
