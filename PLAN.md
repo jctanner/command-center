@@ -9,6 +9,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0116: CC-103 named agent launch sessions](docs/tasks/done/0116-named-agent-launch-sessions.md) — deployed; named native sessions/resumes verified; four access paths and unchanged pane PIDs.
+
+- [Task0115: deploy quiet ACP receipts](docs/tasks/done/0115-deploy-quiet-acp-receipts.md) — deployed; four access paths and unchanged process identities verified.
+
+- [Task0114: quiet ACP submitted receipts](docs/tasks/done/0114-quiet-acp-submitted-receipts.md) — repeated success labels removed; build and two browser cases pass; deployed in task0115.
+
 - [Task0113: deploy agent Details modal](docs/tasks/done/0113-deploy-agent-details-modal.md) — deployed; four paths verified, backend and agents unchanged.
 
 - [Task0112: desktop agent Details modal](docs/tasks/done/0112-desktop-agent-details-modal.md) — implemented and verified (44 browser tests); desktop modal, compact drawer retained; deployed in task0113.

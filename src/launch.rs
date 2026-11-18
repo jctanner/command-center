@@ -38,6 +38,7 @@ pub(crate) struct Prepare {
     pub(crate) model: Option<String>,
     pub(crate) approval_policy: Option<String>,
     pub(crate) target_session: Option<String>,
+    pub(crate) target_session_name: Option<String>,
     pub(crate) window_name: Option<String>,
     pub(crate) card_name: Option<String>,
 }
@@ -76,7 +77,7 @@ pub(crate) async fn prepare(
         machine
             .transport
             .agent_request(
-                json!({"action":"launch_options", "pre_trust":query.pre_trust, "path":query.path,"provider":query.provider,"model":query.model,"approval_policy":query.approval_policy,"target_session":query.target_session,"window_name":query.window_name,"card_name":query.card_name,"python_venv":query.python_venv,"project_venvs":machine.config.projects.iter().filter_map(|p| p.python_venv.as_ref().map(|v| (p.path.clone(), v.clone()))).collect::<HashMap<_,_>>()}),
+                json!({"action":"launch_options", "pre_trust":query.pre_trust, "path":query.path,"provider":query.provider,"model":query.model,"approval_policy":query.approval_policy,"target_session":query.target_session,"target_session_name":query.target_session_name,"window_name":query.window_name,"card_name":query.card_name,"python_venv":query.python_venv,"project_venvs":machine.config.projects.iter().filter_map(|p| p.python_venv.as_ref().map(|v| (p.path.clone(), v.clone()))).collect::<HashMap<_,_>>()}),
             )
             .await?,
     )?;
@@ -227,6 +228,9 @@ pub(crate) async fn start(
                     approval_policy: prepared["approval_policy"].as_str().map(str::to_owned),
                     prompt: binding.prompt.clone(),
                     target_session: prepared["target_session"].as_str().map(str::to_owned),
+                    target_session_name: prepared["target_session_name"]
+                        .as_str()
+                        .map(str::to_owned),
                     window_name: prepared["window_name"].as_str().map(str::to_owned),
                     card_name: prepared["card_name"].as_str().map(str::to_owned),
                     card_initialized: false,

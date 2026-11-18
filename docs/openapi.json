@@ -2685,6 +2685,21 @@
               "default": false,
               "description": "Explicit human consent for one guarded native Claude/Codex folder-trust decision during this exact launch. Default off; bound into preparation and durable run. Rejects pi, wider repository scope, changed process/endpoint/directory, prior decisions and unsupported prompts. No CC trust-file edits, bypass flags or retries."
             }
+          },
+          {
+            "name": "target_session_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+              "description": "Native launch only. Mutually exclusive with target_session in preparation. Resolve exact name to an existing stable session identity or create-by-name; Start rejects changed resolution. cc-view- prefix reserved."
+            }
           }
         ],
         "responses": {
@@ -2714,6 +2729,23 @@
                       "type": "boolean",
                       "default": false,
                       "description": "Explicit human consent for one guarded native Claude/Codex folder-trust decision during this exact launch. Default off; bound into preparation and durable run. Rejects pi, wider repository scope, changed process/endpoint/directory, prior decisions and unsupported prompts. No CC trust-file edits, bypass flags or retries."
+                    },
+                    "target_session_name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+                      "description": "Native launch only. Mutually exclusive with target_session in preparation. Resolve exact name to an existing stable session identity or create-by-name; Start rejects changed resolution. cc-view- prefix reserved."
+                    },
+                    "target_session": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Resolved existing stable session ID, or null when a new session will be created."
                     }
                   }
                 }
@@ -4215,6 +4247,16 @@
           "pre_trust_result": {
             "type": "object",
             "description": "Guarded preparation-consent outcome; may include its durable public trust receipt. Submission is not verified provider acceptance."
+          },
+          "target_session_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+            "description": "Native launch only. Mutually exclusive with target_session in preparation. Resolve exact name to an existing stable session identity or create-by-name; Start rejects changed resolution. cc-view- prefix reserved."
           }
         },
         "required": [
@@ -4597,6 +4639,16 @@
             "type": "boolean",
             "default": false,
             "description": "Explicit human consent for one guarded native Claude/Codex folder-trust decision during this exact launch. Default off; bound into preparation and durable run. Rejects pi, wider repository scope, changed process/endpoint/directory, prior decisions and unsupported prompts. No CC trust-file edits, bypass flags or retries."
+          },
+          "target_session_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+            "description": "Native launch only. Mutually exclusive with target_session in preparation. Resolve exact name to an existing stable session identity or create-by-name; Start rejects changed resolution. cc-view- prefix reserved."
           }
         },
         "description": "Explicitly reviewed launch input. Dedicated detached session by default, or a new detached window in target_session. Preparation grants expire after 120 seconds. Never invent flags, shell commands or approval bypasses.",

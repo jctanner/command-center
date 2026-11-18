@@ -23,6 +23,7 @@ export class AgentLauncher {
   private promptHelp = element('small');
   private conversation = element('select');
   private destination = element('select');
+  private sessionName = element('input');
   private pin = element('input');
   private name = element('input');
   private check = element('button', 'Check project');
@@ -66,7 +67,7 @@ export class AgentLauncher {
     fields.append(element('small','Automatic review uses --approve-for-me and keeps the workspace-write sandbox. Requires a supported Codex version.'));
     this.preTrust.type='checkbox';this.preTrust.setAttribute('aria-label','Trust exact directory for this launch');label('Trust exact directory for this launch (Claude/Codex; default off)',this.preTrust);fields.append(element('small','Preauthorizes one guarded native folder-trust confirmation for this launch only. Wider repository scopes require separate review. No trust-file edits or permission bypass.'));
     this.preTrust.onchange=()=>{this.invalidate();this.update();};
-    label('Tmux destination',this.destination);
+    label('Tmux destination',this.destination);this.sessionName.setAttribute('aria-label','Named tmux session');this.sessionName.placeholder='work';this.sessionName.maxLength=64;label('Session name (create or reuse)',this.sessionName);
     label('Conversation', this.conversation);
     this.initialPrompt.setAttribute('aria-label','Initial prompt');this.initialPrompt.rows=5;this.initialPrompt.maxLength=24000;this.initialPrompt.placeholder='What should the agent work on?';this.promptHelp.id='agent-launch-prompt-help';this.initialPrompt.setAttribute('aria-describedby',this.promptHelp.id);
     label('Initial prompt (optional)',this.initialPrompt);fields.append(this.promptHelp);this.initialPrompt.oninput=()=>this.update();
@@ -83,7 +84,7 @@ export class AgentLauncher {
     this.model.onchange = () => { if (this.path.value.trim()) void this.prepare(); };
     this.approvalPolicy.onchange = () => { this.invalidate(); this.update(); if (this.path.value.trim()) void this.prepare(); };
     this.provider.onchange = () => { this.preTrust.checked=false;this.approvalPolicy.value = ''; this.model.value = ''; this.invalidate(); if (this.path.value.trim()) void this.prepare(); };
-    this.destination.onchange=()=>{this.invalidate();this.update();if(this.path.value.trim())void this.prepare();};
+    this.destination.onchange=()=>{this.invalidate();this.update();if(this.path.value.trim()&&this.destination.value!=='named')void this.prepare();};this.sessionName.oninput=()=>{this.invalidate();this.update();};
     this.conversation.onchange = () => this.update(); this.pin.onchange = () => this.update();
     this.check.onclick = () => { void this.prepare(); }; this.start.onclick = () => { void this.launch(); };
     this.recover.onclick = () => { if(this.acpReceipt)void this.checkAcp();else void this.checkLaunch(); };
@@ -119,7 +120,8 @@ export class AgentLauncher {
   private url(host: string, action: string) { return `/api/v1/hosts/${encodeURIComponent(host)}/agents/${action}`; }
   private update() {
     const acp=this.protocol.value.startsWith('acp'),locked = this.busy || !!this.receipt||!!this.acpReceipt;this.protocol.disabled=locked;
-    for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.venv, this.rememberVenv, this.approvalPolicy, this.preTrust, this.destination, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
+    for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.venv, this.rememberVenv, this.approvalPolicy, this.preTrust, this.destination, this.sessionName, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
+    this.sessionName.closest('label')!.hidden=acp||this.destination.value!=='named';
     this.preTrust.disabled=locked||!this.projects||!['codex','claude'].includes(this.provider.value);
     this.approvalPolicy.disabled = locked || !this.projects || this.provider.value !== 'codex';
     this.check.disabled = locked || this.checking || !this.path.value.trim() || !this.projects;
@@ -147,7 +149,7 @@ export class AgentLauncher {
       const [data,inventory]=await Promise.all([request<Projects>(`/api/v1/hosts/${encodeURIComponent(host.id)}/projects`),request<{sessions:{id:string;name:string}[]}>(`/api/v1/hosts/${encodeURIComponent(host.id)}/inventory`).catch(()=>({sessions:[]}))]);
       if (generation !== this.generation) return;
       if (data.connection_revision !== host.connection_revision) throw new Error('Machine changed. Close and reopen the launcher.');
-      this.destination.replaceChildren(new Option('New dedicated session',''),...inventory.sessions.filter(s=>!s.name.startsWith('cc-view-')).map(s=>new Option(`New window in ${s.name} (${s.id})`,s.id)));
+      this.destination.replaceChildren(new Option('New dedicated session',''),new Option('Named session (create or reuse)','named'),...inventory.sessions.filter(s=>!s.name.startsWith('cc-view-')).map(s=>new Option(`New window in ${s.name} (${s.id})`,s.id)));
       this.projects = data;
       const projects = [...data.projects].sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name));
       this.project.replaceChildren(...projects.map(p => { const o = element('option', `${p.pinned ? '★ ' : ''}${p.name} · ${p.path}`); o.value = p.path; return o; }));
@@ -165,13 +167,13 @@ export class AgentLauncher {
       query.set('python_venv',this.venv.value.trim());query.set('pre_trust',String(this.preTrust.checked));
       if (this.model.value.trim()) query.set('model', this.model.value.trim());
       if(this.provider.value==='codex'&&this.approvalPolicy.value)query.set('approval_policy',this.approvalPolicy.value);
-      if(this.destination.value)query.set('target_session',this.destination.value);
+      if(this.destination.value==='named')query.set('target_session_name',this.sessionName.value);else if(this.destination.value)query.set('target_session',this.destination.value);
       const data = await request<Prepared>(this.url(host.id, `launch-options?${query}`));
       if (generation !== this.generation) return;
       this.prepared = data; this.path.value = data.project;
       const fresh = element('option', 'New conversation'); fresh.value = ''; this.conversation.replaceChildren(fresh);
       for (const c of data.conversations) { const o = element('option', `${c.active ? 'Already running' : 'Resume'}: ${c.title} · ${c.timestamp ? new Date(c.timestamp).toLocaleString() : c.session.slice(0, 8)}`); o.value = c.id; o.disabled = c.active; this.conversation.append(o); }
-      this.feedback.textContent = `${data.provider === 'pi' ? 'pi' : data.provider === 'claude' ? 'Claude' : 'Codex'} available · ${data.approval_policy==='approve-for-me'?'Automatic review (workspace-write) · ':''}${data.python_venv?'Python venv: '+data.python_venv+' · ':''}${data.pre_trust?'PRE-TRUST: '+data.project+' (this launch only) · ':'Folder trust: native prompt · '}${data.conversations.length} project conversation${data.conversations.length === 1 ? '' : 's'}. ${this.destination.selectedOptions[0]?.textContent||'New dedicated session'}.`;
+      this.feedback.textContent = `${data.provider === 'pi' ? 'pi' : data.provider === 'claude' ? 'Claude' : 'Codex'} available · ${data.approval_policy==='approve-for-me'?'Automatic review (workspace-write) · ':''}${data.python_venv?'Python venv: '+data.python_venv+' · ':''}${data.pre_trust?'PRE-TRUST: '+data.project+' (this launch only) · ':'Folder trust: native prompt · '}${data.conversations.length} project conversation${data.conversations.length === 1 ? '' : 's'}. ${this.destination.value==='named'?'Named session: '+this.sessionName.value:(this.destination.selectedOptions[0]?.textContent||'New dedicated session')}.`;
     } catch (e) { if (generation === this.generation) this.feedback.textContent = String(e); }
     finally { if (generation === this.generation) { this.checking = false; this.update(); } }
   }

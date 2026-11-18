@@ -21,7 +21,7 @@ class Failure(Exception):
 def fail(status, message):
     raise Failure(status, message)
 
-def tmux(request, *args, input=None):
+def tmux(request, *args, input=None, allow_empty=False):
     command = ['tmux', '-u']
     if request.get('socket'):
         command += ['-S', request['socket']]
@@ -31,6 +31,8 @@ def tmux(request, *args, input=None):
     result = subprocess.run(command + list(args), input=input, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, env=env, timeout=8)
     if result.returncode:
+        error=result.stderr.decode('utf-8',errors='replace')
+        if allow_empty and result.returncode==1 and ('no server running' in error or 'no sessions' in error or ('No such file or directory' in error and ('connecting to' in error or 'connect to' in error))):return ''
         fail(409, 'Tmux target is unavailable; refresh the agent')
     return result.stdout.decode('utf-8', errors='replace')
 
@@ -1689,10 +1691,20 @@ def launch_pre_trust(kind,value):
 
 def launch_destination(request):
     session=request.get('target_session')
+    name=request.get('target_session_name')
+    if name is not None:
+        if session:fail(400,'Choose target_session or target_session_name, not both')
+        if not isinstance(name,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}',name) or name.startswith('cc-view-'):fail(400,'Session name must be 1-64 ASCII letters, digits, underscores or hyphens, beginning with a letter or digit; cc-view- is reserved')
+        rows=tmux(request,'list-sessions','-F','#{session_id}\t#{session_name}',allow_empty=True).splitlines()
+        if len(rows)>1024:fail(409,'Too many tmux sessions to resolve a named destination')
+        matches=[row.split('\t',1)[0] for row in rows if row.split('\t',1)[-1]==name]
+        if not matches:return None,'absent:'+name
+        if len(matches)!=1:fail(409,'Ambiguous named tmux destination')
+        session=matches[0]
     if session is None or session=='':return None,None
     if not isinstance(session,str) or not re.fullmatch(r'\$[0-9]+',session):fail(400,'Choose an existing tmux session by its stable ID')
     fields=tmux(request,'display-message','-p','-t',session+':','#{session_id}\t#{session_created}\t#{pid}\t#{start_time}\t#{session_name}').rstrip('\n').split('\t',4)
-    if len(fields)!=5 or fields[0]!=session or fields[4].startswith('cc-view-'):fail(409,'The selected tmux session is unavailable; choose a session again')
+    if len(fields)!=5 or fields[0]!=session or fields[4].startswith('cc-view-') or (name is not None and fields[4]!=name):fail(409,'The selected tmux session is unavailable; choose a session again')
     try:
         base,start,_=proc(int(fields[2]));server=Path('/proc/sys/kernel/random/boot_id').read_text().strip()+':'+start
     except (OSError,ValueError):server=fields[3]
@@ -1727,7 +1739,7 @@ def launch_options(request):
         session=candidate.get('session','')
         if not isinstance(session,str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session): continue
         candidates.append(dict(id=candidate['id'],session=session,timestamp=candidate['timestamp'],title=launch_title(candidate,kind),active=session in active))
-    return dict(pre_trust=pre_trust,python_venv=venv,venv_identity=venv_identity,project=path,directory_identity=identity,provider=kind,model=model,approval_policy=approval_policy,executable=executable,executable_identity=executable_identity,conversations=candidates,target_session=target_session,destination_identity=destination_identity,window_name=window_name,card_name=card_name)
+    return dict(pre_trust=pre_trust,python_venv=venv,venv_identity=venv_identity,project=path,directory_identity=identity,provider=kind,model=model,approval_policy=approval_policy,executable=executable,executable_identity=executable_identity,conversations=candidates,target_session_name=request.get('target_session_name'),target_session=target_session,destination_identity=destination_identity,window_name=window_name,card_name=card_name)
 
 def launch_status(request):
     identifier=request.get('launch_id','')
@@ -1765,7 +1777,7 @@ def launch_status(request):
         except (Failure,OSError): pass
     if metadata.get('conversation'):association.setdefault('conversation',metadata['conversation'])
     return dict(found=True,launch_id=identifier,session=row[0],window=row[1],pane=row[2],
-                session_name=fields[5],destination=metadata.get('destination','session'),project=metadata['project'],folder_trust=folder_trust(observed) if 'observed' in locals() and observed.get('identity') else None,provider=kind,model=metadata.get('model'),python_venv=metadata.get('python_venv'),pre_trust=bool(metadata.get('pre_trust')),approval_policy=metadata.get('approval_policy'),
+                session_name=fields[5],target_session_name=metadata.get('target_session_name'),destination=metadata.get('destination','session'),project=metadata['project'],folder_trust=folder_trust(observed) if 'observed' in locals() and observed.get('identity') else None,provider=kind,model=metadata.get('model'),python_venv=metadata.get('python_venv'),pre_trust=bool(metadata.get('pre_trust')),approval_policy=metadata.get('approval_policy'),
                 running=row[3]=='0' and kind in row[4].lower(),exited=row[3]=='1',
                 context=tmux(request,'capture-pane','-p','-t',row[2],'-S','0')[-12000:],**association)
 
@@ -1803,7 +1815,7 @@ def launch_agent(request):
     identifier=request.get('launch_id','')
     existing=launch_status(request)
     if existing['found']: fail(409,'This launch already exists; check its status instead of retrying')
-    target_session,destination_identity=launch_destination(request)
+    target_session,destination_identity=launch_destination(dict(request,target_session=None) if request.get('target_session_name') is not None else request)
     if destination_identity!=request.get('destination_identity'):fail(409,'The selected tmux session changed; prepare the launch again')
     path,identity=project_directory(request.get('project'))
     kind=request.get('provider')
@@ -1840,10 +1852,10 @@ def launch_agent(request):
     if target_session:
         row=tmux(request,'new-window','-d','-P','-F','#{session_id}\t#{window_id}\t#{pane_id}','-t',target_session+':','-n',name,'-c',path,'/bin/sleep','86400').strip().split('\t')
     else:
-        row=tmux(request,'new-session','-d','-P','-F','#{session_id}\t#{window_id}\t#{pane_id}','-s',name,'-n',kind,'-c',path,'-x','120','-y','36','/bin/sleep','86400').strip().split('\t')
+        row=tmux(request,'new-session','-d','-P','-F','#{session_id}\t#{window_id}\t#{pane_id}','-s',request.get('target_session_name') or name,'-n',name if request.get('target_session_name') else kind,'-c',path,'-x','120','-y','36','/bin/sleep','86400').strip().split('\t')
     if len(row)!=3: fail(502,'Launch state uncertain; check the launch before trying again')
     try:
-        metadata=json.dumps(dict(launch_id=identifier,project=path,python_venv=venv,provider=kind,model=model,pre_trust=pre_trust,approval_policy=approval_policy,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,destination='window' if target_session else 'session'))
+        metadata=json.dumps(dict(launch_id=identifier,project=path,python_venv=venv,provider=kind,model=model,pre_trust=pre_trust,approval_policy=approval_policy,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,target_session_name=request.get('target_session_name'),destination='window' if target_session else 'session'))
         tmux(request,'set-option','-w','-t',row[1],'@cc_launch',metadata)
         if not target_session:tmux(request,'set-option','-t',row[0],'@cc_launch',metadata)
         else:tmux(request,'rename-window','-t',row[1],kind+'-'+identifier[:8])

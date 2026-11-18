@@ -81,6 +81,8 @@ pub(crate) struct Run {
     #[serde(default)]
     pub target_session: Option<String>,
     #[serde(default)]
+    pub target_session_name: Option<String>,
+    #[serde(default)]
     pub window_name: Option<String>,
     #[serde(default)]
     pub card_name: Option<String>,
@@ -578,6 +580,7 @@ struct Prepare {
     approval_policy: Option<String>,
     prompt: String,
     target_session: Option<String>,
+    target_session_name: Option<String>,
     window_name: Option<String>,
     card_name: Option<String>,
 }
@@ -624,6 +627,7 @@ async fn prepare(
             model: b.model,
             approval_policy: b.approval_policy,
             target_session: b.target_session,
+            target_session_name: b.target_session_name,
             window_name: b.window_name,
             card_name: b.card_name,
         }),
@@ -886,6 +890,7 @@ mod tests {
             approval_policy: None,
             prompt: "Reviewed prompt".into(),
             target_session: None,
+            target_session_name: None,
             window_name: None,
             card_name: None,
             card_initialized: false,
