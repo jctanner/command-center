@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0118: release container Goose and HTML preview](docs/tasks/current/0118-release-container-goose-and-html-preview.md) — commit/push/deploy requested; preserve all live agents.
+- [Task0118: release container Goose and HTML preview](docs/tasks/done/0118-release-container-goose-and-html-preview.md) — committed/pushed/deployed; four access paths healthy, live agents unchanged.
 
-- [Task0117: CC-89 HTML file preview](docs/tasks/done/0117-sandboxed-html-file-preview.md) — implemented; static sandboxed preview and inline-code links;15 browser cases pass; not deployed.
+- [Task0117: CC-89 HTML file preview](docs/tasks/done/0117-sandboxed-html-file-preview.md) — deployed in task0118; static sandboxed preview and inline-code links;15 browser cases pass.
 
 - [Task0116: CC-103 named agent launch sessions](docs/tasks/done/0116-named-agent-launch-sessions.md) — deployed; named native sessions/resumes verified; four access paths and unchanged pane PIDs.
 
@@ -41,7 +41,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 - [Task0103: deploy native Claude command fix](docs/tasks/done/0103-deploy-native-claude-command-fix.md) — deployed; CC-73 original receipt confirmed without resend; Goose remains pending.
 
-- [Task0102 / CC-100: container-managed Goose ACP](docs/tasks/done/0102-container-managed-goose-acp.md) — implemented and tested on rhlaptop; container-only launch/approval/restart/close and hardened credentials; not deployed.
+- [Task0102 / CC-100: container-managed Goose ACP](docs/tasks/done/0102-container-managed-goose-acp.md) — deployed in task0118; container-only launch/approval/restart/close and hardened credentials; existing agent preserved.
 
 - [Task0101: native Claude local commands](docs/tasks/done/0101-claude-local-command-history.md) — deployed; original command receipt/output verified; no resend or agent restart.
 

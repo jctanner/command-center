@@ -1,3 +1,0 @@
-# Task0118: Commit, push and deploy CC-100 / CC-89
-
-Owner CC dev; claimed2026-11-18. Human explicitly requests commit/push/deploy of all current CC changes. Publish the tested container Goose/profile/credential and static HTML preview work, then deploy with exact existing listener arguments/environment and configuration. Verify four access paths, release and frontend hashes, full served API/profile contract, unchanged local pane PIDs and retained remote Goose container/process identities. No agent restart/upgrade, host Goose install or profile edit is authorized by this service deployment. Keep scoped deployment evidence private; record the final result after verification.
