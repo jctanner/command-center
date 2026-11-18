@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0122: release native Goose](docs/tasks/current/0122-release-native-goose.md) — authorized commit/push/deploy in progress.
+- [Task0122: release native Goose](docs/tasks/done/0122-release-native-goose.md) — committed/pushed/deployed; four paths, local/remote tmux identities and native preparation verified.
 
-- [Task0121: native Goose agents](docs/tasks/done/0121-native-goose-agents.md) — implemented/tested, including real Goose1.60.1 on rhlaptop with mock model; not committed/deployed.
+- [Task0121: native Goose agents](docs/tasks/done/0121-native-goose-agents.md) — deployed in task0122; real Goose1.60.1 mock-model lifecycle and live preparation verified.
 
 - [Task0120: release container profiles](docs/tasks/done/0120-release-container-profiles.md) — committed/pushed/deployed; four paths and local/remote tmux identities verified.
 
