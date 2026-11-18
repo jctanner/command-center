@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0130: release host Goose ACP](docs/tasks/current/0130-release-host-goose-acp.md) — commit/push/deploy authorized.
+
+- [Task0129: host Goose ACP](docs/tasks/done/0129-host-goose-acp.md) — implemented/tested, including real isolated Goose1.60.1 on rhlaptop; not deployed.
+
 - [Task0128: release compact launcher](docs/tasks/done/0128-release-compact-launcher.md) — committed/pushed/deployed; four access paths/assets and unchanged backend/tmux PIDs verified.
 
 - [Task0127: compact Start agent modal](docs/tasks/done/0127-compact-agent-launch-modal.md) — complete; responsive grouped fields, persistent actions, clear advanced summaries;71 browser cases pass; deployed in task0128.

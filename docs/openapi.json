@@ -3008,8 +3008,8 @@
     "/hosts/{host}/acp/prepare": {
       "post": {
         "operationId": "prepareAcpAgent",
-        "summary": "Prepare a new Claude or Codex ACP broker; no installation or launch",
-        "description": "Experimental opt-in Claude/Codex ACP broker. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. ",
+        "summary": "Prepare a Claude, Codex or Goose ACP broker; no installation or launch",
+        "description": "Experimental opt-in Claude/Codex/Goose ACP broker. Goose without container_profile runs the installed host goose acp in approve mode; an explicit profile selects the container path. Native tmux launch/polling remains default. Exact endpoint revision required; no automatic retries. Broker and agent live in a dedicated remote tmux session independently of CC. ",
         "parameters": [
           {
             "name": "host",
@@ -7684,7 +7684,7 @@
               "string",
               "null"
             ],
-            "description": "Goose profile ID from this machine; rejected for native host adapters."
+            "description": "Optional Goose container profile ID from this machine. Omit/null for host-installed Goose ACP; overrides require a profile. Rejected for Claude/Codex."
           },
           "container_overrides": {
             "anyOf": [
@@ -8035,7 +8035,7 @@
               "string",
               "null"
             ],
-            "description": "Goose profile ID from this machine; rejected for native host adapters."
+            "description": "Optional Goose container profile ID from this machine. Omit/null for host-installed Goose ACP; overrides require a profile. Rejected for Claude/Codex."
           },
           "image": {
             "type": [
@@ -8390,7 +8390,7 @@
               "object",
               "null"
             ],
-            "description": "Immutable owned container ID, name, labels, reviewed profile/image, persistent state volume and managed scratch workspace; no credentials. Goose is container-only, native conversion and broker host commands disabled."
+            "description": "Immutable owned container ID, name, labels, reviewed profile/image, persistent state volume and managed scratch workspace; no credentials. Present only for container Goose. Host Goose has null container metadata. Container native conversion and broker host commands disabled."
           }
         }
       },
@@ -8698,7 +8698,7 @@
               "object",
               "null"
             ],
-            "description": "For Goose ACP restart, the reviewed profile, pinned image, model and preserved volume. Native conversion is unsupported."
+            "description": "For container Goose ACP restart, the reviewed profile, pinned image, model and preserved volume. Null for host Goose. Goose native conversion is unsupported."
           }
         },
         "required": [

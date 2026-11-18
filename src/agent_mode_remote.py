@@ -41,9 +41,12 @@ def broker_observation(request,a,b):
         raise ValueError('Check unresolved ACP receipts before switching')
     session=value.get('session_id')
     if value['provider']=='goose':
-        if request.get('mode')!='acp_restart':raise ValueError('Container Goose supports ACP restart only; no host/native fallback')
+        if request.get('mode')!='acp_restart':raise ValueError('Goose supports ACP restart only; no native fallback')
         if not isinstance(session,str)or not re.fullmatch(r'[0-9]{8}_[0-9]{1,20}',session):raise ValueError('Invalid saved Goose session identity')
-        original=b['read_json'](os.path.join(path,'intent.json'));prepared=original['prepared'];container=b['read_json'](os.path.join(path,'container.json'))
+        original=b['read_json'](os.path.join(path,'intent.json'));prepared=original['prepared']
+        if prepared.get('container_profile') is None:
+            return dict(provider='goose',project=value['path'],session=session,identity=request['identity'],environment={},broker_identity={k:live[k]for k in ('instance','pid','start','boot','agent_pid')})
+        container=b['read_json'](os.path.join(path,'container.json'))
         if b['container_helpers'](request)['verify'](prepared,container)is None:raise ValueError('Original owned container is unavailable')
         return dict(provider='goose',project=value['path'],session=session,identity=request['identity'],environment={},broker_identity={k:live[k]for k in ('instance','pid','start','boot','agent_pid')},container=container,container_state=original.get('container_state',original['id']))
     b['canonical_uuid'](session)
@@ -64,9 +67,9 @@ def broker_observation(request,a,b):
     return plan
 
 
-def probe_load(executable):
+def probe_load(executable,provider=None):
     """Negotiate initialize only: no session creation/auth/tool/input side effects."""
-    p=subprocess.Popen([executable],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True)
+    p=subprocess.Popen([executable,'acp']if provider=='goose'else[executable],env=dict(os.environ,GOOSE_MODE='approve')if provider=='goose'else None,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True)
     try:
         import selectors
         p.stdin.write((json.dumps({'jsonrpc':'2.0','id':'cc-load-probe','method':'initialize','params':{'protocolVersion':1,'clientInfo':{'name':'command-center-probe','version':'1'},'clientCapabilities':{}}})+'\n').encode());p.stdin.flush()
@@ -116,11 +119,13 @@ def plan(request,a,b,probe=False):
         original=b['read_json'](os.path.join(b['target_root'](request),'intent.json'))
         if native['provider']!='goose' and any(k in original.get('prepared',{}) for k in ('profile','container','container_profile')):
             raise ValueError('Container broker restart is not supported; no host fallback')
-        adapter=b['container_helpers'](request)['resume_options'](original['prepared'],native['container']['id'])if native['provider']=='goose'else b['options']({'path':native['project'],'provider':native['provider']})
-        if probe and native['provider']!='goose':probe_load(adapter['executable'])
+        adapter=b['container_helpers'](request)['resume_options'](original['prepared'],native['container']['id'])if native.get('container')else b['options']({'path':native['project'],'provider':native['provider']})
+        if native['provider']=='goose' and not native.get('container') and adapter.get('goose_environment')!=original['prepared'].get('goose_environment'):
+            raise ValueError('Goose state directory environment changed; original conversation was not restarted')
+        if probe and not native.get('container'):probe_load(adapter['executable'],native['provider'])
         native['adapter']=adapter
         native['broker_digest']=hashlib.sha256(request['_broker_code'].encode()).hexdigest()
-        if native['provider']=='goose':native['container_digest']=hashlib.sha256(request['_container_code'].encode()).hexdigest()
+        if native.get('container'):native['container_digest']=hashlib.sha256(request['_container_code'].encode()).hexdigest()
     pane_pid=int(a['tmux'](request,'display-message','-p','-t',request['pane'],'#{pane_pid}').strip())
     native['pane_process']={'pid':pane_pid,'start':a['proc'](pane_pid)[1]}
     native['mode']=mode
@@ -148,9 +153,9 @@ def perform_start(request,a,b,progress):
     env={**fresh['environment'],'CC_MODE_SWITCH_ID':request['id']}
     if request['mode']in ('acp','acp_restart'):
         ident=b['canonical_uuid'](request['id']);path=os.path.join(b['root'](True),ident);os.mkdir(path,0o700)
-        b['exclusive_json'](os.path.join(path,'intent.json'),{'id':ident,'prepared':fresh['adapter'],'resume_session':fresh['session'],'initial_prompt':None,'at':time.time(),**({'container_state':fresh['container_state']}if fresh['provider']=='goose'else{})})
+        b['exclusive_json'](os.path.join(path,'intent.json'),{'id':ident,'prepared':fresh['adapter'],'resume_session':fresh['session'],'initial_prompt':None,'at':time.time(),**({'container_state':fresh['container_state']}if fresh.get('container')else{})})
         b['exclusive_json'](os.path.join(path,'target.json'),{k:request[k]for k in ('session','window','pane')})
-        if fresh['provider']=='goose':b['install_container_source'](request,path)
+        if fresh.get('container'):b['install_container_source'](request,path)
         with os.fdopen(os.open(os.path.join(path,'broker.py'),os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600),'w')as out:out.write(request['_broker_code'])
         command=[sys.executable,os.path.join(path,'broker.py'),path,fresh['adapter']['executable'],fresh['project']]
     else:command=fresh['command']

@@ -12,6 +12,29 @@ class RemoteTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory(prefix='cc-acp-remote-');self.home=Path(self.tmp.name);self.patch=patch.dict(os.environ,HOME=str(self.home));self.patch.start()
  def tearDown(self):self.patch.stop();self.tmp.cleanup()
+ def test_host_goose_uses_exact_executable_without_container_source(self):
+  executable=self.home/'goose';executable.write_text('#!/bin/sh\nexit 0\n');executable.chmod(0o700)
+  with patch.object(M.shutil,'which',side_effect=lambda name:str(executable)if name=='goose'else'/usr/bin/tmux'),patch.object(M,'container_helpers',side_effect=AssertionError('container path used')):
+   prepared=M.options({'provider':'goose','path':str(self.home)})
+   self.assertEqual(prepared['executable'],str(executable));self.assertNotIn('container_profile',prepared)
+   ident=str(uuid.uuid4());request=dict(broker=ident,prepared=prepared,_broker_code='print("fixture")')
+   with patch.object(M,'tmux',return_value='$1\t@1\t%1'):
+    self.assertEqual(M.launch(request)['provider'],'goose')
+   self.assertFalse((Path(M.root())/ident/'container.py').exists())
+   executable.write_text('#!/bin/sh\nexit 1 # replacement\n')
+   with self.assertRaisesRegex(ValueError,'changed'):M.launch(dict(request,broker=str(uuid.uuid4())))
+ def test_goose_state_environment_is_bound_without_credentials(self):
+  executable=self.home/'goose';executable.write_text('fixture');executable.chmod(0o700)
+  with patch.object(M.shutil,'which',return_value=str(executable)),patch.dict(os.environ,GOOSE_PATH_ROOT=str(self.home/'first'),OPENAI_API_KEY='never-record-this'):
+   prepared=M.options({'provider':'goose','path':str(self.home)})
+   self.assertEqual(prepared['mode'],'approve');self.assertNotIn('never-record-this',str(prepared))
+   with patch.dict(os.environ,GOOSE_PATH_ROOT=str(self.home/'other')),patch.object(M,'tmux')as tmux:
+    with self.assertRaisesRegex(ValueError,'changed'):M.launch(dict(broker=str(uuid.uuid4()),prepared=prepared))
+    tmux.assert_not_called()
+ def test_goose_container_is_explicit_and_never_falls_back(self):
+  with patch.object(M,'container_helpers',return_value={'options':lambda request:(_ for _ in()).throw(ValueError('profile unavailable'))}):
+   with self.assertRaisesRegex(ValueError,'profile unavailable'):M.options({'provider':'goose','container_profile':'missing','path':str(self.home)})
+  with self.assertRaisesRegex(ValueError,'Container profiles'):M.options({'provider':'goose','container_overrides':{},'path':str(self.home)})
  def test_no_native_install_or_state_on_read(self):
   self.assertEqual([],M.main({'action':'list'}));self.assertFalse((self.home/'.cache').exists())
  def test_symlink_and_other_writable_ancestors_rejected(self):

@@ -281,7 +281,7 @@ async fn prepare(
         },
     );
     Ok(Json(
-        json!({"token":token,"broker":broker,"protocol":"acp","provider":provider,"path":prepared["path"],"executable":prepared["executable"],"container_profile":prepared["container_profile"],"image":prepared["container_image"],"model":prepared["model"],"mode":prepared["mode"],"container_review":if provider=="goose"{prepared["container_review"].clone()}else{Value::Null},"endpoint":crate::attention::scope(&m.config,"","","").0,"notice":"Experimental ACP broker in a dedicated tmux session. Goose uses a reviewed container profile and explicit approvals; inspect the resolved image, mounts and runtime settings. Native mode remains default."}),
+        json!({"token":token,"broker":broker,"protocol":"acp","provider":provider,"path":prepared["path"],"executable":prepared["executable"],"container_profile":prepared["container_profile"],"image":prepared["container_image"],"model":prepared["model"],"mode":prepared["mode"],"container_review":if provider=="goose"{prepared["container_review"].clone()}else{Value::Null},"endpoint":crate::attention::scope(&m.config,"","","").0,"notice":"Experimental ACP broker in a dedicated tmux session. Goose without a container profile runs the installed goose acp in approve mode; an explicit profile selects the reviewed container. Native mode remains default."}),
     ))
 }
 async fn start(

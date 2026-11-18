@@ -93,11 +93,11 @@ def options(request):
     if not os.path.isdir('/proc/self') or not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):
         raise ValueError('ACP broker requires Linux /proc and pidfd support; native mode remains available')
     provider = request.get('provider', 'claude')
-    if provider=='goose':return container_helpers(request)['options'](request)
-    if request.get('container_profile') is not None or request.get('container_overrides')is not None:raise ValueError('Container profiles are supported only for Goose')
-    if provider not in ('claude', 'codex'):
+    if provider=='goose' and request.get('container_profile') is not None:return container_helpers(request)['options'](request)
+    if request.get('container_profile') is not None or request.get('container_overrides')is not None:raise ValueError('Container profiles/overrides require an explicit Goose container profile')
+    if provider not in ('claude', 'codex', 'goose'):
         raise ValueError('Unsupported ACP provider')
-    name = 'codex-acp' if provider == 'codex' else 'claude-agent-acp'
+    name = 'goose' if provider == 'goose' else 'codex-acp' if provider == 'codex' else 'claude-agent-acp'
     path = request.get('path')
     if not isinstance(path, str) or not path.startswith(('/', '~/')) or len(path) > 4096 or any(ord(c) < 32 for c in path):
         raise ValueError('Use an absolute project directory')
@@ -106,8 +106,10 @@ def options(request):
         raise ValueError('Project directory unavailable')
     executable = shutil.which(name)
     managed = os.path.expanduser('~/.local/share/command-center/acp-adapters/'+provider+'/node_modules/.bin/'+name)
-    if not executable and os.path.isfile(managed):
+    if provider!='goose' and not executable and os.path.isfile(managed):
         executable = managed
+    if not executable and provider=='goose':
+        raise MissingAdapter('Host Goose is not installed or not on PATH; install and configure Goose on this machine first')
     if not executable:
         raise MissingAdapter(provider.title()+' ACP adapter not installed on this machine; native mode remains available')
     executable = os.path.realpath(executable)
@@ -115,7 +117,14 @@ def options(request):
         raise ValueError('ACP adapter is not executable')
     if not shutil.which('tmux'):
         raise ValueError('tmux unavailable')
-    return dict(path=path, directory_identity=identity(path)[:2], executable=executable, executable_identity=identity(executable), protocol='acp', provider=provider)
+    extra={}
+    if provider=='goose':
+        environment={key:os.environ.get(key) for key in ('GOOSE_PATH_ROOT','XDG_DATA_HOME','XDG_CONFIG_HOME')}
+        for value in environment.values():
+            if value is not None and (len(value)>4096 or not os.path.isabs(value) or any(ord(c)<32 for c in value)):
+                raise ValueError('Goose state directory overrides must be literal absolute paths')
+        extra=dict(mode='approve',goose_environment=environment)
+    return dict(path=path, directory_identity=identity(path)[:2], executable=executable, executable_identity=identity(executable), protocol='acp', provider=provider,**extra)
 
 def tmux(request, *args):
     command = ['tmux']
@@ -277,7 +286,7 @@ def launch(request):
     # Exclusive directory is the durable no-retry launch claim.
     os.mkdir(path, 0o700)
     exclusive_json(os.path.join(path, 'intent.json'), dict(id=ident, prepared=prepared, initial_prompt=request.get('initial_prompt'), at=time.time()))
-    if fresh['provider']=='goose':install_container_source(request,path)
+    if fresh.get('container_profile') is not None:install_container_source(request,path)
     code = request['_broker_code']
     if not isinstance(code, str) or len(code.encode()) > 100000:
         raise ValueError('Invalid broker implementation')

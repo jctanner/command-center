@@ -148,13 +148,22 @@ class BrokerRestartPlan(unittest.TestCase):
 
 
 class GooseContainerRestart(unittest.TestCase):
-    def observe(self,destination='acp_restart',available=True,queued=0):
+    def observe(self,destination='acp_restart',available=True,queued=0,host=False):
         request=dict(identity='source',broker_instance='instance',session='$1',window='@1',pane='%1',mode=destination)
         snapshot=dict(provider='goose',handoff_supported=True,state='ready',permissions=[],tools=[],receipts=[],session_id='20261118_1',path='/scratch',queued_prompts=queued)
-        original={'id':'broker','prepared':{'container_profile':'reviewed','provider':'goose'}};record={'id':'container'}
+        original={'id':'broker','prepared':{'provider':'goose',**({}if host else{'container_profile':'reviewed'})}};record={'id':'container'}
         def read(path):return original if path.endswith('intent.json')else record if path.endswith('container.json')else request
         b={'target_root':lambda _:'/broker','verified_live':lambda _:dict(instance='instance',pid=1,start='start',boot='boot',agent_pid=2),'verify_target':lambda *args:None,'read_json':read,'call':lambda _:snapshot,'container_helpers':lambda _:{'verify':lambda *args:record if available else None}}
         return mode.broker_observation(request,{},b)
+    def test_host_goose_restart_rejects_changed_state_home(self):
+        request=dict(mode='acp_restart',broker='old',pane='%1')
+        b={'target_root':lambda _:'/broker','read_json':lambda _:{'prepared':{'goose_environment':{'GOOSE_PATH_ROOT':'/original'}}},'options':lambda _:{'goose_environment':{'GOOSE_PATH_ROOT':'/different'}}}
+        with patch.object(mode,'broker_observation',return_value={'provider':'goose','project':'/project'}):
+            with self.assertRaisesRegex(ValueError,'state directory environment changed'):mode.plan(request,{},b)
+    def test_host_goose_restart_does_not_read_or_verify_container(self):
+        result=self.observe(host=True,available=False)
+        self.assertEqual(result['session'],'20261118_1');self.assertNotIn('container',result)
+        with self.assertRaisesRegex(ValueError,'restart only'):self.observe(host=True,destination='native')
     def test_exact_goose_database_session_and_state_are_preserved(self):
         value=self.observe();self.assertEqual(value['session'],'20261118_1');self.assertEqual(value['container_state'],'broker');self.assertEqual(value['environment'],{})
     def test_native_fallback_replaced_container_and_queued_messages_reject(self):

@@ -6,6 +6,9 @@ native_pending=None
 native_context=""
 pending=None
 session="fake-session"
+if Path(sys.argv[0]).name=="goose":
+ assert sys.argv[1:]==["acp"] and os.environ.get("GOOSE_MODE")=="approve"
+ session="20261118_1"
 for line in sys.stdin:
  m=json.loads(line);method=m.get('method')
  if method=='initialize':

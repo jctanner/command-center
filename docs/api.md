@@ -203,3 +203,7 @@ The existing opt-in ACP routes now accept provider `goose` with a reviewed `cont
 Native launch-options and ticket prepare also accept provider `goose`, independent of ACP/container configuration. Fresh sessions receive a unique literal name, task prompts use `run --interactive --text`, and explicit resume/restart uses Goose's saved session ID (not necessarily UUID). Native history is bounded read-only SQLite; activity remains unverified and requested input has a separate process/editor/stdin guard. See [native Goose](reference/native-goose.md).
 
 Binary files can be downloaded with GET `/hosts/{host}/file/download?path=...&connection_revision=...`, independently of the text editor. The response is a no-store attachment with the source filename; it streams over the existing transport with bounded memory (8 GiB, two concurrent, timeout/change guards). Chat paths and Files context menus use the originating machine. See [file downloads](reference/file-downloads.md).
+
+### Host Goose ACP
+
+POST `/hosts/{host}/acp/prepare` with `connection_revision`, `path` and `provider: "goose"`, omitting `container_profile` and `container_overrides`, prepares host-installed `goose acp` in approve mode. Start uses the same expiring one-use token and optional initial prompt. An explicit profile retains the reviewed-container workflow with no fallback. Host credentials/configuration remain on that host; no install or native conversion occurs. Exact-session Restart & update broker supports host Goose. See [ACP broker](reference/acp-broker.md#host-installed-goose).

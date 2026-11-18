@@ -35,12 +35,24 @@ class BrokerTests(unittest.TestCase):
         if self._testMethodName=='test_claude_load_replays_large_image_without_retaining_bytes':
             source=source.replace("session=m['params']['sessionId'];result={}", "session=m['params']['sessionId'];result={};print(json.dumps({'jsonrpc':'2.0','method':'session/update','params':{'sessionId':session,'update':{'sessionUpdate':'agent_message_chunk','content':{'type':'image','data':'X'*(2*1024*1024),'mimeType':'image/png'}}}}),flush=True)")
         if self._testMethodName.startswith('test_codex_native'):(self.root/'enable-native-shell').touch()
+        if self._testMethodName.startswith('test_goose_'):
+            source=source.replace('from pathlib import Path',"from pathlib import Path\nassert sys.argv[1:]==['acp'] and os.environ['GOOSE_MODE']=='approve'")
         executable.write_text(source)
         executable.chmod(0o700)
         if self._testMethodName.startswith(('test_codex_','test_claude_')):
             (self.root/'intent.json').write_text(json.dumps({'id':str(uuid.uuid4()),'prepared':{'provider':'claude'if self._testMethodName.startswith('test_claude_')else'codex'},'resume_session':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}));(self.root/'intent.json').chmod(0o600)
+        if self._testMethodName.startswith('test_goose_'):
+            (self.root/'intent.json').write_text(json.dumps({'id':str(uuid.uuid4()),'prepared':{'provider':'goose'},'resume_session':'20261118_1'}));(self.root/'intent.json').chmod(0o600)
         self.broker = MOD.Broker(str(self.root), str(executable), str(self.root))
         wait(lambda: self.broker.state == 'ready')
+
+    def test_goose_host_load_uses_acp_and_approve_without_container(self):
+        snapshot=self.broker.snapshot()
+        self.assertEqual(snapshot['provider'],'goose');self.assertEqual(snapshot['session_id'],'20261118_1')
+        self.assertIsNone(snapshot['container']);self.assertTrue(snapshot['local_commands'])
+        self.assertEqual(self.broker.session_cwd,str(self.root))
+        self.assertFalse((self.root/'container.py').exists())
+        self.assertEqual(self.broker.agent.args[1:],['acp'])
 
     def tearDown(self):
         self.broker.closed = True

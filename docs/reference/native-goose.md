@@ -1,6 +1,6 @@
 # Native Goose agents
 
-Native Goose runs directly in a detached tmux session/window, using the same guarded launcher and polling transport as Codex, Claude and pi. Choose **Native tmux → Goose** in Start agent or Goose in ticket launch. Container ACP remains a separate opt-in path; installing native Goose does not convert or restart container agents. Native↔container ACP conversion is not implemented.
+Native Goose runs directly in a detached tmux session/window, using the same guarded launcher and polling transport as Codex, Claude and pi. Choose **Native tmux → Goose** in Start agent or Goose in ticket launch. Host ACP (`goose acp`) and container ACP remain separate opt-in paths; installing native Goose does not convert or restart container agents. Native↔container ACP conversion is not implemented.
 
 The initial container-only development rule was explicitly retired by the human on2026-11-18. Native Goose installation/use is allowed, including on rhlaptop. Ordinary launches still require an already installed executable and normal host provider configuration/authentication. CC never silently installs a harness or configures credentials during Start. Leave model blank for Goose's own default, or supply a validated literal override. Provider setup/permissions/telemetry dialogs remain native human interactions. Do not copy container state, secrets or conversations into a native home as a workaround.
 

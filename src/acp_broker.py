@@ -130,7 +130,7 @@ class Broker:
                 json.dump(intent, out);out.flush();os.fsync(out.fileno())
             os.replace(temporary, intent_path)
         self.container=None;self.container_module=None;self.prepared=prepared if os.path.exists(intent_path) else {}
-        self.session_cwd=self.prepared.get('container_config',{}).get('workdir','/workspace')if self.provider=='goose'else cwd
+        self.session_cwd=self.prepared.get('container_config',{}).get('workdir','/workspace')if self.prepared.get('container_profile') is not None else cwd
         self.closed = False
         self.db = sqlite3.connect(os.path.join(root, 'receipts.sqlite3'), check_same_thread=False)
         self.db.execute('pragma synchronous=FULL')
@@ -157,12 +157,21 @@ class Broker:
         self.db.commit()
         try:
             # stdout belongs exclusively to ACP. Own a separate process group for cleanup.
-            if self.provider=='goose':
+            if self.prepared.get('container_profile') is not None:
                 namespace={'__name__':'cc_container'}
                 source=os.path.join(root,'container.py');private(source)
                 with open(source)as f:exec(f.read(),namespace)
                 self.container_module=namespace;self.agent,self.container=namespace['start'](prepared,intent,root,self.instance)
-            else:self.agent = subprocess.Popen([executable], cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            else:
+                command=[executable,'acp'] if self.provider=='goose' else [executable]
+                environment=None
+                if self.provider=='goose':
+                    environment=dict(os.environ,GOOSE_MODE='approve')
+                    for key,value in self.prepared.get('goose_environment',{}).items():
+                        if key not in ('GOOSE_PATH_ROOT','XDG_DATA_HOME','XDG_CONFIG_HOME'):raise ValueError('Unsupported Goose environment override')
+                        if value is None:environment.pop(key,None)
+                        else:environment[key]=value
+                self.agent = subprocess.Popen(command, cwd=cwd, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
             with open('/proc/sys/kernel/random/boot_id') as boot_file:
                 boot = boot_file.read().strip()
             meta = dict(instance=self.instance, pid=os.getpid(), start=start_identity(os.getpid()), boot=boot, agent_pid=self.agent.pid, path=cwd, protocol='acp', provider=self.provider)
