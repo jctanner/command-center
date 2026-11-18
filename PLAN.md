@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0124: release file downloads](docs/tasks/current/0124-release-file-downloads.md) — authorized commit/push/deploy in progress.
+- [Task0124: release file downloads](docs/tasks/done/0124-release-file-downloads.md) — committed/pushed/deployed; four binary access paths and unchanged tmux processes verified.
 
-- [Task0123: machine-qualified file downloads](docs/tasks/done/0123-machine-qualified-file-downloads.md) — implemented/tested (19 browser cases), binary streaming and chat/Files actions; not committed/deployed.
+- [Task0123: machine-qualified file downloads](docs/tasks/done/0123-machine-qualified-file-downloads.md) — deployed in task0124; binary streaming and chat/Files actions,19 browser cases passed.
 
 - [Task0122: release native Goose](docs/tasks/done/0122-release-native-goose.md) — committed/pushed/deployed; four paths, local/remote tmux identities and native preparation verified.
 
