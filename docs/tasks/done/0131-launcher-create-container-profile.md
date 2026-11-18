@@ -1,0 +1,11 @@
+# Task0131: Create container profile from launcher
+
+Claimed2026-11-18 by CC-dev. Human requests a launcher shortcut to create a Goose container profile in settings. Open Containers for the selected machine with a new unsaved draft, preserve explicit save/review boundaries and launch draft on return, honor unsaved-settings guards, and verify desktop/mobile/no automatic writes. No deploy or commit requested.
+
+## Implementation
+
+ACP container Goose now exposes New container profile… alongside its profile selector, including the no-profiles state. It opens Settings → Containers with the originating machine selected and a new unsaved draft, focusing Profile ID. Settings canLeave guards remain authoritative; the shortcut never saves, pulls images or launches. Pending creation is cancelled on leaving settings. Returning to Start agent retains the folder/prompt when the machine endpoint is unchanged, reloads profiles and requires a fresh launch review. Changed endpoints use normal project reload instead. The guide documents this flow.
+
+Validation: TypeScript/Vite build passed with the existing bundle advisory.14 launcher-layout/container-profile browser cases passed;3 shortcut cases reran successfully after fixing a stale Loading machines status on return. Tests cover desktop/mobile explicit save/return, preserved folder/prompt, no automatic writes/engine calls, a second selected machine, and decline/accept of unsaved-draft navigation. Initial test invocation used the wrong cwd; then a test selector used Model rather than the actual Goose model label. Both fixture issues corrected; final shortcut run passed. Existing ACP launch regressions:8 passed with a clean final exit, covering Claude/Codex/host Goose and reviewed container Goose on desktop/mobile.22 distinct browser cases passed overall. An earlier ACP run reported all8 passed but its shell ended with SIGTERM during cleanup; the final rerun exited0. No backend changes; Rust tests not rerun.
+
+Screenshots under ignored test-results/launcher-new-profile-{1440,393}.png; phone screenshot inspected. Logs .local/launcher-create-profile-{build,final,navigation-final,acp-final}.log. No live agents, profile/config saves, commit/push or deployment. All saved profile changes occurred in disposable fixtures only.

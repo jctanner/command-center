@@ -72,7 +72,7 @@ const attention = new AttentionQueue(openTicketTerminal,async target=>{
   if(currentWorkspace()!=='files')return;
   if(!current()||!files){notice('Machine changed or Files is unavailable. Refresh before opening this file.');return;}
   try{await files.openDocument(target.host,target.path,target.connection);}catch(error){notice(String(error));}
-});
+},host=>{if(!settingsWorkspace.newContainerProfile(host))return false;navigateWorkspace('settings');return currentWorkspace()==='settings';});
 const board = new TicketBoard(openTicketTerminal,async(host,path)=>{el('toggle-files').click();await ensureFiles('workspace');files?.openLocation(host,path);},async target=>{el('show-queue').click();await attention.openTarget(target);});
 el('ticket-from-terminal').onclick=()=>{const w=currentWindow(),pane=w?.panes.find(p=>p.active),session=sessions.find(s=>s.id===selection().session);void board.create({host:hostId,session:session?.id||'',session_name:session?.name||'',window:w?.id||'',window_number:w?.index,window_name:w?.name||'',pane:pane?.id||'',path:pane?.cwd||''});};
 document.addEventListener('cc-create-ticket',((event:CustomEvent<Partial<TicketContext>>)=>{void board.create(event.detail);}) as EventListener);

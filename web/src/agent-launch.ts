@@ -12,7 +12,7 @@ async function request<T>(url: string, body?: unknown): Promise<T> {
 export class AgentLauncher {
   private dialog = element('dialog');private protocol=element('select');private nativeProvider='codex';private acpReceipt?:{host:string;connection_revision:string;broker:string;endpoint:string;provider?:string;container?:boolean};
   private containerPrepared?:{token:string;broker:string;endpoint:string;path:string;provider:string;container_review:unknown};private containerProfiles:ContainerProfile[]=[];private containerAdvanced=element('details');private containerEditor=new ContainerConfigEditor(()=>{this.invalidate();this.update();});
-  private containerProfile=element('select');private containerHelp=element('small');private profileGeneration=0;
+  private createProfile=element('button','New container profile…');private profileReturn?:Host;private containerProfile=element('select');private containerHelp=element('small');private profileGeneration=0;
   private dismiss=element('button','×');private locationSummary=element('p');private sessionOptions=element('details');private environmentOptions=element('details');private permissionOptions=element('details');private sessionSummary=element('summary');private environmentSummary=element('summary');private permissionSummary=element('summary');
   private machine = element('select');
   private project = element('select');
@@ -45,7 +45,7 @@ export class AgentLauncher {
   private busy = false;
   private checking = false;
   private receipt?: { host: string; revision: string; endpoint: string; id: string };
-  constructor(private opened: (agent: LaunchedAgent) => Promise<void>) {
+  constructor(private opened: (agent: LaunchedAgent) => Promise<void>,private openProfiles:(host:string)=>boolean) {
     try {
       const saved = JSON.parse(localStorage.getItem('cc.pending-agent-launch.v1') || 'null');
       if (saved && typeof saved.host === 'string' && typeof saved.revision === 'string' && /^[a-f0-9]{64}$/.test(saved.endpoint) && /^[a-f0-9-]{36}$/.test(saved.id)) this.receipt = saved;
@@ -63,7 +63,7 @@ export class AgentLauncher {
     protocol.onchange=()=>{this.invalidate();if(protocol.value.startsWith('acp')){if(!this.provider.closest('label')!.hidden)this.nativeProvider=this.provider.value;this.provider.value=protocol.value.startsWith('acp-goose')?'goose':protocol.value==='acp-codex'?'codex':'claude';this.conversation.replaceChildren(new Option('New conversation',''));this.model.value='';this.preTrust.checked=false;this.approvalPolicy.value='';}else this.provider.value=this.nativeProvider;this.feedback.textContent=protocol.value==='acp-goose'?'Choose a profile, then review its container settings.':protocol.value==='native'?'Check the project before starting.':`${this.provider.value==='goose'?'Goose':this.provider.value==='codex'?'Codex':'Claude'} ACP · configuration is checked when you start.`;this.update();if(protocol.value==='acp-goose')void this.loadContainerProfiles();if(!this.projects&&this.host())void this.loadProjects();else if(protocol.value==='native'&&this.path.value)void this.prepare();};
     label('Machine',this.machine).className='launcher-machine';label('Agent',this.provider).className='launcher-provider';label('Model (optional)',this.model).className='launcher-model';help(this.model,'Blank uses the harness default.','agent-launch-model-help');
     label('Project',this.project).className='launcher-project';label('Conversation',this.conversation).className='launcher-conversation';label('Directory',this.path).className='launcher-directory';this.locationSummary.className='launcher-location';fields.append(this.locationSummary);
-    this.containerProfile.setAttribute('aria-label','Goose container profile');label('Reviewed container profile',this.containerProfile).className='launcher-container-profile';this.containerProfile.parentElement!.append(this.containerHelp);this.containerProfile.onchange=()=>{this.invalidate();this.resetContainerEditor();this.update();};
+    this.containerProfile.setAttribute('aria-label','Goose container profile');label('Reviewed container profile',this.containerProfile).className='launcher-container-profile';this.containerProfile.parentElement!.append(this.containerHelp);this.createProfile.type='button';this.createProfile.className='launcher-create-profile';this.containerProfile.after(this.createProfile);this.createProfile.onclick=()=>{const host=this.host();if(!host||this.busy||this.receipt||this.acpReceipt)return;if(this.openProfiles(host.id)){this.profileReturn=host;this.invalidate();this.dialog.close();}};this.containerProfile.onchange=()=>{this.invalidate();this.resetContainerEditor();this.update();};
     this.initialPrompt.setAttribute('aria-label','Initial prompt');this.initialPrompt.rows=4;this.initialPrompt.maxLength=24000;this.initialPrompt.placeholder='What should the agent work on?';label('Initial prompt (optional)',this.initialPrompt).className='launcher-prompt';this.promptHelp.id='agent-launch-prompt-help';this.promptHelp.className='launcher-help';this.initialPrompt.setAttribute('aria-describedby',this.promptHelp.id);this.initialPrompt.closest('label')!.append(this.promptHelp);this.initialPrompt.oninput=()=>this.update();
     const options=element('div');options.className='launcher-option-groups';fields.append(options);for(const [group,summary,cls]of [[this.sessionOptions,this.sessionSummary,'launcher-session'],[this.environmentOptions,this.environmentSummary,'launcher-environment'],[this.permissionOptions,this.permissionSummary,'launcher-permissions']]as const){group.className='launcher-options '+cls;group.append(summary);options.append(group);}
     label('Tmux destination',this.destination,this.sessionOptions);this.sessionName.setAttribute('aria-label','Named tmux session');this.sessionName.placeholder='work';this.sessionName.maxLength=64;label('Session name (create or reuse)',this.sessionName,this.sessionOptions);
@@ -104,12 +104,14 @@ export class AgentLauncher {
     if (this.dialog.open) return;
     this.preTrust.checked=false;this.dialog.showModal();this.machine.focus({preventScroll:true});
     if (this.receipt||this.acpReceipt) { this.update(); return; }
+    const returning=this.profileReturn;this.profileReturn=undefined;preferredHost=returning?.id||preferredHost;
     this.invalidate(); this.feedback.textContent = 'Loading machines…';
     try {
       this.hosts = await request<Host[]>('/api/v1/hosts');
       this.machine.replaceChildren(...this.hosts.map(h => { const o = element('option', h.name); o.value = h.id; return o; }));
       if (preferredHost && this.hosts.some(h => h.id === preferredHost)) this.machine.value = preferredHost;
       if (!this.hosts.length) throw new Error('Add a machine in Settings first.');
+      if(returning&&this.projects&&this.host()?.id===returning.id&&this.host()?.connection_revision===returning.connection_revision){this.feedback.textContent='Choose a profile, then review its container settings.';this.update();await this.loadContainerProfiles();return;}
       await this.loadProjects();
     } catch (e) { this.feedback.textContent = String(e); this.update(); }
   }
@@ -120,7 +122,7 @@ export class AgentLauncher {
     const acp=this.protocol.value.startsWith('acp'),locked = this.busy || !!this.receipt||!!this.acpReceipt;this.protocol.disabled=locked;
     for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.venv, this.rememberVenv, this.approvalPolicy, this.preTrust, this.destination, this.sessionName, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
     this.sessionName.closest('label')!.hidden=acp||this.destination.value!=='named';
-    this.containerProfile.closest('label')!.hidden=this.protocol.value!=='acp-goose';this.containerProfile.disabled=locked;this.containerAdvanced.hidden=this.protocol.value!=='acp-goose';this.containerEditor.disabled(locked||!this.containerProfile.value);
+    this.containerProfile.closest('label')!.hidden=this.protocol.value!=='acp-goose';this.containerProfile.disabled=locked;this.createProfile.disabled=locked||!this.host();this.containerAdvanced.hidden=this.protocol.value!=='acp-goose';this.containerEditor.disabled(locked||!this.containerProfile.value);
     this.preTrust.disabled=locked||!this.projects||!['codex','claude'].includes(this.provider.value);
     this.approvalPolicy.disabled = locked || !this.projects || this.provider.value !== 'codex';
     this.check.disabled = locked || this.checking || !this.path.value.trim() || !this.projects;

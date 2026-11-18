@@ -118,7 +118,7 @@ export class AttentionQueue {
   private approvalPending = new Set<string>();
   private filterPanel = node('details');
   private inboxControls = node('div');
-  constructor(private open: (target: QueueTarget) => Promise<void>,private openFile:(target:AgentFileTarget)=>Promise<void>) {
+  constructor(private open: (target: QueueTarget) => Promise<void>,private openFile:(target:AgentFileTarget)=>Promise<void>,private openProfiles:(host:string)=>boolean) {
     this.modeSwitcher=new AgentModeSwitcher(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
     this.agentRestarter=new AgentRestarter(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
     this.switchMode.type='button';this.switchMode.onclick=()=>{const c=this.chosen();if(c)this.openModeSwitch(c.h,c.item);};
@@ -162,7 +162,7 @@ export class AttentionQueue {
     const heading = node('div'); heading.className = 'queue-heading';
     const title = node('div'); title.append(node('h1', 'AI Queue'), node('p', 'Live agents and requests across your machines.'));
 
-    const launcher = new AgentLauncher(agent => this.openLaunched(agent));
+    const launcher = new AgentLauncher(agent => this.openLaunched(agent),host=>this.openProfiles(host));
     const startAgent = node('button', 'Start agent'); startAgent.className = 'queue-start-agent primary'; startAgent.onclick = () => { void launcher.open(this.host || this.chosen()?.h.id); };
     const filters = node('div'); filters.className = 'queue-filters';
     this.search.type='search';this.search.className='queue-search';this.search.placeholder='Find agents (/)';this.search.setAttribute('aria-label','Search agents');this.search.autocomplete='off';this.search.maxLength=240;

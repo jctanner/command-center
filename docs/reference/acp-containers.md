@@ -56,3 +56,7 @@ Restart & update broker, while verified idle with no unresolved tools/messages/p
 Secret files are validated on the host. At actual start, bounded printable JSON-pointer values enter the container through stdin and a fixed in-container bootstrap before ACP begins. They never appear in runtime arguments, engine environment flags, env files, CC state or receipts. They remain in the authorized process environment while running; this is not a vault against the agent inspecting its own environment. Source failures return bounded errors without secret contents.
 
 The original rootless Podman Goose ACP path was verified end to end on rhlaptop (chat, approval, restart/resume, cancellation, close and host-owned output); see task0102. Configurable profile validation evidence and runtime coverage are recorded separately in task0119. Engine flag references: [Docker run](https://docs.docker.com/reference/cli/docker/container/run/), [Podman run](https://docs.podman.io/en/stable/markdown/podman-run.1.html).
+
+### Creating a profile from Start agent
+
+Select **ACP container · Goose** and choose the target machine, then **New container profile…**. CC opens Settings → Containers for that machine with a new unsaved draft. Save explicitly; no engine invocation, image pull or agent launch happens from this shortcut. Return to Agents → Start agent to recover the launch folder/prompt and refresh profiles. Choose the saved profile and review the launch before Start. Settings retains its normal unsaved-change confirmation.
