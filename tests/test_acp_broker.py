@@ -462,3 +462,18 @@ class FrameBoundsTests(unittest.TestCase):
         self.assertIn('8 MiB',broker.fail.call_args.args[0])
         broker.update.assert_not_called()
         self.assertEqual('failed',broker.state)
+
+
+class StartupPublicationTests(unittest.TestCase):
+    def test_live_metadata_is_not_published_before_slow_child_start(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory(prefix='cc-acp-publication-')as folder:
+            root=Path(folder);root.chmod(0o700);agent=root/'agent';agent.write_text(FAKE);agent.chmod(0o700);spawn=subprocess.Popen
+            def delayed(*args,**kwargs):
+                self.assertTrue((root/'live.claim').is_file());self.assertFalse((root/'live.json').exists());time.sleep(.05);return spawn(*args,**kwargs)
+            with patch.object(MOD.subprocess,'Popen',side_effect=delayed):broker=MOD.Broker(str(root),str(agent),str(root))
+            try:
+                wait(lambda:broker.state=='ready');data=json.loads((root/'live.json').read_text());self.assertEqual(data['pid'],os.getpid());self.assertFalse((root/'live.pending').exists());self.assertEqual((root/'live.json').stat().st_nlink,1)
+            finally:broker.closed=True;broker.agent.terminate();broker.agent.wait(timeout=5);broker.server.close()
+    def test_resume_ids_remain_provider_scoped(self):
+        self.assertTrue(MOD.valid_resume_session('goose','20261118_1'));self.assertFalse(MOD.valid_resume_session('codex','20261118_1'));self.assertFalse(MOD.valid_resume_session('goose','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'));self.assertFalse(MOD.valid_resume_session('goose','20261118_1;anything'))

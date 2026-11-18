@@ -78,10 +78,23 @@ def identity(path):
     st = os.stat(path)
     return [st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size]
 
+def container_helpers(request):
+    source=request.get('_container_code')
+    if not isinstance(source,str) or len(source)>50000:raise ValueError('Container implementation unavailable')
+    module={'__name__':'cc_container'};exec(source,module);return module
+
+def install_container_source(request,path):
+    source=request.get('_container_code')
+    if not isinstance(source,str)or len(source)>50000:raise ValueError('Container implementation unavailable')
+    fd=os.open(os.path.join(path,'container.py'),os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'w')as out:out.write(source)
+
 def options(request):
     if not os.path.isdir('/proc/self') or not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):
         raise ValueError('ACP broker requires Linux /proc and pidfd support; native mode remains available')
     provider = request.get('provider', 'claude')
+    if provider=='goose':return container_helpers(request)['options'](request)
+    if request.get('container_profile') is not None:raise ValueError('Container profiles are supported only for Goose')
     if provider not in ('claude', 'codex'):
         raise ValueError('Unsupported ACP provider')
     name = 'codex-acp' if provider == 'codex' else 'claude-agent-acp'
@@ -254,7 +267,7 @@ def call(request):
 def launch(request):
     ident = canonical_uuid(request['broker'])
     prepared = request['prepared']
-    fresh = options(prepared)
+    fresh = options(dict(prepared,_container_code=request.get('_container_code')))
     if fresh != prepared:
         raise ValueError('Project or ACP executable changed; prepare again')
     base = root(True)
@@ -264,6 +277,7 @@ def launch(request):
     # Exclusive directory is the durable no-retry launch claim.
     os.mkdir(path, 0o700)
     exclusive_json(os.path.join(path, 'intent.json'), dict(id=ident, prepared=prepared, initial_prompt=request.get('initial_prompt'), at=time.time()))
+    if fresh['provider']=='goose':install_container_source(request,path)
     code = request['_broker_code']
     if not isinstance(code, str) or len(code.encode()) > 100000:
         raise ValueError('Invalid broker implementation')
@@ -282,6 +296,7 @@ def launch(request):
 
 def main(request):
     action = request.get('action')
+    if action == 'profiles':return [container_helpers(request)['summary'](p)for p in container_helpers(request)['profiles']()]
     if action == 'prepare':
         return options(request)
     if action == 'launch':

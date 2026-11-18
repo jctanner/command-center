@@ -3903,6 +3903,49 @@
           }
         }
       }
+    },
+    "/hosts/{host}/acp/profiles": {
+      "get": {
+        "operationId": "listAcpContainerProfiles",
+        "summary": "List reviewed host-local container profiles without secret values. Does not launch, pull or install.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profiles for this exact machine connection; empty when none installed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "$ref": "#/components/schemas/AcpContainerProfile"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7433,10 +7476,18 @@
             "type": "string",
             "enum": [
               "claude",
-              "codex"
+              "codex",
+              "goose"
             ],
             "default": "claude",
             "description": "Allowlisted adapter bound into one-use grant; omitted preserves Claude clients."
+          },
+          "container_profile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required for Goose, rejected for host adapters. ID from the reviewed private profile registry on the selected machine; runtime/mount/env fields are never client inputs."
           }
         },
         "required": [
@@ -7755,7 +7806,8 @@
             "type": "string",
             "enum": [
               "claude",
-              "codex"
+              "codex",
+              "goose"
             ]
           },
           "path": {
@@ -7770,6 +7822,31 @@
           "endpoint": {
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
+          },
+          "container_profile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required for Goose, rejected for host adapters. ID from the reviewed private profile registry on the selected machine; runtime/mount/env fields are never client inputs."
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -8090,6 +8167,13 @@
           "harness_command_running": {
             "type": "boolean",
             "description": "A guarded native shell request is active, separate from model token generation and CC broker subprocess execution."
+          },
+          "container": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Immutable owned container ID, name, labels, reviewed profile/image, persistent state volume and managed scratch workspace; no credentials. Goose is container-only, native conversion and broker host commands disabled."
           }
         }
       },
@@ -8294,7 +8378,8 @@
             "type": "string",
             "enum": [
               "codex",
-              "claude"
+              "claude",
+              "goose"
             ]
           },
           "session": {
@@ -8390,6 +8475,13 @@
                 "type": "null"
               }
             ]
+          },
+          "container": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "For Goose ACP restart, the reviewed profile, pinned image, model and preserved volume. Native conversion is unsupported."
           }
         },
         "required": [
@@ -8465,6 +8557,45 @@
           "reported_at"
         ],
         "description": "Latest validated session-scoped usage_update context occupancy/capacity, not cumulative session tokens. Timestamp is broker receipt time. Raw cost and arbitrary metadata are excluded."
+      },
+      "AcpContainerProfile": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "provider",
+          "image",
+          "model",
+          "mode",
+          "workspace_root",
+          "notice"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "workspace_root": {
+            "type": "string"
+          },
+          "notice": {
+            "type": "string"
+          }
+        }
       }
     },
     "responses": {

@@ -29,7 +29,7 @@ def broker_observation(request,a,b):
     if any(target[k]!=request[k] for k in ('session','window','pane')):
         raise ValueError('ACP tmux target changed')
     value=b['call'](dict(request,action='call',command={'action':'snapshot'}))
-    if value.get('provider')not in ('codex','claude') or not value.get('handoff_supported'):
+    if value.get('provider')not in ('codex','claude','goose') or not value.get('handoff_supported'):
         raise ValueError('This broker does not support this provider handoff; existing brokers are not modified automatically')
     if value.get('command_running'):raise ValueError('Wait for the local command to finish before switching')
     if value.get('queued_prompts') or value.get('queue_blocked'):raise ValueError('Resolve queued or blocked ACP messages before restarting or switching')
@@ -39,7 +39,14 @@ def broker_observation(request,a,b):
         raise ValueError('Wait for ACP tools to finish before switching')
     if any(r.get('state')in ('claimed','uncertain') or r.get('kind')in ('prompt','harness_command') and r.get('state')not in ('completed','cancelled','expired') or r.get('kind')=='local_command' and r.get('state')not in ('completed','cancelled','expired','failed') for r in value.get('receipts',[])):
         raise ValueError('Check unresolved ACP receipts before switching')
-    session=value.get('session_id');b['canonical_uuid'](session)
+    session=value.get('session_id')
+    if value['provider']=='goose':
+        if request.get('mode')!='acp_restart':raise ValueError('Container Goose supports ACP restart only; no host/native fallback')
+        if not isinstance(session,str)or not re.fullmatch(r'[0-9]{8}_[0-9]{1,20}',session):raise ValueError('Invalid saved Goose session identity')
+        original=b['read_json'](os.path.join(path,'intent.json'));prepared=original['prepared'];container=b['read_json'](os.path.join(path,'container.json'))
+        if b['container_helpers'](request)['verify'](prepared,container)is None:raise ValueError('Original owned container is unavailable')
+        return dict(provider='goose',project=value['path'],session=session,identity=request['identity'],environment={},broker_identity={k:live[k]for k in ('instance','pid','start','boot','agent_pid')},container=container,container_state=original.get('container_state',original['id']))
+    b['canonical_uuid'](session)
     env={}
     for entry in Path('/proc',str(live['pid']),'environ').read_bytes().decode().split('\0'):
         key,_,val=entry.partition('=')
@@ -107,12 +114,13 @@ def plan(request,a,b,probe=False):
         native=broker_observation(request,a,b)
     if mode=='acp_restart':
         original=b['read_json'](os.path.join(b['target_root'](request),'intent.json'))
-        if any(k in original.get('prepared',{}) for k in ('profile','container','container_profile')):
+        if native['provider']!='goose' and any(k in original.get('prepared',{}) for k in ('profile','container','container_profile')):
             raise ValueError('Container broker restart is not supported; no host fallback')
-        adapter=b['options']({'path':native['project'],'provider':native['provider']})
-        if probe:probe_load(adapter['executable'])
+        adapter=b['options']({'path':native['project'],'provider':native['provider'],**({'container_profile':original['prepared']['container_profile'],'_container_code':request.get('_container_code'),'_existing_container':native['container']['id']}if native['provider']=='goose'else{})})
+        if probe and native['provider']!='goose':probe_load(adapter['executable'])
         native['adapter']=adapter
         native['broker_digest']=hashlib.sha256(request['_broker_code'].encode()).hexdigest()
+        if native['provider']=='goose':native['container_digest']=hashlib.sha256(request['_container_code'].encode()).hexdigest()
     pane_pid=int(a['tmux'](request,'display-message','-p','-t',request['pane'],'#{pane_pid}').strip())
     native['pane_process']={'pid':pane_pid,'start':a['proc'](pane_pid)[1]}
     native['mode']=mode
@@ -140,8 +148,9 @@ def perform_start(request,a,b,progress):
     env={**fresh['environment'],'CC_MODE_SWITCH_ID':request['id']}
     if request['mode']in ('acp','acp_restart'):
         ident=b['canonical_uuid'](request['id']);path=os.path.join(b['root'](True),ident);os.mkdir(path,0o700)
-        b['exclusive_json'](os.path.join(path,'intent.json'),{'id':ident,'prepared':fresh['adapter'],'resume_session':fresh['session'],'initial_prompt':None,'at':time.time()})
+        b['exclusive_json'](os.path.join(path,'intent.json'),{'id':ident,'prepared':fresh['adapter'],'resume_session':fresh['session'],'initial_prompt':None,'at':time.time(),**({'container_state':fresh['container_state']}if fresh['provider']=='goose'else{})})
         b['exclusive_json'](os.path.join(path,'target.json'),{k:request[k]for k in ('session','window','pane')})
+        if fresh['provider']=='goose':b['install_container_source'](request,path)
         with os.fdopen(os.open(os.path.join(path,'broker.py'),os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600),'w')as out:out.write(request['_broker_code'])
         command=[sys.executable,os.path.join(path,'broker.py'),path,fresh['adapter']['executable'],fresh['project']]
     else:command=fresh['command']
@@ -199,6 +208,22 @@ def start(request,a,b):
         return {'state':'not_sent','note':'No process was stopped or replaced. '+getattr(error,'message',str(error))[:250]}
 
 
+def broker_start_pending(request,a,b,expected):
+    path=b['target_root'](dict(request,broker=request['id']))
+    if os.path.lexists(os.path.join(path,'live.json')):return False
+    intent=b['read_json'](os.path.join(path,'intent.json'));target=b['read_json'](os.path.join(path,'target.json'))
+    if intent.get('id')!=request['id'] or intent.get('resume_session')!=expected['session'] or any(target.get(k)!=request[k]for k in ('session','window','pane')):raise ValueError('Pending broker does not match the reviewed restart')
+    age=time.time()-intent.get('at',0)
+    if age<0 or age>90:return False
+    source=os.path.join(path,'broker.py');b['regular'](source)
+    if expected.get('broker_digest')and hashlib.sha256(Path(source).read_bytes()).hexdigest()!=expected['broker_digest']:raise ValueError('Pending broker source changed')
+    if expected.get('container_digest'):
+        container=os.path.join(path,'container.py');b['regular'](container)
+        if hashlib.sha256(Path(container).read_bytes()).hexdigest()!=expected['container_digest']:raise ValueError('Pending container source changed')
+    fields=a['tmux'](request,'display-message','-p','-t',request['pane'],'#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_dead}').strip().split('\t')
+    return fields==[request['session'],request['window'],request['pane'],'0']
+
+
 def status(request,a,b):
     expected=request['plan']
     receipt=os.path.join(b['root'](),'mode-switches',b['canonical_uuid'](request['id']))
@@ -209,12 +234,14 @@ def status(request,a,b):
         return {'state':'not_sent','note':'Verified not sent; original process retained. A fresh reviewed switch is required.'}
     if json.loads(marker(request,a))!={'id':request['id'],'old':request['identity']}:raise ValueError('Handoff marker changed; inspect the pane')
     if request['mode']in ('acp','acp_restart'):
+        if broker_start_pending(request,a,b,expected):return {'state':'checking','note':'Replacement broker is starting; waiting for exact ACP session/load. No action repeated.'}
         value=b['call'](dict(request,action='call',broker=request['id']))
         if value.get('state')=='failed':return {'state':'checking','note':value.get('failure','ACP resume failed; inspect the pane')}
         if value.get('session_id')!=expected['session'] or value.get('state')!='ready':return {'state':'checking','note':'Waiting for exact ACP session/load completion'}
         live=b['verified_live'](b['target_root'](dict(request,broker=request['id'])))
         if expected.get('broker_digest') and hashlib.sha256(Path(b['target_root'](dict(request,broker=request['id'])),'broker.py').read_bytes()).hexdigest()!=expected['broker_digest']:
             raise ValueError('Replacement broker source does not match the reviewed version')
+        if expected.get('container_digest') and hashlib.sha256(Path(b['target_root'](dict(request,broker=request['id'])),'container.py').read_bytes()).hexdigest()!=expected['container_digest']:raise ValueError('Replacement container source does not match the reviewed version')
         env=Path('/proc',str(live['pid']),'environ').read_bytes().split(b'\0')
         if ('CC_MODE_SWITCH_ID='+request['id']).encode()not in env:raise ValueError('Replacement broker is not this handoff')
         return {'state':'complete','instance':hashlib.sha256(('acp/'+request['id']+'/'+value['instance']).encode()).hexdigest()}

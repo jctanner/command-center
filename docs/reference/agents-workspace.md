@@ -34,3 +34,5 @@ Codex and Claude cards and the conversation **Details** panel offer **Switch con
 ACP cards and chat consume reported usage_update context occupancy/capacity through the same meter as native agents. Context snapshots are not cumulative tokens: unknown session totals remain unknown and are excluded from token accumulation. Updates are scoped to the live broker/session; stale status and older unreported brokers remain labeled.
 
 Agent **Details** opens a centered, scrollable modal on desktop, preserving the conversation layout. Close it with Close, Escape or a backdrop click. Compact clients retain the inline expanding panel. Changing the selected agent, workspace or compact/desktop layout closes Details; unsent message drafts remain intact. Automatic conversation read acknowledgements pause while the desktop Details modal is open.
+
+Chat file buttons open Markdown and static HTML in Files Preview on the originating machine. Whole file-like inline-code paths can also become buttons; ordinary code and URLs remain text. See [file preview behavior and isolation](file-previews.md).

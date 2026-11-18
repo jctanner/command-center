@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0118: release container Goose and HTML preview](docs/tasks/current/0118-release-container-goose-and-html-preview.md) — commit/push/deploy requested; preserve all live agents.
+
+- [Task0117: CC-89 HTML file preview](docs/tasks/done/0117-sandboxed-html-file-preview.md) — implemented; static sandboxed preview and inline-code links;15 browser cases pass; not deployed.
+
 - [Task0116: CC-103 named agent launch sessions](docs/tasks/done/0116-named-agent-launch-sessions.md) — deployed; named native sessions/resumes verified; four access paths and unchanged pane PIDs.
 
 - [Task0115: deploy quiet ACP receipts](docs/tasks/done/0115-deploy-quiet-acp-receipts.md) — deployed; four access paths and unchanged process identities verified.
@@ -37,7 +41,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 - [Task0103: deploy native Claude command fix](docs/tasks/done/0103-deploy-native-claude-command-fix.md) — deployed; CC-73 original receipt confirmed without resend; Goose remains pending.
 
-- [Task0102 / CC-100: container-managed Goose ACP](docs/tasks/pending/0102-container-managed-goose-acp.md) — deferred by human; design note first after current command fix, Goose container-only.
+- [Task0102 / CC-100: container-managed Goose ACP](docs/tasks/done/0102-container-managed-goose-acp.md) — implemented and tested on rhlaptop; container-only launch/approval/restart/close and hardened credentials; not deployed.
 
 - [Task0101: native Claude local commands](docs/tasks/done/0101-claude-local-command-history.md) — deployed; original command receipt/output verified; no resend or agent restart.
 
@@ -330,6 +334,8 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 - [Bug 0001: README contains pasted test code](docs/bugs/fixed/0001-readme-contains-test-code.md)
 
 ## Decisions
+
+- [ADR-0006: reviewed container ACP profiles](docs/decisions/0006-reviewed-container-acp-profiles.md)
 
 - [ADR-0005: opt-in ACP broker](docs/decisions/0005-opt-in-acp-broker.md)
 

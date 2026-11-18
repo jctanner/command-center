@@ -1,0 +1,37 @@
+# Container-managed ACP: Goose
+
+CC-100 adds opt-in Goose agents through the existing SSH/ProxyJump transport and ACP broker. Native Codex/Claude/pi launch remains the default. **Goose runs only inside its container; CC never discovers, installs or executes a host Goose CLI.** The first implementation supports Linux rootless Podman with the reviewed digest-pinned image, an OpenAI-compatible provider and the host's existing ENMAAS credential source.
+
+## Reviewed host setup
+
+An operator reviews and installs `~/.config/command-center/container-profiles.json` on the agent machine, owned by its user with0600 permissions, no symlinks. It is an array of at most16 profiles. [Example registry](../examples/goose-container-profiles.json) contains placeholders, not working credentials. Configure an actual model/HTTPS endpoint and absolute host-local secret reference; no secret value belongs in the registry or CC configuration. Unknown fields, duplicate IDs, unpinned images and unsafe files are rejected. V1 reads `enmaas.key` from the referenced private JSON file; alternate credential formats are not implemented.
+
+Create the owned managed scratch root `~/.cache/command-center/goose-workspaces/` and a separate existing child directory per agent, without symlinks or group/world write permissions. This first slice does not create/copy projects or synchronize changes. The path passed at launch must be a dedicated directory under that root, not the root itself or a real project tree. Only that scratch directory receives SELinux `:Z` relabeling. Preparation rejects a directory mounted by another live Goose container, and a private host-side file lock prevents simultaneous starts from racing that check. Only the exact verified original container is exempt during restart preparation; it is stopped and removed before the replacement starts. The named state volume contains the container's home and provider database. The runtime uses `--userns=keep-id:uid=1000,gid=1000` to map the host account to the image's Goose user; output files retain the host user's ownership.
+
+Podman and the exact image must already be available. CC uses image inspection and `--pull=never`; launch never installs packages or pulls an image implicitly. The initial allowlist is `ghcr.io/aaif-goose/goose@sha256:d1f8264826e35ad064cb3f97eb6fb6498fe3b424ac8d0f61ee4eef030ef10860`. Rootful Podman is rejected. No Docker socket, SSH agent, home directory, real project or arbitrary mount is exposed to the container.
+
+## Launch and control
+
+`GET /api/v1/hosts/{host}/acp/profiles?connection_revision=...` lists reviewed IDs, labels, model/image, fixed approve mode and scratch root, without the credential reference or value. It does not start a container. No profiles means an empty list.
+
+Prepare with `POST /api/v1/hosts/{host}/acp/prepare`:
+
+```json
+{"connection_revision":"observed-revision","provider":"goose","container_profile":"goose-example","path":"/home/USER/.cache/command-center/goose-workspaces/my-agent"}
+```
+
+Review the returned profile, pinned image, model, path and endpoint, retain the opaque broker UUID before IO, and start once with the existing `POST /acp/start` token flow. Profile hash, canonical workspace identity, runtime executable identity and cached image ID are bound into the one-use grant and rechecked. No free-form runtime, mount, environment, image or CLI fields are accepted. In the web launcher select **ACP container · Goose**, choose the machine/profile and enter its prepared scratch folder. Existing agent cards, chat, tool activity, explicit permission controls and queued prompts work normally.
+
+Each broker owns one `cc-goose-<broker UUID>` container, with `cc.acp.*` labels for broker, process instance, profile, persistent state and digest. Immutable container ID and labels are recorded and checked before stop/restart; names and PIDs alone do not authorize targeting. Stdio is ACP only. The tmux pane owns the durable broker, so closing a browser or restarting CC does not stop the agent. The pane remains an interactive broker CLI, not Goose's native TUI.
+
+Goose is fixed to `approve` mode. Only explicit human ACP option choices answer tools; CC does not auto-approve, select allow-always or configure autonomous mode. Container agents cannot run CC broker host-shell commands or convert to native mode. Goose's provider cost estimates are not represented as actual account spend; token context is shown only when reported.
+
+**Restart & update broker** uses the existing prepare/review/start/status flow while Ready, with no tools, permissions, queued prompts or uncertain receipts outstanding. It stops the exact container via Podman, replaces only that broker/pane, creates a new owned container and loads the exact saved Goose session on the same persistent volume. Goose IDs are provider DB IDs such as `20261118_1`, scoped to that volume; they are not UUIDs. No failed load falls back to a new conversation. Card settings carry over after verification; old drafts/outbox receipts are not resent. Missing profile/image, a changed container or invalid process evidence fails closed.
+
+**Close agent** records the normal durable receipt and signals only the verified broker, which stops its immutable container with10s grace and verifies `--rm` removal. A lost/uncertain response is not retried. The persistent `cc-goose-state-<original broker UUID>` volume and scratch files remain for deliberate recovery/export; CC does not automatically delete work. V1 has no closed-session browser picker or volume-GC UI. Stop/removal failures remain for inspection, never broad name/prefix cleanup. Disposable test volumes and scratch folders may be explicitly cleaned after verifying their exact identities and lack of running containers.
+
+## Credentials and live validation
+
+The remote broker reads the private host auth JSON and writes one bounded credential line into the container's stdin pipe. A fixed in-container `/bin/sh` bootstrap reads that line with literal `read -r`, exports OPENAI_API_KEY and execs the pinned image's Goose ACP executable. JSON-RPC begins only after this bootstrap line; it is never part of ACP messages or terminal input. No key is interpolated into shell text, arguments, Podman environment flags, CC state or an env file. Child stderr is discarded; failures return bounded metadata. This deliberately replaces the reference launcher's env-file approach: real inspection confirmed Podman persists env-file values in its private OCI metadata. The revised bootstrap avoids that copy. The key still exists in the authorized Goose process environment while running; this is not a secret vault against a user who explicitly permits an agent to inspect its own environment. No memory/swap protection is claimed.
+
+Real rhlaptop validation used the cached image, enforced SELinux and the nonstandard host UID: ACP Ready/card/chat, one exact scratch tool command approved once in Agents, streamed updates, restart into a different container with the same volume/session, remembered context, cancellation, close/removal and host-owned output. A bounded scan of15 managed broker/volume/workspace files found no credential bytes. The first test session was subsequently used by the human and was preserved; destructive tests used a separately labeled disposable agent and cleaned only its volume/workspace/ended pane. Evidence is recorded in task0102/private test journals. No production backend deployment is implied by these tests.

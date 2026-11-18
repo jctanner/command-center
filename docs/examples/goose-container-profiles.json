@@ -1,0 +1,10 @@
+[
+  {
+    "id": "goose-example",
+    "label": "Goose container",
+    "image": "ghcr.io/aaif-goose/goose@sha256:d1f8264826e35ad064cb3f97eb6fb6498fe3b424ac8d0f61ee4eef030ef10860",
+    "model": "provider/model",
+    "base_url": "https://provider.example/v1",
+    "secret_file": "/home/USER/.pi/agent/auth.json"
+  }
+]

@@ -238,6 +238,7 @@ impl Transport {
         request["socket"] = serde_json::json!(self.host.socket);
         request["_agent_code"] = serde_json::json!(include_str!("agent_remote.py"));
         request["_acp_code"] = serde_json::json!(include_str!("acp_remote.py"));
+        request["_container_code"] = serde_json::json!(include_str!("acp_container.py"));
         request["_install_code"] = serde_json::json!(include_str!("acp_install.py"));
         if matches!(request["action"].as_str(), Some("start" | "prepare")) {
             request["_broker_code"] = serde_json::json!(include_str!("acp_broker.py"));
@@ -250,6 +251,7 @@ impl Transport {
         mut request: serde_json::Value,
     ) -> Result<serde_json::Value> {
         request["socket"] = serde_json::json!(self.host.socket);
+        request["_container_code"] = serde_json::json!(include_str!("acp_container.py"));
         if request["action"] == "launch" {
             request["_broker_code"] = serde_json::json!(include_str!("acp_broker.py"));
         }

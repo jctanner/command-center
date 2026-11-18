@@ -10,6 +10,7 @@ async function request<T>(url: string, body?: unknown): Promise<T> {
 }
 export class AgentLauncher {
   private dialog = element('dialog');private protocol=element('select');private nativeProvider='codex';private acpReceipt?:{host:string;connection_revision:string;broker:string;endpoint:string;provider?:string};
+  private containerProfile=element('select');private containerHelp=element('small');private profileGeneration=0;
   private machine = element('select');
   private project = element('select');
   private path = element('input');
@@ -56,8 +57,10 @@ export class AgentLauncher {
     this.model.setAttribute('aria-label', 'Agent model'); this.model.placeholder = 'Harness default'; this.model.maxLength = 200; this.model.autocomplete = 'off';
     this.provider.setAttribute('aria-label', 'Agent provider'); this.conversation.setAttribute('aria-label', 'Start or resume');this.destination.setAttribute('aria-label','Agent tmux destination');
     for (const value of ['codex', 'claude', 'pi']) { const o = element('option', value === 'codex' ? 'Codex' : value === 'pi' ? 'pi' : 'Claude'); o.value = value; this.provider.append(o); }
+    const gooseOption=new Option('Goose (container only)','goose');gooseOption.hidden=true;gooseOption.disabled=true;this.provider.append(gooseOption);
     this.pin.type = 'checkbox'; this.name.placeholder = 'Optional project name'; this.name.setAttribute('aria-label', 'Pinned project name');
-    const protocol=this.protocol;protocol.setAttribute('aria-label','Agent connection protocol');protocol.append(new Option('Native tmux (default)','native'),new Option('ACP broker · Claude','acp'),new Option('ACP broker · Codex','acp-codex'));label('Connection protocol',protocol);protocol.onchange=()=>{this.invalidate();if(protocol.value.startsWith('acp')){if(!this.provider.closest('label')!.hidden)this.nativeProvider=this.provider.value;this.provider.value=protocol.value==='acp-codex'?'codex':'claude';this.conversation.replaceChildren(new Option('New conversation',''));this.model.value='';this.preTrust.checked=false;this.approvalPolicy.value='';}else this.provider.value=this.nativeProvider;this.update();if(!this.projects&&this.host())void this.loadProjects();else if(protocol.value==='native'&&this.path.value)void this.prepare();};
+    const protocol=this.protocol;protocol.setAttribute('aria-label','Agent connection protocol');protocol.append(new Option('Native tmux (default)','native'),new Option('ACP broker · Claude','acp'),new Option('ACP broker · Codex','acp-codex'),new Option('ACP container · Goose','acp-goose'));label('Connection protocol',protocol);protocol.onchange=()=>{this.invalidate();if(protocol.value.startsWith('acp')){if(!this.provider.closest('label')!.hidden)this.nativeProvider=this.provider.value;this.provider.value=protocol.value==='acp-goose'?'goose':protocol.value==='acp-codex'?'codex':'claude';this.conversation.replaceChildren(new Option('New conversation',''));this.model.value='';this.preTrust.checked=false;this.approvalPolicy.value='';}else this.provider.value=this.nativeProvider;this.update();if(protocol.value==='acp-goose')void this.loadContainerProfiles();if(!this.projects&&this.host())void this.loadProjects();else if(protocol.value==='native'&&this.path.value)void this.prepare();};
+    this.containerProfile.setAttribute('aria-label','Goose container profile');label('Reviewed container profile',this.containerProfile);this.containerProfile.parentElement!.append(this.containerHelp);this.containerProfile.onchange=()=>this.update();
     label('Machine', this.machine); label('Project', this.project); label('Directory', this.path); label('Agent', this.provider); label('Model (optional)', this.model);
     this.venv.setAttribute('aria-label','Python venv');this.venv.placeholder='None, .venv or /absolute/venv';this.venv.maxLength=4096;label('Python venv (optional)',this.venv);this.rememberVenv.type='checkbox';const remember=element('label','Remember venv for this project');remember.className='agent-launch-pin';remember.prepend(this.rememberVenv);fields.append(remember,element('small','Uses the venv for commands the agent runs. Does not source activation scripts. Remembering a venv also pins the project.'));
     fields.append(element('small', 'Enter a model name or alias, or leave blank for no override.'));
@@ -92,7 +95,7 @@ export class AgentLauncher {
     this.another.onclick = () => { if (!this.busy && this.checkedReceipt) { const host = this.receipt?.host; this.clearReceipt();this.acpReceipt=undefined;localStorage.removeItem('cc.acp.launch.v1'); this.checkedReceipt = false; this.invalidate(); this.dialog.close(); void this.open(host); } };
     this.dialog.addEventListener('cancel', e => { if (this.busy) e.preventDefault(); });
     try{const saved=JSON.parse(localStorage.getItem('cc.acp.launch.v1')||'null');if(saved&&typeof saved.host==='string'&&typeof saved.connection_revision==='string'&&typeof saved.broker==='string'&&typeof saved.endpoint==='string')this.acpReceipt=saved;}catch{}
-    if(this.acpReceipt&&!this.receipt)this.protocol.value=this.acpReceipt.provider==='codex'?'acp-codex':'acp';
+    if(this.acpReceipt&&!this.receipt)this.protocol.value=this.acpReceipt.provider==='goose'?'acp-goose':this.acpReceipt.provider==='codex'?'acp-codex':'acp';
     this.update();
   }
   private saveReceipt() {
@@ -122,6 +125,7 @@ export class AgentLauncher {
     const acp=this.protocol.value.startsWith('acp'),locked = this.busy || !!this.receipt||!!this.acpReceipt;this.protocol.disabled=locked;
     for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.venv, this.rememberVenv, this.approvalPolicy, this.preTrust, this.destination, this.sessionName, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
     this.sessionName.closest('label')!.hidden=acp||this.destination.value!=='named';
+    this.containerProfile.closest('label')!.hidden=this.protocol.value!=='acp-goose';this.containerProfile.disabled=locked;
     this.preTrust.disabled=locked||!this.projects||!['codex','claude'].includes(this.provider.value);
     this.approvalPolicy.disabled = locked || !this.projects || this.provider.value !== 'codex';
     this.check.disabled = locked || this.checking || !this.path.value.trim() || !this.projects;
@@ -138,9 +142,10 @@ export class AgentLauncher {
     for(const field of [this.provider,this.model,this.venv,this.rememberVenv,this.preTrust,this.approvalPolicy,this.destination,this.conversation]){field.closest('label')!.hidden=acp;if(acp)field.disabled=true;}
     for(const small of this.dialog.querySelectorAll('.agent-launch-fields>small'))(small as HTMLElement).hidden=acp&&small!==this.promptHelp;
     this.pin.closest('label')!.hidden=acp||!!this.projects?.projects.find(p=>p.path===this.project.value&&p.pinned);this.name.hidden=acp||!this.pin.checked;
-    if(acp){this.check.hidden=true;this.start.hidden=!!this.acpReceipt;this.start.disabled=locked||!this.projects||!this.path.value.trim()||tooLong;this.initialPrompt.disabled=locked||!this.projects;this.promptHelp.textContent=tooLong?'ACP initial prompt is limited to12,000 UTF-8 bytes.':'New '+(this.provider.value==='codex'?'Codex':'Claude')+' ACP conversation in a dedicated tmux session. Preparation runs automatically when you start. Model/resume/venv/pre-trust overrides are not yet supported.';}
+    if(acp){this.check.hidden=true;this.start.hidden=!!this.acpReceipt;this.start.disabled=locked||!this.projects||!this.path.value.trim()||tooLong||this.protocol.value==='acp-goose'&&!this.containerProfile.value;this.initialPrompt.disabled=locked||!this.projects;this.promptHelp.textContent=tooLong?'ACP initial prompt is limited to12,000 UTF-8 bytes.':'New '+(this.provider.value==='goose'?'Goose':this.provider.value==='codex'?'Codex':'Claude')+' ACP conversation in a dedicated tmux session. Preparation runs automatically when you start. Model/resume/venv/pre-trust overrides are not yet supported.';}
 
-    this.start.textContent = acp?`Start ${this.provider.value==='codex'?'Codex':'Claude'} (ACP)`:`${this.conversation.value ? 'Resume' : 'Start'} ${this.provider.value === 'pi' ? 'pi' : this.provider.value === 'claude' ? 'Claude' : 'Codex'}`;
+    if(this.protocol.value==='acp-goose')this.promptHelp.textContent='Goose runs only in the reviewed rootless container, with human tool approvals. Choose a dedicated directory under the managed scratch root. No project copying or synchronization.';
+    this.start.textContent = acp?`Start ${this.provider.value==='goose'?'Goose':this.provider.value==='codex'?'Codex':'Claude'} (ACP)`:`${this.conversation.value ? 'Resume' : 'Start'} ${this.provider.value === 'pi' ? 'pi' : this.provider.value === 'claude' ? 'Claude' : 'Codex'}`;
   }
   private async loadProjects() {
     this.invalidate(); this.projects = undefined; this.path.value = '';this.venv.value='';this.rememberVenv.checked=false; this.model.value = ''; this.approvalPolicy.value = ''; this.pin.checked = false; this.project.replaceChildren();this.destination.replaceChildren(new Option('New dedicated session','')); this.feedback.textContent = 'Loading projects…'; this.update();
@@ -156,7 +161,7 @@ export class AgentLauncher {
       const manual = element('option', 'Another directory…'); manual.value = ''; this.project.append(manual);
       this.path.value = this.project.value; this.venv.value=this.projects?.projects.find(p=>p.path===this.project.value)?.python_venv||'';this.rememberVenv.checked=false; this.path.readOnly = !!this.project.value; this.name.value = projects.find(p => p.path === this.project.value)?.name || '';
       this.feedback.textContent = data.discovery_error ? 'Live directory discovery is unavailable. Pinned projects and manual directories can still be used.' : '';
-      this.update(); if (this.path.value&&this.protocol.value==='native') await this.prepare();
+      this.update();if(this.protocol.value==='acp-goose')void this.loadContainerProfiles(); if (this.path.value&&this.protocol.value==='native') await this.prepare();
     } catch (e) { if (generation === this.generation) { this.feedback.textContent = String(e); this.update(); } }
   }
   private async prepare() {
@@ -201,10 +206,16 @@ export class AgentLauncher {
     } catch (e) { this.feedback.textContent = `${String(e)}${this.receipt ? ' Use Check launch before starting another agent.' : ''}`; }
     finally { this.busy = false; this.update(); }
   }
+  private async loadContainerProfiles(){
+    const host=this.host(),generation=++this.profileGeneration;this.containerProfile.replaceChildren();this.containerHelp.textContent='Loading reviewed profiles…';this.update();if(!host)return;
+    try{const profiles=await request<{id:string;label:string;model:string;workspace_root:string}[]>(`/api/v1/hosts/${host.id}/acp/profiles?`+new URLSearchParams({connection_revision:host.connection_revision}));if(generation!==this.profileGeneration||this.host()?.id!==host.id||this.protocol.value!=='acp-goose')return;
+      this.containerProfile.replaceChildren(...profiles.map(p=>new Option(`${p.label} · ${p.model}`,p.id)));this.containerHelp.textContent=profiles.length?'Scratch root: '+profiles[0].workspace_root:'No reviewed container profiles installed on this machine.';
+    }catch(error){if(generation===this.profileGeneration)this.containerHelp.textContent=String(error);}this.update();
+  }
   private async launchAcp(){
     const host=this.host();if(!host||this.busy||this.acpReceipt||this.receipt||this.start.disabled)return;this.busy=true;this.invalidate();this.update();this.feedback.textContent='Preparing and starting ACP…';
     try{
-      const prepared=await request<{token:string;broker:string;endpoint:string;path:string;provider:string}>(`/api/v1/hosts/${host.id}/acp/prepare`,{connection_revision:host.connection_revision,path:this.path.value,provider:this.provider.value});
+      const prepared=await request<{token:string;broker:string;endpoint:string;path:string;provider:string}>(`/api/v1/hosts/${host.id}/acp/prepare`,{connection_revision:host.connection_revision,path:this.path.value,provider:this.provider.value,...(this.protocol.value==='acp-goose'?{container_profile:this.containerProfile.value}:{})});
       this.acpReceipt={host:host.id,connection_revision:host.connection_revision,broker:prepared.broker,endpoint:prepared.endpoint,provider:prepared.provider};
       try{localStorage.setItem('cc.acp.launch.v1',JSON.stringify(this.acpReceipt));}catch{this.acpReceipt=undefined;throw Error('Cannot persist recovery identity; nothing launched.');}
       await request(`/api/v1/hosts/${host.id}/acp/start`,{token:prepared.token,initial_prompt:this.initialPrompt.value.trim()?this.initialPrompt.value:null});

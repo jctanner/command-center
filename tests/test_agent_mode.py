@@ -145,3 +145,29 @@ class BrokerRestartPlan(unittest.TestCase):
         request={'plan':{'broker_digest':'old'},'mode':'acp_restart'}
         with patch.object(mode,'plan',return_value={'broker_digest':'new'}),self.assertRaisesRegex(ValueError,'changed'):
             mode.perform_start(request,{}, {},{'mutating':False})
+
+
+class GooseContainerRestart(unittest.TestCase):
+    def observe(self,destination='acp_restart',available=True,queued=0):
+        request=dict(identity='source',broker_instance='instance',session='$1',window='@1',pane='%1',mode=destination)
+        snapshot=dict(provider='goose',handoff_supported=True,state='ready',permissions=[],tools=[],receipts=[],session_id='20261118_1',path='/scratch',queued_prompts=queued)
+        original={'id':'broker','prepared':{'container_profile':'reviewed','provider':'goose'}};record={'id':'container'}
+        def read(path):return original if path.endswith('intent.json')else record if path.endswith('container.json')else request
+        b={'target_root':lambda _:'/broker','verified_live':lambda _:dict(instance='instance',pid=1,start='start',boot='boot',agent_pid=2),'verify_target':lambda *args:None,'read_json':read,'call':lambda _:snapshot,'container_helpers':lambda _:{'verify':lambda *args:record if available else None}}
+        return mode.broker_observation(request,{},b)
+    def test_exact_goose_database_session_and_state_are_preserved(self):
+        value=self.observe();self.assertEqual(value['session'],'20261118_1');self.assertEqual(value['container_state'],'broker');self.assertEqual(value['environment'],{})
+    def test_native_fallback_replaced_container_and_queued_messages_reject(self):
+        for kwargs in ({'destination':'native'},{'available':False},{'queued':1}):
+            with self.assertRaises(ValueError):self.observe(**kwargs)
+
+
+class PendingBrokerStartup(unittest.TestCase):
+    def test_same_durable_session_and_target_wait_without_input(self):
+        request={'id':'new','session':'$1','window':'@2','pane':'%3'};intent={'id':'new','resume_session':'saved','at':mode.time.time()};target={k:request[k]for k in ('session','window','pane')}
+        b={'target_root':lambda _:'/pending','read_json':lambda p:intent if p.endswith('intent.json')else target,'regular':lambda _:None}
+        a={'tmux':lambda *args:'$1\t@2\t%3\t0'}
+        with patch.object(mode.os.path,'lexists',return_value=False):
+            self.assertTrue(mode.broker_start_pending(request,a,b,{'session':'saved'}));intent['resume_session']='wrong'
+            with self.assertRaises(ValueError):mode.broker_start_pending(request,a,b,{'session':'saved'})
+            intent['resume_session']='saved';intent['at']-=100;self.assertFalse(mode.broker_start_pending(request,a,b,{'session':'saved'}))

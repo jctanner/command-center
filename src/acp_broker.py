@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 import signal
 import selectors
 import socket
@@ -16,6 +17,12 @@ import sys
 import threading
 import time
 import uuid
+
+def valid_resume_session(provider,session):
+    if not isinstance(session,str):return False
+    if provider=='goose':return re.fullmatch(r'[0-9]{8}_[0-9]{1,20}',session)is not None
+    try:return provider in ('codex','claude') and str(uuid.UUID(session))==session
+    except ValueError:return False
 
 MAX_WIRE = 8 * 1024 * 1024
 MAX_EVENTS = 256
@@ -105,10 +112,10 @@ class Broker:
             prepared=intent.get('prepared',{})
             self.host_commands=not any(key in prepared for key in ('profile','container','container_profile'))
             self.provider = prepared.get('provider', 'claude')
-            if self.provider not in ('claude', 'codex'):
+            if self.provider not in ('claude', 'codex','goose'):
                 raise ValueError('Unsupported ACP provider')
             self.resume_session = intent.get('resume_session')
-            if self.resume_session is not None and (self.provider not in ('codex','claude') or str(uuid.UUID(self.resume_session))!=self.resume_session):
+            if self.resume_session is not None and not valid_resume_session(self.provider,self.resume_session):
                 raise ValueError('Unsupported resume session')
             prompt = intent.pop('initial_prompt', None)
             if prompt:
@@ -122,6 +129,8 @@ class Broker:
             with os.fdopen(fd, 'w') as out:
                 json.dump(intent, out);out.flush();os.fsync(out.fileno())
             os.replace(temporary, intent_path)
+        self.container=None;self.container_module=None;self.prepared=prepared if os.path.exists(intent_path) else {}
+        self.session_cwd='/workspace' if self.provider=='goose' else cwd
         self.closed = False
         self.db = sqlite3.connect(os.path.join(root, 'receipts.sqlite3'), check_same_thread=False)
         self.db.execute('pragma synchronous=FULL')
@@ -135,7 +144,10 @@ class Broker:
         self.server.listen(8)
         self.connections = threading.BoundedSemaphore(8)
         # Claim metadata before starting a child, so a failed/reused broker cannot orphan it.
-        fd = os.open(os.path.join(root, 'live.json'), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        if os.path.lexists(os.path.join(root,'live.json')):raise ValueError('Broker already claimed')
+        claim=os.open(os.path.join(root,'live.claim'),os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600);os.close(claim)
+        pending_live=os.path.join(root,'live.pending')
+        fd = os.open(pending_live, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         # Queued text belongs to exactly one broker instance; restart never replays it.
         for row in self.db.execute('select id from prompt_queue').fetchall():
             old=self.db.execute('select data from receipts where id=?',row).fetchone()
@@ -145,12 +157,18 @@ class Broker:
         self.db.commit()
         try:
             # stdout belongs exclusively to ACP. Own a separate process group for cleanup.
-            self.agent = subprocess.Popen([executable], cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            if self.provider=='goose':
+                namespace={'__name__':'cc_container'}
+                source=os.path.join(root,'container.py');private(source)
+                with open(source)as f:exec(f.read(),namespace)
+                self.container_module=namespace;self.agent,self.container=namespace['start'](prepared,intent,root,self.instance)
+            else:self.agent = subprocess.Popen([executable], cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
             with open('/proc/sys/kernel/random/boot_id') as boot_file:
                 boot = boot_file.read().strip()
             meta = dict(instance=self.instance, pid=os.getpid(), start=start_identity(os.getpid()), boot=boot, agent_pid=self.agent.pid, path=cwd, protocol='acp', provider=self.provider)
             with os.fdopen(fd, 'w') as f:
-                json.dump(meta, f)
+                json.dump(meta, f);f.flush();os.fsync(f.fileno())
+            os.replace(pending_live,os.path.join(root,'live.json'))
         except Exception:
             self.server.close()
             if hasattr(self, 'agent'):
@@ -179,7 +197,7 @@ class Broker:
             self.expire_queue()
             queued=self.db.execute('select count(*) from prompt_queue').fetchone()[0]
             blocked=bool(queued and(self.state in ('failed','exited')or self.unresolved_sends()))
-            return dict(harness_commands=self.harness_shell,harness_command_scope=NATIVE_SHELL_EXECUTION if self.harness_shell else None,harness_command_running=bool(self.native_command),local_commands=self.host_commands and self.prompt_session_ready,command_running=bool(self.active_command),command_id=self.active_command['id']if self.active_command else None,command_timeout=COMMAND_TIMEOUT,command_output_limit=COMMAND_OUTPUT_BYTES,usage=self.usage,queue_blocked=blocked,prompt_queue=self.prompt_session_ready,queued_prompts=queued,queue_limit=MAX_QUEUED,instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude'), path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
+            return dict(harness_commands=self.harness_shell,harness_command_scope=NATIVE_SHELL_EXECUTION if self.harness_shell else None,harness_command_running=bool(self.native_command),local_commands=self.host_commands and self.prompt_session_ready,command_running=bool(self.active_command),command_id=self.active_command['id']if self.active_command else None,command_timeout=COMMAND_TIMEOUT,command_output_limit=COMMAND_OUTPUT_BYTES,usage=self.usage,queue_blocked=blocked,prompt_queue=self.prompt_session_ready,queued_prompts=queued,queue_limit=MAX_QUEUED,instance=self.instance, sequence=self.sequence, protocol='acp', provider=self.provider, handoff_supported=self.provider in ('codex','claude','goose'),container=self.container, path=self.cwd, state=self.state, failure=self.failure, session_id=self.session,
                         messages=list(self.messages), tools=list(self.tools.values()), permissions=list(self.permissions.values()), receipts=self.receipt_snapshot())
 
     def receipt_snapshot(self):
@@ -211,8 +229,8 @@ class Broker:
                 if reply.get('result',{}).get('agentCapabilities',{}).get('loadSession') is not True:
                     self.fail('Adapter does not support session/load; original session was not replaced with a new one');return
                 self.session=self.resume_session
-                self.rpc('session/load', dict(cwd=self.cwd,mcpServers=[],sessionId=self.resume_session),created)
-            else:self.rpc('session/new', dict(cwd=self.cwd, mcpServers=[]), created)
+                self.rpc('session/load', dict(cwd=self.session_cwd,mcpServers=[],sessionId=self.resume_session),created)
+            else:self.rpc('session/new', dict(cwd=self.session_cwd, mcpServers=[]), created)
         def created(reply):
             session = reply.get('result', {}).get('sessionId',self.resume_session)
             if 'error' in reply or self.resume_session and session!=self.resume_session:
@@ -562,11 +580,12 @@ class Broker:
             if action == 'handoff':
                 if self.db.execute('select id from receipts where id=?',(ident,)).fetchone():return self.receipt(ident,request)[0]
                 unresolved=any(r.get('state')in ('claimed','uncertain')or r.get('kind')in ('prompt','harness_command')and r.get('state')not in ('completed','cancelled','expired')or r.get('kind')=='local_command'and r.get('state')not in ('completed','cancelled','expired','failed')for r in (json.loads(row[0])for row in self.db.execute('select data from receipts')))
-                if self.provider not in ('codex','claude') or self.state!='ready' or self.permissions or self.active_command or unresolved or any(t.get('status')in ('pending','in_progress')for t in self.tools.values()):
+                if self.provider not in ('codex','claude','goose') or self.state!='ready' or self.permissions or self.active_command or unresolved or any(t.get('status')in ('pending','in_progress')for t in self.tools.values()):
                     raise ValueError('Handoff requires an idle agent with no unresolved receipts')
                 value,_=self.receipt(ident,request);self.state='switching';self.emit()
                 try:
-                    if self.agent.poll() is None:os.killpg(self.agent.pid,signal.SIGTERM)
+                    if self.container:self.container_module['stop'](self.prepared,self.container)
+                    elif self.agent.poll() is None:os.killpg(self.agent.pid,signal.SIGTERM)
                     self.agent.wait(timeout=5)
                     self.finish_receipt(value,'completed')
                 except Exception:
@@ -712,6 +731,8 @@ class Broker:
                     except ProcessLookupError:pass
                     process.wait(timeout=3)
                 if closing_command.get('thread'):closing_command['thread'].join(timeout=3)
+            if self.container and self.agent.poll() is None:
+                self.container_module['stop'](self.prepared,self.container)
             if self.agent.poll() is None:
                 try:os.killpg(self.agent.pid, signal.SIGTERM)
                 except ProcessLookupError:pass

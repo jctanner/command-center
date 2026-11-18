@@ -1,3 +1,4 @@
+import {htmlPreview} from './html-preview';
 import { basicSetup } from 'codemirror';
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
@@ -18,6 +19,8 @@ type Document = { key: string; host: string; path: string; state?: EditorState; 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const key = (host: string, path: string) => JSON.stringify([host, path]);
 const isMarkdown = (path: string) => /\.(md|markdown|mdown|mkd)$/i.test(path);
+const isHtml = (path:string) => /\.html?$/i.test(path);
+const previewable = (path:string) => isMarkdown(path)||isHtml(path);
 const basename = (path: string) => path.split('/').filter(Boolean).at(-1) || '/';
 class FileError extends Error { constructor(message: string, readonly status: number) { super(message); } }
 async function request<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
@@ -64,6 +67,7 @@ export class FileWorkspace {
   private previewGeneration = 0;
   private previewKey = '';
   private previewText = '';
+  private htmlKey='';private htmlText='';
   private previewPending = false;
 
   constructor(hosts: Host[], context: FileContext) {
@@ -89,7 +93,7 @@ export class FileWorkspace {
         <div class="editor-toolbar"><button id="toggle-browser" aria-pressed="true">Browser</button><span id="editor-location">Choose a file to begin</span><span id="markdown-modes" role="group" aria-label="Markdown view" hidden><button id="markdown-source" aria-pressed="true">Source</button><button id="markdown-rendered" aria-pressed="false">Preview</button></span><button id="reload-file">Reload</button><button id="save-file">Save</button></div>
         <div id="file-conflict" hidden><p id="file-conflict-message"></p><div><button id="review-disk">Review disk version</button><button id="reload-disk">Reload from disk</button><button id="overwrite-file">Save my version</button></div><textarea id="disk-preview" aria-label="Disk version" readonly hidden></textarea></div>
         <div id="editor-placeholder">Open a project directory, or browse anywhere.<br>Each file stays attached to its machine.</div>
-        <div id="code-editor" hidden></div><div id="markdown-preview" tabindex="0" role="region" aria-label="Rendered Markdown" hidden></div><div id="editor-status" role="status"></div>
+        <div id="code-editor" hidden></div><div id="markdown-preview" tabindex="0" role="region" aria-label="Rendered Markdown" hidden></div><div id="html-preview" tabindex="0" role="region" aria-label="HTML preview" hidden><p>Untrusted HTML · sandboxed static preview. Scripts, network resources and navigation are disabled.</p><div id="html-preview-content"></div></div><div id="editor-status" role="status"></div>
       </section>`;
     this.view = new EditorView({ state: EditorState.create({ extensions: [this.appearance.of(editorTheme())] }), parent: el('code-editor') });
     onThemeChange(()=>{for(const doc of this.documents.values()){if(doc.state&&doc.key!==this.active)doc.state=doc.state.update({effects:this.appearance.reconfigure(editorTheme())}).state;}this.view.dispatch({effects:this.appearance.reconfigure(editorTheme())});});
@@ -107,7 +111,7 @@ export class FileWorkspace {
     el('use-pane-folder').onclick = () => { const path = el<HTMLSelectElement>('pane-folder').value; if (path) { if (this.host !== this.context.host) this.chooseMachine(this.context.host, false); void this.browse(path); } };
     el('toggle-browser').onclick = () => { const collapsed = el('files-pane').classList.toggle('browser-collapsed'); el('toggle-browser').setAttribute('aria-pressed', String(!collapsed)); };
     el('markdown-source').onclick = () => { const doc = this.current(); if (doc) { doc.rendered = false; this.renderEditor(); this.view.focus(); } };
-    el('markdown-rendered').onclick = () => { const doc = this.current(); if (doc) { doc.rendered = true; this.renderEditor(); el('markdown-preview').focus(); } };
+    el('markdown-rendered').onclick = () => { const doc = this.current(); if (doc) { doc.rendered = true; this.renderEditor(); el(isHtml(doc.path)?'html-preview':'markdown-preview').focus(); } };
     el('markdown-preview').onkeydown = event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); const doc = this.current(); if (doc) void this.save(doc); } };
     el('save-file').onclick = () => { const doc = this.current(); if (doc) void this.save(doc); };
     el('reload-file').onclick = () => { const doc = this.current(); if (doc) void this.reload(doc); };
@@ -289,16 +293,16 @@ export class FileWorkspace {
   private async openFile(host: string, path: string, rendered = false) {
     const generation = ++this.openGeneration;
     const existing = this.documents.get(key(host, path));
-    if (existing?.state) { if (rendered && isMarkdown(path)) existing.rendered = true; this.activate(existing); return; }
+    if (existing?.state) { if (rendered && previewable(path)) existing.rendered = true; this.activate(existing); return; }
     try {
       const machine = this.hosts.find(h => h.id === host); if (!machine) throw new Error('This machine is no longer configured.');
       const data = await request<FileData>(this.url(host, 'file', path, machine.connection_revision));
       if(data.host!==host||data.connection_revision!==machine.connection_revision||this.hosts.find(h=>h.id===host)?.connection_revision!==machine.connection_revision)throw new Error('Machine connection changed while opening the file. Existing drafts were kept.');
       const canonical = this.documents.get(key(host, data.path));
       if(canonical?.state&&canonical.connection!==data.connection_revision)throw new Error('This file has a saved draft from a previous connection. Review it before reopening.');
-      if (canonical?.state) { if (rendered && isMarkdown(data.path)) canonical.rendered = true; if (generation === this.openGeneration) this.activate(canonical); return; }
+      if (canonical?.state) { if (rendered && previewable(data.path)) canonical.rendered = true; if (generation === this.openGeneration) this.activate(canonical); return; }
       const doc = canonical || this.document(host, data.path);
-      if (rendered && isMarkdown(data.path)) doc.rendered = true;
+      if (rendered && previewable(data.path)) doc.rendered = true;
       if (existing && existing.key !== doc.key) this.documents.delete(existing.key);
       doc.saved = data.text; doc.version = data.version; doc.connection = data.connection_revision; doc.readonly = data.read_only;
       doc.state = this.makeState(doc, data.text); if (doc.readonly) doc.saved = doc.state.sliceDoc(); this.documents.set(doc.key, doc);
@@ -309,7 +313,7 @@ export class FileWorkspace {
   private activate(doc: Document) {
     this.openGeneration++;
     if (!doc.state) { void this.openFile(doc.host, doc.path); return; }
-    this.active = doc.key; this.view.setState(doc.state); this.renderTabs(); this.renderEditor(); this.persistTabs(); if (this.visible) { if (doc.rendered && isMarkdown(doc.path)) el('markdown-preview').focus(); else this.view.focus(); } void this.checkExternal();
+    this.active = doc.key; this.view.setState(doc.state); this.renderTabs(); this.renderEditor(); this.persistTabs(); if (this.visible) { if (doc.rendered && previewable(doc.path)) el(isHtml(doc.path)?'html-preview':'markdown-preview').focus(); else this.view.focus(); } void this.checkExternal();
   }
   private persistTabs() { store('cc.files.tabs', [...this.documents.values()].map(doc => ({ host: doc.host, path: doc.path }))); }
   private renderTabs() {
@@ -323,12 +327,14 @@ export class FileWorkspace {
     }));
   }
   private renderEditor() {
-    const doc = this.current(), markdown = !!doc?.state && isMarkdown(doc.path), rendered = markdown && !!doc?.rendered;
+    const doc = this.current(), markdown = !!doc?.state && isMarkdown(doc.path), html=!!doc?.state&&isHtml(doc.path), rendered = (markdown||html) && !!doc?.rendered;
     el('code-editor').hidden = !doc?.state || rendered; el('editor-placeholder').hidden = !!doc?.state;
-    el('markdown-modes').hidden = !markdown; el('markdown-preview').hidden = !rendered;
+    el('markdown-modes').hidden = !markdown&&!html;el('markdown-modes').setAttribute('aria-label',html?'HTML view':'Markdown view'); el('markdown-preview').hidden = !rendered||!markdown;el('html-preview').hidden=!rendered||!html;
     el('markdown-source').setAttribute('aria-pressed', String(!rendered)); el('markdown-rendered').setAttribute('aria-pressed', String(rendered));
-    if (rendered && doc) void this.renderPreview(doc);
+    if (rendered && markdown && doc) void this.renderPreview(doc);
     else this.previewGeneration++;
+    if(rendered&&html&&doc?.state){const text=doc.state.sliceDoc();if(this.htmlKey!==doc.key||this.htmlText!==text){try{el('html-preview-content').replaceChildren(htmlPreview(text));this.htmlKey=doc.key;this.htmlText=text;}catch(error){el('html-preview-content').textContent=String(error);this.htmlKey='';}}}
+    else {el('html-preview-content').replaceChildren();this.htmlKey='';this.htmlText='';}
 
     const available = doc && this.hosts.find(h => h.id === doc.host)?.connection_revision === doc.connection;
     el('editor-location').textContent = doc ? `${this.machineName(doc.host)} › ${doc.path}` : 'Choose a file to begin';
