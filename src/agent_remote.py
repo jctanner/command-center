@@ -2,6 +2,7 @@
 No installation, daemon, contents in logs, or arbitrary log path from clients.
 """
 import hashlib
+import contextlib
 import shutil
 import json
 import os
@@ -52,8 +53,12 @@ def process_kind(base):
     command=(base/'comm').read_text().strip().lower()
     with (base/'cmdline').open('rb') as source: argv=source.read(8192).decode(errors='replace').split('\0')
     names=(command,os.path.basename(argv[0]).lower())
-    for kind in ('codex','claude','pi'):
-        if kind in names or kind=='pi' and 'pi-coding-agent' in names: return kind
+    for kind in ('codex','claude','pi','goose'):
+        if kind in names or kind=='pi' and 'pi-coding-agent' in names:
+            if kind=='goose' and len(argv)>1 and argv[1] in ('acp','mcp','serve','web','configure','info','--help','--version'):return None
+            if kind=='goose' and len(argv)>2 and argv[1]=='session'and argv[2]in ('list','remove','export','import','rename'):return None
+            if kind=='goose' and len(argv)>1 and argv[1]=='run' and not any(a in argv for a in ('--interactive','-s')):return None
+            return kind
     return None
 
 
@@ -144,7 +149,7 @@ def observe(request):
         # Read only allowlisted provider/environment identity metadata. Never return environments.
         for value in (agent_base / 'environ').read_bytes().decode(errors='replace').split('\0'):
             key, _, val = value.partition('=')
-            if key in ('VIRTUAL_ENV','CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CC_LAUNCH_ID', 'PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'CC_RESTART_ID','CC_MODE_SWITCH_ID'):
+            if key in ('GOOSE_PATH_ROOT','XDG_DATA_HOME','VIRTUAL_ENV','CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CC_LAUNCH_ID', 'PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'CC_RESTART_ID','CC_MODE_SWITCH_ID'):
                 env[key] = val
         boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
         basis=f'{boot}:{info[0]}:{start}:{foreground}:{agent_start}:{kind}'
@@ -154,7 +159,11 @@ def observe(request):
     except (OSError, ValueError, IndexError):
         if not kind: fail(409,'No process-backed agent association is available')
         cwd = tmux(request, 'display-message', '-p', '-t', target, '#{pane_current_path}').rstrip('\n')
-    return dict(target=target, socket=request.get("socket"), kind=kind, identity=identity, base=agent_base, args=args,
+    cursor=None
+    if kind=='goose' and identity:
+        try:cursor=[int(v)for v in tmux(request,'display-message','-p','-t',target,'#{cursor_x}\t#{cursor_y}').strip().split('\t')]
+        except (ValueError,Failure):pass
+    return dict(cursor=cursor,target=target, socket=request.get("socket"), kind=kind, identity=identity, base=agent_base, args=args,
                 env=env, cwd=cwd, context=text, visible=tmux(request, 'capture-pane', '-p', '-t', target, '-S', '0'), in_mode=info[3] != '0',
                 screen=hashlib.sha256(captured.encode()).hexdigest())
 
@@ -435,6 +444,10 @@ def message_input_guard(observation, state=None):
 
 def verify_active_message(request, observation):
     state=active_message_state(observation)
+    if observation['kind']=='goose' and goose_input_available(observation):
+        linked=[c for c in conversations(observation)if c.get('linked')]
+        if len(linked)!=1 or request.get('conversation')!=linked[0]['id']:fail(409,'Goose conversation changed; no input was sent')
+        return dict(state='input',source='goose_input')
     pending=request.get('pending_codex_session')
     if pending and codex_pending_session(observation)==pending and codex_first_input_available(observation):
         return dict(state='starting',source='codex_pending')
@@ -1152,7 +1165,120 @@ def pi_history(path, before=None, known_branch=None, active_leaf=False, include_
     return dict(messages=page,commands=commands[-100:],activities=activities,activity_limited=activity_limited,older_cursor=int(page[0]['id']) if len(messages)>100 else (activities[0]['position'] if activity_limited and not page else None),history_branch=branch,
                 history_reset=reset,history_notice=notice,limited=bool(notice or len(messages)>100))
 
+# Goose's shared SQLite file is storage, not process/session evidence.
+def goose_session_id(value):
+    return isinstance(value,str) and bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}',value))
+
+def goose_database(observation):
+    env=observation.get('env',{})
+    root=env.get('GOOSE_PATH_ROOT')
+    data=Path(root)/'data' if root and os.path.isabs(root) else Path(env.get('XDG_DATA_HOME',str(Path.home()/'.local/share')))/'goose'
+    return data/'sessions/sessions.db'
+
+def goose_connect(path):
+    # mode=ro keeps WAL visibility; immutable=1 would silently miss active writes.
+    conn=sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True,timeout=.15)
+    conn.row_factory=sqlite3.Row
+    conn.execute('PRAGMA query_only=ON');conn.execute('PRAGMA trusted_schema=OFF')
+    deadline=time.monotonic()+.25
+    conn.set_progress_handler(lambda:int(time.monotonic()>deadline),1000)
+    return conn
+
+def goose_arguments(observation):
+    args=observation.get('args',[]);found={}
+    for i,arg in enumerate(args):
+        for flag in ('--session-id','--name','-n'):
+            if arg==flag and i+1<len(args):found[flag]=args[i+1]
+            elif arg.startswith(flag+'='):found[flag]=arg[len(flag)+1:]
+    if any(a in args for a in ('--fork','--no-session','--edit')):return {}
+    return found
+
+def goose_conversations(observation):
+    path=goose_database(observation)
+    if not path.is_file():return []
+    args=goose_arguments(observation);explicit=args.get('--session-id');name=args.get('--name',args.get('-n'))
+    try:
+        with contextlib.closing(goose_connect(path))as db:
+            cols={r[1]for r in db.execute('PRAGMA table_info(sessions)')}
+            if not {'id','working_dir','updated_at'}<=cols:return []
+            label='name'if'name'in cols else'description'if'description'in cols else"''"
+            filters='working_dir = ?';params=[observation['cwd']]
+            if 'session_type'in cols:filters+=" AND session_type IN ('user','terminal')"
+            if 'archived_at'in cols:filters+=' AND archived_at IS NULL'
+            if explicit and goose_session_id(explicit):
+                rows=list(db.execute(f'SELECT id,working_dir,updated_at,{label} AS cc_label FROM sessions WHERE {filters} AND id=? LIMIT 2',params+[explicit]))
+                rows+=list(db.execute(f'SELECT id,working_dir,updated_at,{label} AS cc_label FROM sessions WHERE {filters} AND id!=? ORDER BY updated_at DESC LIMIT 19',params+[explicit]))
+            elif name and label!="''":
+                rows=list(db.execute(f'SELECT id,working_dir,updated_at,{label} AS cc_label FROM sessions WHERE {filters} AND {label}=? LIMIT 2',params+[name]))
+                rows+=list(db.execute(f'SELECT id,working_dir,updated_at,{label} AS cc_label FROM sessions WHERE {filters} AND {label}!=? ORDER BY updated_at DESC LIMIT 18',params+[name]))
+            else:rows=list(db.execute(f'SELECT id,working_dir,updated_at,{label} AS cc_label FROM sessions WHERE {filters} ORDER BY updated_at DESC LIMIT 20',params))
+            matching=[r['id']for r in rows if (explicit and r['id']==explicit)or(name and r['cc_label']==name)]
+            linked=matching[0]if observation.get('base')is not None and observation.get('identity')and len(matching)==1 else None
+            candidates=[];seen=set()
+            for r in rows:
+                sid=r['id']
+                if not goose_session_id(sid)or sid in seen:continue
+                seen.add(sid)
+                latest=db.execute('SELECT id, created_timestamp, substr(content_json,1,65536), metadata_json FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1',(sid,)).fetchone()
+                marker=hashlib.sha256(json.dumps(list(latest)if latest else[],default=str).encode()).hexdigest()
+                candidates.append(dict(id=hashlib.sha256((str(path.resolve())+'\0'+sid).encode()).hexdigest(),path=str(path.resolve()),session=sid,timestamp=str(r['updated_at']),title=str(r['cc_label'])[:160],linked=sid==linked,leaf_id=dict(goose_session=sid,updated=str(r['updated_at']),latest=latest[0]if latest else 0,marker=marker)))
+            return candidates
+    except (OSError,sqlite3.Error,ValueError,TypeError):return []
+
+def goose_history(path,before,anchor,include_activity=True):
+    sid=anchor.get('goose_session')if isinstance(anchor,dict)else None
+    if not goose_session_id(sid):fail(409,'Goose session identity is unavailable')
+    messages=[];activities=[];budget=512000
+    try:
+        with contextlib.closing(goose_connect(path))as db:
+            limit=int(before)if before is not None else 9223372036854775807
+            # Bound both rows and per-row JSON before decoding; no transcript scans.
+            rows=list(db.execute('SELECT id, role, substr(content_json,1,262145), created_timestamp, substr(metadata_json,1,8193) FROM messages WHERE session_id=? AND id<? ORDER BY id DESC LIMIT 101',(sid,max(0,limit))))
+            more=len(rows)>100;page=rows[:100]
+            for row in reversed(page):
+                pos,role,raw,stamp,meta=row
+                if role not in ('user','assistant')or len(raw)>262144:continue
+                try:content=json.loads(raw);metadata=json.loads(meta)if meta else{}
+                except (ValueError,TypeError):continue
+                if not isinstance(metadata,dict)or metadata.get('userVisible',True)is not True:continue
+                if not isinstance(content,list):continue
+                text='\n'.join(p['text']for p in content if isinstance(p,dict)and p.get('type')=='text'and isinstance(p.get('text'),str))
+                # Tool output, reasoning, system/extension context never become chat.
+                if text.strip()and budget>0:
+                    trimmed=text[:min(16000,budget)];budget-=len(trimmed)
+                    messages.append(dict(id=str(pos),cursor=hashlib.sha256(f'{pos}:{text}'.encode()).hexdigest(),role=role,text=trimmed,truncated=len(trimmed)<len(text),timestamp=str(stamp),input_hash=input_hash(text)if role=='user'else None))
+            return dict(messages=messages,activities=activities,activity_limited=False,older_cursor=page[-1][0]if more and page else None,limited=more)
+    except (OSError,sqlite3.Error,ValueError):fail(409,'Goose history is unavailable; no database writes were made')
+
+def goose_input_available(observation,candidates=None):
+    # This is a guarded input boundary, not verified provider Ready/Working.
+    if not observation.get('identity')or observation.get('base')is None or observation.get('in_mode'):return False
+    candidates=conversations(observation)if candidates is None else candidates
+    if len([c for c in candidates if c.get('linked')])!=1:return False
+    lines=observation.get('visible','').splitlines();cursor=observation.get('cursor')
+    if not isinstance(cursor,list)or len(cursor)!=2 or cursor[0]!=2 or not 0<=cursor[1]<len(lines):return False
+    if lines[cursor[1]].rstrip()not in ('>','> Enter to send · Ctrl+J newline')or any(v.strip()for v in lines[cursor[1]+1:]):return False
+    try:
+        # A supported empty Rustyline prompt plus a blocked read of this process's
+        # stdin; output text or shared database ownership alone is insufficient.
+        paths=[observation['base']/'syscall']
+        tasks=observation['base']/'task'
+        if tasks.is_dir():paths += [v/'syscall'for v in list(tasks.iterdir())[:64]]
+        for path in paths:
+            try:call=path.read_text().split()
+            except OSError:continue
+            if len(call)>2 and call[0]==('63'if os.uname().machine in ('aarch64','arm64')else'0')and int(call[1],16)==0:return True
+        return False
+    except (OSError,ValueError):return False
+
+def goose_log(chosen):
+    info=os.stat(chosen['path'])
+    # Outbox positions are row IDs, not offsets into the shared SQLite file.
+    return dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=chosen['leaf_id']['latest']+1)
+
+
 def conversations(observation):
+    if observation['kind'] == 'goose': return goose_conversations(observation)
     if observation['kind'] == 'pi': return pi_conversations(observation)
     kind, cwd, env = observation['kind'], observation['cwd'], observation['env']
     home = Path(env.get('CODEX_HOME', Path.home() / '.codex') if kind == 'codex' else env.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
@@ -1219,6 +1345,7 @@ def conversations(observation):
     return candidates[:20]
 
 def provider_home(observation):
+    if observation['kind'] == 'goose':return goose_database(observation).parent.parent
     if observation['kind'] == 'pi': return pi_home(observation)
     env = observation['env']
     return Path(env.get('CODEX_HOME', Path.home() / '.codex') if observation['kind'] == 'codex'
@@ -1338,6 +1465,8 @@ def provider_activity(observation, candidates=None):
         return state_result('approval', 'terminal_question', question['title'], int(time.time()), transition)
     if not observation.get('identity') or observation.get('base') is None:
         return state_result('unknown', 'none', 'Live agent process could not be verified')
+    if observation['kind'] == 'goose':
+        return state_result('unknown','goose_session','Native Goose does not publish verified turn lifecycle state; input is guarded separately')
     if observation['kind'] == 'pi':
         bridge=pi_bridge(observation)
         if bridge:
@@ -1476,6 +1605,7 @@ def claude_local_commands(records, session):
 
 
 def history(path, kind, before=None, known_branch=None, active_leaf=False, include_activity=True):
+    if kind == 'goose': return goose_history(path,before,active_leaf,include_activity)
     if kind == 'pi': return pi_history(path,before,known_branch,active_leaf,include_activity)
     # Read only a tail/page, never a growing multi-GB transcript into memory.
     with open(path, 'rb') as source:
@@ -1546,10 +1676,15 @@ def history(path, kind, before=None, known_branch=None, active_leaf=False, inclu
 def transcript_version(chosen):
     info = os.stat(chosen['path'])
     version = hashlib.sha256(f"{chosen['id']}:{info.st_dev}:{info.st_ino}:{info.st_size}:{info.st_mtime_ns}".encode()).hexdigest()
+    if isinstance(chosen.get('leaf_id'),dict) and 'goose_session'in chosen['leaf_id']:
+        try:
+            wal=os.stat(chosen['path']+'-wal');version=hashlib.sha256(f'{version}:{wal.st_dev}:{wal.st_ino}:{wal.st_size}:{wal.st_mtime_ns}'.encode()).hexdigest()
+        except FileNotFoundError:pass
     if 'leaf_id' in chosen: version=hashlib.sha256((version+':'+json.dumps(chosen['leaf_id'])).encode()).hexdigest()
     return info, version
 
 def observed_token_metrics(request, observation, chosen, association):
+    if observation['kind']=='goose':return None
     code=request.get('_token_code')
     if not isinstance(code,str) or not chosen:return None
     try:
@@ -1600,7 +1735,7 @@ def python_venv(project, value):
     except (OSError,ValueError,RuntimeError): fail(400,'Python venv is unavailable; check its directory')
 
 def launch_executable(kind):
-    if kind not in ('codex', 'claude', 'pi'): fail(400, 'Choose Codex, Claude or pi')
+    if kind not in ('codex', 'claude', 'pi','goose'): fail(400, 'Choose Codex, Claude, pi or Goose')
     search = os.environ.get('PATH', '') + os.pathsep + str(Path.home()/'.local/bin') + os.pathsep + str(Path.home()/'.cargo/bin') + ':/usr/local/bin'
     executable=shutil.which(kind, path=search)
     if not executable: fail(404, f'{kind} is not installed on this machine or is not executable')
@@ -1609,30 +1744,38 @@ def launch_executable(kind):
     return executable, f'{info.st_dev}:{info.st_ino}:{info.st_size}:{info.st_mtime_ns}', search
 
 def launch_candidates(path, kind):
-    observation=dict(kind=kind,cwd=path,env={k:os.environ[k] for k in ('CODEX_HOME','CLAUDE_CONFIG_DIR','PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR') if k in os.environ},base=None,args=[])
+    observation=dict(kind=kind,cwd=path,env={k:os.environ[k] for k in ('CODEX_HOME','CLAUDE_CONFIG_DIR','PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR','GOOSE_PATH_ROOT','XDG_DATA_HOME') if k in os.environ},base=None,args=[])
     return conversations(observation)
 
 def active_launch_sessions(request, kind):
     # Process evidence only. An unrelated project transcript is never "active".
     active=set()
+    current_goose_db=str(goose_database(dict(env=os.environ)).resolve())if kind=='goose'else None
     try:
         rows=tmux(request,'list-panes','-a','-F','#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_dead}\t#{@cc_launch}').splitlines()
     except Failure: return active
+    goose_panes=None
+    if kind=='goose':
+        found=discover_agents(request)
+        if found.get('limited')or len(rows)>256:fail(413,'Active Goose discovery exceeded its bound; no resume was prepared')
+        goose_panes={item['pane']for item in found['agents']if item['provider']=='goose'}
     seen=set()
     for row in rows[:256]:
         fields=row.split('\t')
         if len(fields)!=6 or fields[2] in seen: continue
         try:
             metadata=json.loads(fields[5])
-            if fields[4]=='0' and metadata.get('provider')==kind and metadata.get('pane')==fields[2] and metadata.get('conversation'):
+            if fields[4]=='0' and metadata.get('provider')==kind and metadata.get('pane')==fields[2] and metadata.get('conversation')and(kind!='goose'or metadata.get('goose_database')==current_goose_db):
                 active.add(metadata['conversation'])
         except (ValueError,AttributeError): pass
-        if kind not in fields[3].lower(): continue
+        if (goose_panes is not None and fields[2]not in goose_panes)or(goose_panes is None and kind not in fields[3].lower()): continue
         seen.add(fields[2])
         if len(seen)>64: break
         try:
             observed=observe(dict(request,session=fields[0],window=fields[1],pane=fields[2]))
-            active.update(process_sessions(observed,provider_home(observed)))
+            if observed['kind']!=kind:continue
+            active.update(c['session']for c in conversations(observed)if c.get('linked')and c['path']==current_goose_db) if kind=='goose'else active.update(process_sessions(observed,provider_home(observed)))
+            if kind=='goose':continue
             args=observed['args']
             for i, arg in enumerate(args[:-1]):
                 if arg in ('resume','--resume','--session-id','-r') and re.fullmatch(r'[0-9a-fA-F-]{36}',args[i+1]): active.add(args[i+1])
@@ -1640,6 +1783,7 @@ def active_launch_sessions(request, kind):
     return active
 
 def launch_title(candidate, kind):
+    if kind=='goose':return candidate.get('title')or'Goose conversation'
     for record in head_records(candidate['path']):
         if record.get('isMeta') or record.get('isSidechain') or (kind=='claude' and claude_internal_user(record)): continue
         if kind=='codex':
@@ -1737,7 +1881,7 @@ def launch_options(request):
     candidates=[]
     for candidate in launch_candidates(path,kind):
         session=candidate.get('session','')
-        if not isinstance(session,str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session): continue
+        if not isinstance(session,str) or not (goose_session_id(session)if kind=='goose'else re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session)): continue
         candidates.append(dict(id=candidate['id'],session=session,timestamp=candidate['timestamp'],title=launch_title(candidate,kind),active=session in active))
     return dict(pre_trust=pre_trust,python_venv=venv,venv_identity=venv_identity,project=path,directory_identity=identity,provider=kind,model=model,approval_policy=approval_policy,executable=executable,executable_identity=executable_identity,conversations=candidates,target_session_name=request.get('target_session_name'),target_session=target_session,destination_identity=destination_identity,window_name=window_name,card_name=card_name)
 
@@ -1766,7 +1910,7 @@ def launch_status(request):
     fields,metadata=matches[0];row=fields[:5];session_id=row[0]
     kind=metadata['provider']
     association={}
-    if (metadata.get('ticket') or metadata.get('pre_trust')) and row[3]=='0' and kind in row[4].lower():
+    if (kind=='goose' or metadata.get('ticket') or metadata.get('pre_trust')) and row[3]=='0' and kind in row[4].lower():
         try:
             observed=observe(dict(request,session=row[0],window=row[1],pane=row[2]))
             if observed.get('identity') and observed['env'].get('CC_LAUNCH_ID')==identifier:
@@ -1827,6 +1971,7 @@ def launch_agent(request):
     if venv: search=str(Path(venv)/'bin')+os.pathsep+search
     model=launch_model(request.get('model'))
     command=[executable]
+    if kind=='goose':command+=['run','--interactive']if request.get('initial_prompt')is not None else['session']
     approval_policy=launch_approval_policy(kind,request.get('approval_policy'))
     if kind=='codex': command += codex_launch_flags(executable,approval_policy)
     pre_trust=launch_pre_trust(kind,request.get('pre_trust'))
@@ -1836,14 +1981,15 @@ def launch_agent(request):
         chosen=next((c for c in launch_candidates(path,kind) if c['id']==selected),None)
         if not allowed or not chosen or chosen['session']!=allowed['session']: fail(409,'Conversation changed or is unavailable for this project')
         if chosen['session'] in active_launch_sessions(request,kind): fail(409,'This conversation already has a running agent; open it in AI Queue')
-        command += ['resume',chosen['session']] if kind=='codex' else ['--session',chosen['path']] if kind=='pi' else ['--resume',chosen['session']]
+        command += ['--resume','--session-id',chosen['session']] if kind=='goose' else ['resume',chosen['session']] if kind=='codex' else ['--session',chosen['path']] if kind=='pi' else ['--resume',chosen['session']]
     elif kind=='claude': command += ['--session-id',identifier]
+    elif kind=='goose':command+=['--name','cc-'+identifier]
     if model is not None: command += ['--model',model]
     initial=request.get('initial_prompt')
     if initial is not None:
         if selected or not isinstance(initial,str) or not initial.strip() or len(initial.encode('utf-8'))>24000 or '\0' in initial: fail(400,'Invalid initial ticket prompt')
         # Positional literal input; never shell code or simulated terminal typing.
-        command += ['--',initial]
+        command += ['--text='+initial] if kind=='goose' else ['--',initial]
     name='cc-agent-'+identifier
     window_name=launch_label(request.get('window_name'),120,'Window name')
     launch_label(request.get('card_name'),240,'Agent card name')
@@ -1855,7 +2001,7 @@ def launch_agent(request):
         row=tmux(request,'new-session','-d','-P','-F','#{session_id}\t#{window_id}\t#{pane_id}','-s',request.get('target_session_name') or name,'-n',name if request.get('target_session_name') else kind,'-c',path,'-x','120','-y','36','/bin/sleep','86400').strip().split('\t')
     if len(row)!=3: fail(502,'Launch state uncertain; check the launch before trying again')
     try:
-        metadata=json.dumps(dict(launch_id=identifier,project=path,python_venv=venv,provider=kind,model=model,pre_trust=pre_trust,approval_policy=approval_policy,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,target_session_name=request.get('target_session_name'),destination='window' if target_session else 'session'))
+        metadata=json.dumps(dict(goose_database=str(goose_database(dict(env=os.environ)).resolve())if kind=='goose'else None,launch_id=identifier,project=path,python_venv=venv,provider=kind,model=model,pre_trust=pre_trust,approval_policy=approval_policy,session=row[0],window=row[1],pane=row[2],conversation=chosen['session'] if selected else identifier if kind=='claude' else None,ticket=initial is not None,target_session_name=request.get('target_session_name'),destination='window' if target_session else 'session'))
         tmux(request,'set-option','-w','-t',row[1],'@cc_launch',metadata)
         if not target_session:tmux(request,'set-option','-t',row[0],'@cc_launch',metadata)
         else:tmux(request,'rename-window','-t',row[1],kind+'-'+identifier[:8])
@@ -1867,7 +2013,7 @@ def launch_agent(request):
         if venv: environment += ['-e','PYTHONHOME=']
         for key,default in (('CODEX_HOME','.codex'),('CLAUDE_CONFIG_DIR','.claude')):
             environment += ['-e',key+'='+os.environ.get(key,str(Path.home()/default))]
-        for key in ('PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR'):
+        for key in ('PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR','GOOSE_PATH_ROOT','XDG_DATA_HOME'):
             if key in os.environ: environment += ['-e',key+'='+os.environ[key]]
         respawn_launch(request,row[2],path,environment,command)
     except (Failure,subprocess.SubprocessError): fail(502,'Launch setup or delivery uncertain; check the new session before trying again')
@@ -1890,7 +2036,9 @@ def restart_plan(request, observation):
     if len(linked) != 1: fail(409, 'Restart requires one verified process-linked conversation')
     chosen = linked[0]
     session = chosen.get('session')
-    if not isinstance(session,str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session):
+    kind = observation['kind']
+    if kind=='goose' and not goose_session_id(session):fail(409,'Invalid Goose resume identity')
+    if kind!='goose' and (not isinstance(session,str) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',session)):
         fail(409, 'The active conversation has no supported resume identity')
     kind = observation['kind']
     executable, executable_identity, search = launch_executable(kind)
@@ -1901,9 +2049,9 @@ def restart_plan(request, observation):
             result=subprocess.run([executable,'--help'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=2)
             if result.returncode==0 and b'--no-daemon' in result.stdout[:256*1024]: command += ['--no-daemon']
         except (OSError,subprocess.SubprocessError): pass
-    command += ['resume',session] if kind=='codex' else ['--session',chosen['path']] if kind=='pi' else ['--resume',session]
+    command += ['session','--resume','--session-id',session] if kind=='goose' else ['resume',session] if kind=='codex' else ['--session',chosen['path']] if kind=='pi' else ['--resume',session]
     info=os.stat(chosen['path'])
-    environment={key:value for key,value in observation['env'].items() if key in ('VIRTUAL_ENV','CODEX_HOME','CLAUDE_CONFIG_DIR','PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR')}
+    environment={key:value for key,value in observation['env'].items() if key in ('GOOSE_PATH_ROOT','XDG_DATA_HOME','VIRTUAL_ENV','CODEX_HOME','CLAUDE_CONFIG_DIR','PI_CODING_AGENT_DIR','PI_CODING_AGENT_SESSION_DIR')}
     venv,venv_identity=python_venv(project,observation['env'].get('VIRTUAL_ENV'))
     if venv: search=str(Path(venv)/'bin')+os.pathsep+search
     environment['VIRTUAL_ENV']=venv or ''
@@ -2016,10 +2164,11 @@ def execute(request):
                     send_available=bool(observation['identity']) and not observation['in_mode'] and not folder_trust(observation) and not approval_menu(observation)
                         and not native_input_dialog(observation))
         state=active_message_state(observation)
-        result['input_guard']=observation['screen'] if result['pending_codex_input_available'] else message_input_guard(observation,state) if state else None
+        result['goose_input_available']=observation['kind']=='goose' and goose_input_available(observation,candidates)
+        result['input_guard']=observation['screen'] if result['pending_codex_input_available'] or result['goose_input_available'] else message_input_guard(observation,state) if state else None
         if chosen:
             info=os.stat(chosen['path'])
-            result['log']=dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size)
+            result['log']=goose_log(chosen) if observation['kind']=='goose' else dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size)
             page=history(chosen['path'],observation['kind'],active_leaf=chosen.get('leaf_id',False),include_activity=False)
             result['users']=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in page['messages'] if message['role']=='user' and message.get('input_hash')]
             result['commands']=page.get('commands',[])
@@ -2138,7 +2287,7 @@ def execute(request):
             result['history_reset'] = True
             result['history_notice'] = 'Conversation display updated to include verified native human steering.' if observation['kind']=='claude' else 'Conversation display updated to exclude harness-generated context.'
         if request.get('before') is None and chosen.get('linked') and not result.get('history_unchanged'):
-            result['_outbox_observation']=dict(log=dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size),users=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in result.get('messages',[]) if message['role']=='user' and message.get('input_hash')])
+            result['_outbox_observation']=dict(log=goose_log(chosen) if observation['kind']=='goose' else dict(conversation=chosen['id'],device=info.st_dev,inode=info.st_ino,size=info.st_size),users=[dict(position=int(message['id']),digest=message.get('input_hash')) for message in result.get('messages',[]) if message['role']=='user' and message.get('input_hash')])
             if observation['kind']=='pi': result['_outbox_observation']['pi_session']=chosen['session']
             if observation['kind']=='codex': result['_outbox_observation']['codex_session']=chosen['session']
         if request.get('before') is None:

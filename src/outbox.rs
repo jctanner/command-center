@@ -948,6 +948,9 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
         Some("pi_bridge" | "claude_registry" | "claude_events" | "codex_events")
     );
     if (!first_codex
+        && !(observation["provider"] == "goose"
+            && observation["goose_input_available"] == true
+            && log.is_some())
         && (!matches!(activity.state, AgentState::Ready | AgentState::Working) || !verified))
         || observation["send_available"] != true
         || !observation["input_guard"].is_string()

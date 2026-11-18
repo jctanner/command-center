@@ -2619,7 +2619,8 @@
               "enum": [
                 "codex",
                 "claude",
-                "pi"
+                "pi",
+                "goose"
               ]
             }
           },
@@ -4699,7 +4700,8 @@
             "enum": [
               "codex",
               "claude",
-              "pi"
+              "pi",
+              "goose"
             ]
           },
           "model": {
@@ -4783,7 +4785,7 @@
             "description": "Native launch only. Mutually exclusive with target_session in preparation. Resolve exact name to an existing stable session identity or create-by-name; Start rejects changed resolution. cc-view- prefix reserved."
           }
         },
-        "description": "Explicitly reviewed launch input. Dedicated detached session by default, or a new detached window in target_session. Preparation grants expire after 120 seconds. Never invent flags, shell commands or approval bypasses.",
+        "description": "Explicitly reviewed launch input. Dedicated detached session by default, or a new detached window in target_session. Preparation grants expire after 120 seconds. Never invent flags, shell commands or approval bypasses. Native Goose is supported through tmux; provider session IDs are not necessarily UUIDs.",
         "required": [
           "revision",
           "host",
@@ -7464,7 +7466,8 @@
             "enum": [
               "codex",
               "claude",
-              "pi"
+              "pi",
+              "goose"
             ]
           },
           "conversation": {

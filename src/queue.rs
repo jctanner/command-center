@@ -267,7 +267,7 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                     result.limited |= value["ok"]["limited"]==true;
                     for agent in agents.iter().take(256) {
                         if let (Some(pane),Some(provider))=(agent["pane"].as_str(),agent["provider"].as_str())
-                            && matches!(provider,"codex"|"claude"|"pi") {
+                            && matches!(provider,"codex"|"claude"|"pi"|"goose") {
                             providers.insert(pane.to_owned(),provider.to_owned());
                         }
                     }
@@ -278,7 +278,7 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                         for pane in window.panes {
                             if acp_panes.contains(&pane.id){continue}
                             let command = pane.command.to_lowercase();
-                            let hinted=if command.contains("codex"){Some("codex")}else if command.contains("claude"){Some("claude")}else if command=="pi"||command=="pi-coding-agent"{Some("pi")}else{None};
+                            let hinted=if command.contains("codex"){Some("codex")}else if command.contains("claude"){Some("claude")}else if command=="pi"||command=="pi-coding-agent"{Some("pi")}else if command=="goose"{Some("goose")}else{None};
                             let provider=providers.get(&pane.id).cloned().or_else(||hinted.map(str::to_owned));
                             let Some(provider)=provider else {continue;};
                             if !seen.insert(pane.id.clone()) { continue; }

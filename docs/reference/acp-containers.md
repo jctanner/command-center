@@ -1,6 +1,6 @@
 # Container-managed ACP profiles
 
-Container Goose is an opt-in ACP launch path; native launch remains the default. Goose is never installed or executed directly on the host. Settings → Containers manages reusable profiles on each selected machine through CC's shared transport. Docker and rootless Podman are supported on Linux; engines and images must already be installed/cached. CC never pulls images implicitly.
+Container Goose is an opt-in ACP launch path; native launch remains the default. This container launch path never installs or executes Goose on the host. [Native tmux Goose](native-goose.md) is separately supported; the initial host-install prohibition is retired. Settings → Containers manages reusable profiles on each selected machine through CC's shared transport. Docker and rootless Podman are supported on Linux; engines and images must already be installed/cached. CC never pulls images implicitly.
 
 ## Profile configuration
 
