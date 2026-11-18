@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0120: release container profiles](docs/tasks/current/0120-release-container-profiles.md) — human-authorized commit/push/deploy in progress.
+- [Task0120: release container profiles](docs/tasks/done/0120-release-container-profiles.md) — committed/pushed/deployed; four paths and local/remote tmux identities verified.
 
-- [Task0119: configurable container profiles](docs/tasks/done/0119-configurable-container-profiles.md) — implemented and tested; coordinator skills updated. Real runtime follow-up awaits rhlaptop availability; not deployed.
+- [Task0119: configurable container profiles](docs/tasks/done/0119-configurable-container-profiles.md) — deployed in task0120; coordinator skills updated. Configurable-container lifecycle coverage remains limited to fixtures.
 
 - [Task0118: release container Goose and HTML preview](docs/tasks/done/0118-release-container-goose-and-html-preview.md) — committed/pushed/deployed; four access paths healthy, live agents unchanged.
 
