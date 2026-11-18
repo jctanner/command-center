@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0132: release profile shortcut](docs/tasks/current/0132-release-launcher-profile-shortcut.md) — commit/push/frontend deployment authorized.
+- [Task0132: release profile shortcut](docs/tasks/done/0132-release-launcher-profile-shortcut.md) — committed/pushed/deployed; four paths/assets and unchanged backend/tmux PIDs verified.
 
-- [Task0131: launcher profile creation](docs/tasks/done/0131-launcher-create-container-profile.md) — implemented; selected-machine new draft, save/return and unsaved guards verified;22 browser cases pass, not deployed.
+- [Task0131: launcher profile creation](docs/tasks/done/0131-launcher-create-container-profile.md) — implemented; selected-machine new draft, save/return and unsaved guards verified;22 browser cases pass; deployed in task0132.
 
 - [Task0130: release host Goose ACP](docs/tasks/done/0130-release-host-goose-acp.md) — committed/pushed/deployed; four paths and live host preparation verified; existing local/remote pane PIDs preserved.
 
