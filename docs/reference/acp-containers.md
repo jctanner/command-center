@@ -1,37 +1,58 @@
-# Container-managed ACP: Goose
+# Container-managed ACP profiles
 
-CC-100 adds opt-in Goose agents through the existing SSH/ProxyJump transport and ACP broker. Native Codex/Claude/pi launch remains the default. **Goose runs only inside its container; CC never discovers, installs or executes a host Goose CLI.** The first implementation supports Linux rootless Podman with the reviewed digest-pinned image, an OpenAI-compatible provider and the host's existing ENMAAS credential source.
+Container Goose is an opt-in ACP launch path; native launch remains the default. Goose is never installed or executed directly on the host. Settings → Containers manages reusable profiles on each selected machine through CC's shared transport. Docker and rootless Podman are supported on Linux; engines and images must already be installed/cached. CC never pulls images implicitly.
 
-## Reviewed host setup
+## Profile configuration
 
-An operator reviews and installs `~/.config/command-center/container-profiles.json` on the agent machine, owned by its user with0600 permissions, no symlinks. It is an array of at most16 profiles. [Example registry](../examples/goose-container-profiles.json) contains placeholders, not working credentials. Configure an actual model/HTTPS endpoint and absolute host-local secret reference; no secret value belongs in the registry or CC configuration. Unknown fields, duplicate IDs, unpinned images and unsafe files are rejected. V1 reads `enmaas.key` from the referenced private JSON file; alternate credential formats are not implemented.
+`GET /api/v1/hosts/{host}/acp/profiles?connection_revision=...` lists profiles with normalized `config` and reference metadata, never credential values. `GET /hosts/{host}/acp/profile-settings` with the same query returns `{revision,profiles}`. An explicit configuration edit uses PUT to that route with `{connection_revision,revision,profiles}`. It replaces the registry atomically, checks both endpoint and registry revision, and starts nothing. Preserve drafts on409; inspect saved settings after uncertain writes before retrying.
 
-Create the owned managed scratch root `~/.cache/command-center/goose-workspaces/` and a separate existing child directory per agent, without symlinks or group/world write permissions. This first slice does not create/copy projects or synchronize changes. The path passed at launch must be a dedicated directory under that root, not the root itself or a real project tree. Only that scratch directory receives SELinux `:Z` relabeling. Preparation rejects a directory mounted by another live Goose container, and a private host-side file lock prevents simultaneous starts from racing that check. Only the exact verified original container is exempt during restart preparation; it is stopped and removed before the replacement starts. The named state volume contains the container's home and provider database. The runtime uses `--userns=keep-id:uid=1000,gid=1000` to map the host account to the image's Goose user; output files retain the host user's ownership.
+The private host registry is `~/.config/command-center/container-profiles.json` (0600, account-owned, no symlinks), at most16 profiles/64KiB. Settings exposes these literal fields:
 
-Podman and the exact image must already be available. CC uses image inspection and `--pull=never`; launch never installs packages or pulls an image implicitly. The initial allowlist is `ghcr.io/aaif-goose/goose@sha256:d1f8264826e35ad064cb3f97eb6fb6498fe3b424ac8d0f61ee4eef030ef10860`. Rootful Podman is rejected. No Docker socket, SSH agent, home directory, real project or arbitrary mount is exposed to the container.
+| Field | Meaning |
+| --- | --- |
+| `id`, `label` | Stable machine-local ID and display name; duplicate IDs rejected. |
+| `engine`, `image` | `podman` or `docker`; cached image tag/name or digest. Preparation binds its immutable ID. |
+| `entrypoint`, `args` | Absolute executable **inside** the image, plus literal argument array; default Goose ACP. No host shell evaluation. |
+| `workdir`, `state_target` | Container paths, default `/workspace` and `/home/goose`. |
+| `workspace_policy` | `managed` requires an existing dedicated child of `~/.cache/command-center/goose-workspaces`; `project` permits the existing canonical project directory. No copying or automatic directory creation. |
+| `mounts` | Up to16 `{source,target,read_only,selinux}` binds. Source is an absolute **host** path or `{workspace}`; target is a **container** path. Labels: `none`, `private`, `shared`. |
+| `selinux` | `host` preserves host policy; `disabled` explicitly disables container labeling. Relabeling is allowed only under managed scratch, never real projects. |
+| `volumes` | Up to8 additional literal named volumes with target/read_only. CC's per-agent persistent state volume is separate and always retained. |
+| `user`, `user_namespace` | Container account and `default`/`keep-id`. Podman keep-id requires numeric uid:gid; Docker rejects keep-id. |
+| `environment` | Non-secret literal NAME=value settings. Secret-like names require references instead. Goose approve mode and telemetry policy cannot be overridden. |
+| `secret_refs` | Up to8 `{name,path,json_pointer}` references to private owned host JSON files under the account home. No value belongs in the profile or API request. |
+| `model`, `base_url` | Optional model and HTTPS OpenAI-compatible endpoint; omitted values preserve configured environment defaults. |
+| `network` | `default`, `none`, or explicitly reviewed `host`. |
+| `cpus`, `memory_mb`, `pids_limit` | Optional limits:0.1–64 CPUs,64–262144 MiB,16–4096 PIDs. |
 
-## Launch and control
+Podman runs explicitly local/rootless. Docker accepts only a local Unix daemon endpoint, then pins that endpoint and daemon identity. Remote contexts are rejected. Real project binds are possible only when explicitly configured/reviewed, without relabeling. Mounts expose account-accessible data to the agent: do not add home, engine sockets, SSH agents or credentials as a workaround. Engine flags are structured, not a free-form runtime command.
 
-`GET /api/v1/hosts/{host}/acp/profiles?connection_revision=...` lists reviewed IDs, labels, model/image, fixed approve mode and scratch root, without the credential reference or value. It does not start a container. No profiles means an empty list.
+Existing six-field Goose profiles remain readable, including `secret_file` (legacy `/enmaas/key` reference). Saving unchanged legacy definitions preserves their original representation/hash. Profiles used by active legacy brokers without retained configuration cannot be changed/deleted: duplicate the profile or perform a separately authorized broker upgrade first.
 
-Prepare with `POST /api/v1/hosts/{host}/acp/prepare`:
+## Prepare, review, Start
 
 ```json
-{"connection_revision":"observed-revision","provider":"goose","container_profile":"goose-example","path":"/home/USER/.cache/command-center/goose-workspaces/my-agent"}
+{
+  "connection_revision": "observed-revision",
+  "provider": "goose",
+  "container_profile": "goose-example",
+  "path": "/home/USER/.cache/command-center/goose-workspaces/my-agent",
+  "container_overrides": {"cpus": 2, "memory_mb": 4096}
+}
 ```
 
-Review the returned profile, pinned image, model, path and endpoint, retain the opaque broker UUID before IO, and start once with the existing `POST /acp/start` token flow. Profile hash, canonical workspace identity, runtime executable identity and cached image ID are bound into the one-use grant and rechecked. No free-form runtime, mount, environment, image or CLI fields are accepted. In the web launcher select **ACP container · Goose**, choose the machine/profile and enter its prepared scratch folder. Existing agent cards, chat, tool activity, explicit permission controls and queued prompts work normally.
+POST this to `/hosts/{host}/acp/prepare`. Overrides are optional partial profile fields, excluding id/label/legacy secret_file, and affect only this launch. Arrays/maps replace their field; they are not incrementally appended. Native adapters reject container fields. This is the standalone ACP workflow; native ticket launching is unchanged.
 
-Each broker owns one `cc-goose-<broker UUID>` container, with `cc.acp.*` labels for broker, process instance, profile, persistent state and digest. Immutable container ID and labels are recorded and checked before stop/restart; names and PIDs alone do not authorize targeting. Stdio is ACP only. The tmux pane owns the durable broker, so closing a browser or restarting CC does not stop the agent. The pane remains an interactive broker CLI, not Goose's native TUI.
+Review the returned `container_review`: engine/daemon scope, immutable `image_id`, image reference, host binds and container targets, command, user, network, limits, nonsecret environment and secret references. No secrets are returned. In the launcher, **Advanced container options** edits only this launch; **Review container launch** prepares it. Changing configuration or path invalidates review.
 
-Goose is fixed to `approve` mode. Only explicit human ACP option choices answer tools; CC does not auto-approve, select allow-always or configure autonomous mode. Container agents cannot run CC broker host-shell commands or convert to native mode. Goose's provider cost estimates are not represented as actual account spend; token context is shown only when reported.
+Before one POST `/acp/start` with the prepared token and optional initial_prompt, privately retain its broker UUID and attempted phase. Preparation binds profile/override hashes, executable, directory/mount identities, runtime scope and image. Start rechecks and consumes the grant before execution. Never automatically repeat uncertain Start: observe the original broker UUID instead. Initial prompt is provided at Start, separately from container configuration review.
 
-**Restart & update broker** uses the existing prepare/review/start/status flow while Ready, with no tools, permissions, queued prompts or uncertain receipts outstanding. It stops the exact container via Podman, replaces only that broker/pane, creates a new owned container and loads the exact saved Goose session on the same persistent volume. Goose IDs are provider DB IDs such as `20261118_1`, scoped to that volume; they are not UUIDs. No failed load falls back to a new conversation. Card settings carry over after verification; old drafts/outbox receipts are not resent. Missing profile/image, a changed container or invalid process evidence fails closed.
+## Lifecycle and secrets
 
-**Close agent** records the normal durable receipt and signals only the verified broker, which stops its immutable container with10s grace and verifies `--rm` removal. A lost/uncertain response is not retried. The persistent `cc-goose-state-<original broker UUID>` volume and scratch files remain for deliberate recovery/export; CC does not automatically delete work. V1 has no closed-session browser picker or volume-GC UI. Stop/removal failures remain for inspection, never broad name/prefix cleanup. Disposable test volumes and scratch folders may be explicitly cleaned after verifying their exact identities and lack of running containers.
+Each broker owns an immutable container with `cc.acp.*` labels and a persistent `cc-goose-state-<original broker UUID>` volume. The detached tmux broker owns ACP stdio independently of CC/browser lifetime. Its pane is a broker CLI, not Goose's native TUI. Goose remains in approve mode; tool choices require explicit human permission. Native conversion and broker host-shell commands are unavailable.
 
-## Credentials and live validation
+Restart & update broker, while verified idle with no unresolved tools/messages/permissions, retains the **saved resolved configuration, image ID, engine endpoint, mount identities, state volume and exact Goose conversation**. Editing/deleting a newer profile or moving an image tag does not change an already prepared v2 agent. Missing saved image/mount, changed runtime scope or replaced container fails closed. Legacy brokers still require their original profile until upgraded. A failed session/load never falls back to a new conversation; old drafts/outbox are never resent. Close stops only the verified container, preserving state volumes and project/scratch files. No automatic volume GC or closed-session browser picker is provided.
 
-The remote broker reads the private host auth JSON and writes one bounded credential line into the container's stdin pipe. A fixed in-container `/bin/sh` bootstrap reads that line with literal `read -r`, exports OPENAI_API_KEY and execs the pinned image's Goose ACP executable. JSON-RPC begins only after this bootstrap line; it is never part of ACP messages or terminal input. No key is interpolated into shell text, arguments, Podman environment flags, CC state or an env file. Child stderr is discarded; failures return bounded metadata. This deliberately replaces the reference launcher's env-file approach: real inspection confirmed Podman persists env-file values in its private OCI metadata. The revised bootstrap avoids that copy. The key still exists in the authorized Goose process environment while running; this is not a secret vault against a user who explicitly permits an agent to inspect its own environment. No memory/swap protection is claimed.
+Secret files are validated on the host. At actual start, bounded printable JSON-pointer values enter the container through stdin and a fixed in-container bootstrap before ACP begins. They never appear in runtime arguments, engine environment flags, env files, CC state or receipts. They remain in the authorized process environment while running; this is not a vault against the agent inspecting its own environment. Source failures return bounded errors without secret contents.
 
-Real rhlaptop validation used the cached image, enforced SELinux and the nonstandard host UID: ACP Ready/card/chat, one exact scratch tool command approved once in Agents, streamed updates, restart into a different container with the same volume/session, remembered context, cancellation, close/removal and host-owned output. A bounded scan of15 managed broker/volume/workspace files found no credential bytes. The first test session was subsequently used by the human and was preserved; destructive tests used a separately labeled disposable agent and cleaned only its volume/workspace/ended pane. Evidence is recorded in task0102/private test journals. No production backend deployment is implied by these tests.
+The original rootless Podman Goose ACP path was verified end to end on rhlaptop (chat, approval, restart/resume, cancellation, close and host-owned output); see task0102. Configurable profile validation evidence and runtime coverage are recorded separately in task0119. Engine flag references: [Docker run](https://docs.docker.com/reference/cli/docker/container/run/), [Podman run](https://docs.podman.io/en/stable/markdown/podman-run.1.html).

@@ -56,6 +56,14 @@ pub(crate) struct Prepare {
     path: String,
     provider: Option<String>,
     container_profile: Option<String>,
+    container_overrides: Option<Value>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProfileSave {
+    connection_revision: String,
+    revision: String,
+    profiles: Vec<Value>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -142,6 +150,10 @@ pub(crate) fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/hosts/{host}/acp", get(list))
         .route("/api/v1/hosts/{host}/acp/profiles", get(profiles))
+        .route(
+            "/api/v1/hosts/{host}/acp/profile-settings",
+            get(profile_settings).put(save_profile_settings),
+        )
         .route("/api/v1/hosts/{host}/acp/prepare", post(prepare))
         .route("/api/v1/hosts/{host}/acp/start", post(start))
         .route(
@@ -185,6 +197,46 @@ async fn profiles(
     machine(&state, &host, &scope.connection_revision).await?;
     Ok(Json(value))
 }
+async fn profile_settings(
+    State(state): State<Arc<AppState>>,
+    Path(host): Path<String>,
+    Query(scope): Query<Scope>,
+) -> Result<Json<Value>, ApiError> {
+    let _slot = state
+        .file_slots
+        .try_acquire()
+        .map_err(|_| ApiError(StatusCode::TOO_MANY_REQUESTS, "Host operations busy".into()))?;
+    let m = machine(&state, &host, &scope.connection_revision).await?;
+    let value = result(
+        m.transport
+            .acp_request(json!({"action":"profile_settings"}))
+            .await?,
+    )?;
+    machine(&state, &host, &scope.connection_revision).await?;
+    Ok(Json(value))
+}
+async fn save_profile_settings(
+    State(state): State<Arc<AppState>>,
+    Path(host): Path<String>,
+    Json(body): Json<ProfileSave>,
+) -> Result<Json<Value>, ApiError> {
+    let _slot = state
+        .file_slots
+        .try_acquire()
+        .map_err(|_| ApiError(StatusCode::TOO_MANY_REQUESTS, "Host operations busy".into()))?;
+    let m = machine(&state, &host, &body.connection_revision).await?;
+    let _guard = m.file_writes.lock().await;
+    machine(&state, &host, &body.connection_revision).await?;
+    let value = result(
+        m.transport
+            .acp_request(
+                json!({"action":"save_profiles","revision":body.revision,"profiles":body.profiles}),
+            )
+            .await?,
+    )?;
+    machine(&state, &host, &body.connection_revision).await?;
+    Ok(Json(value))
+}
 async fn prepare(
     State(state): State<Arc<AppState>>,
     Path(host): Path<String>,
@@ -204,7 +256,7 @@ async fn prepare(
     }
     let prepared = result(
         m.transport
-            .acp_request(json!({"action":"prepare","path":request.path,"provider":provider,"container_profile":request.container_profile}))
+            .acp_request(json!({"action":"prepare","path":request.path,"provider":provider,"container_profile":request.container_profile,"container_overrides":request.container_overrides}))
             .await?,
     )?;
     machine(&state, &host, &request.connection_revision).await?;
@@ -229,7 +281,7 @@ async fn prepare(
         },
     );
     Ok(Json(
-        json!({"token":token,"broker":broker,"protocol":"acp","provider":provider,"path":prepared["path"],"executable":prepared["executable"],"container_profile":prepared["container_profile"],"image":prepared["container_image"],"model":prepared["model"],"mode":prepared["mode"],"endpoint":crate::attention::scope(&m.config,"","","").0,"notice":"Experimental ACP broker in a dedicated tmux session. Goose uses a reviewed rootless container profile, managed scratch workspace and explicit approvals. Native mode remains default."}),
+        json!({"token":token,"broker":broker,"protocol":"acp","provider":provider,"path":prepared["path"],"executable":prepared["executable"],"container_profile":prepared["container_profile"],"image":prepared["container_image"],"model":prepared["model"],"mode":prepared["mode"],"container_review":if provider=="goose"{prepared["container_review"].clone()}else{Value::Null},"endpoint":crate::attention::scope(&m.config,"","","").0,"notice":"Experimental ACP broker in a dedicated tmux session. Goose uses a reviewed container profile and explicit approvals; inspect the resolved image, mounts and runtime settings. Native mode remains default."}),
     ))
 }
 async fn start(

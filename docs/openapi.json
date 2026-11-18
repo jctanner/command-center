@@ -3946,6 +3946,95 @@
           }
         }
       }
+    },
+    "/hosts/{host}/acp/profile-settings": {
+      "get": {
+        "operationId": "getAcpContainerProfileSettings",
+        "summary": "Read normalized profile definitions and CAS registry revision.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connection_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private host-local profile registry snapshot. No container execution or secret values.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpContainerSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveAcpContainerProfileSettings",
+        "summary": "Explicit configuration action: atomically replace private host profile registry with revision check. Does not launch agents.",
+        "parameters": [
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpContainerSettingsSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Private host-local profile registry snapshot. No container execution or secret values.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpContainerSettings"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale registry/endpoint or edit of profile used by a legacy broker. Preserve draft; inspect before retry."
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7487,7 +7576,17 @@
               "string",
               "null"
             ],
-            "description": "Required for Goose, rejected for host adapters. ID from the reviewed private profile registry on the selected machine; runtime/mount/env fields are never client inputs."
+            "description": "Goose profile ID from this machine; rejected for native host adapters."
+          },
+          "container_overrides": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcpContainerOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -7828,7 +7927,7 @@
               "string",
               "null"
             ],
-            "description": "Required for Goose, rejected for host adapters. ID from the reviewed private profile registry on the selected machine; runtime/mount/env fields are never client inputs."
+            "description": "Goose profile ID from this machine; rejected for native host adapters."
           },
           "image": {
             "type": [
@@ -7846,6 +7945,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "container_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcpContainerReview"
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },
@@ -8584,7 +8693,10 @@
             "type": "string"
           },
           "model": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "mode": {
             "type": "string"
@@ -8594,8 +8706,490 @@
           },
           "notice": {
             "type": "string"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "podman",
+              "docker"
+            ]
+          },
+          "config": {
+            "$ref": "#/components/schemas/AcpContainerConfig"
           }
         }
+      },
+      "AcpContainerConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "podman",
+              "docker"
+            ]
+          },
+          "image": {
+            "type": "string",
+            "description": "Cached image reference; prepare resolves immutable image ID. No implicit pull."
+          },
+          "entrypoint": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "maxLength": 2048
+            }
+          },
+          "workdir": {
+            "type": "string"
+          },
+          "state_target": {
+            "type": "string"
+          },
+          "workspace_policy": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "project"
+            ]
+          },
+          "selinux": {
+            "type": "string",
+            "enum": [
+              "host",
+              "disabled"
+            ]
+          },
+          "mounts": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Absolute host path or {workspace}; no shell expansion."
+                },
+                "target": {
+                  "type": "string"
+                },
+                "read_only": {
+                  "type": "boolean"
+                },
+                "selinux": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "private",
+                    "shared"
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "target"
+              ]
+            }
+          },
+          "volumes": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "read_only": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "target"
+              ]
+            }
+          },
+          "environment": {
+            "type": "object",
+            "maxProperties": 32,
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "secret_refs": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Private owned host-local JSON file; value never returned."
+                },
+                "json_pointer": {
+                  "type": "string",
+                  "description": "RFC6901 pointer into the private JSON file."
+                }
+              },
+              "required": [
+                "name",
+                "path",
+                "json_pointer"
+              ]
+            }
+          },
+          "user": {
+            "type": "string"
+          },
+          "user_namespace": {
+            "type": "string",
+            "enum": [
+              "default",
+              "keep-id"
+            ]
+          },
+          "network": {
+            "type": "string",
+            "enum": [
+              "default",
+              "none",
+              "host"
+            ]
+          },
+          "cpus": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.1,
+            "maximum": 64
+          },
+          "memory_mb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 64,
+            "maximum": 262144
+          },
+          "pids_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 16,
+            "maximum": 4096
+          },
+          "model": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "secret_file": {
+            "type": "string",
+            "description": "Legacy credential reference; new clients use secret_refs."
+          }
+        },
+        "required": [
+          "id",
+          "image"
+        ],
+        "description": "Host-local reviewed Goose ACP configuration. Bind paths and credentials are host paths; workdir/targets are container paths. Structured literals only. Goose approve mode remains fixed."
+      },
+      "AcpContainerOverrides": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "type": "string",
+            "enum": [
+              "podman",
+              "docker"
+            ]
+          },
+          "image": {
+            "type": "string",
+            "description": "Cached image reference; prepare resolves immutable image ID. No implicit pull."
+          },
+          "entrypoint": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "maxLength": 2048
+            }
+          },
+          "workdir": {
+            "type": "string"
+          },
+          "state_target": {
+            "type": "string"
+          },
+          "workspace_policy": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "project"
+            ]
+          },
+          "selinux": {
+            "type": "string",
+            "enum": [
+              "host",
+              "disabled"
+            ]
+          },
+          "mounts": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Absolute host path or {workspace}; no shell expansion."
+                },
+                "target": {
+                  "type": "string"
+                },
+                "read_only": {
+                  "type": "boolean"
+                },
+                "selinux": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "private",
+                    "shared"
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "target"
+              ]
+            }
+          },
+          "volumes": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "read_only": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "target"
+              ]
+            }
+          },
+          "environment": {
+            "type": "object",
+            "maxProperties": 32,
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "secret_refs": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Private owned host-local JSON file; value never returned."
+                },
+                "json_pointer": {
+                  "type": "string",
+                  "description": "RFC6901 pointer into the private JSON file."
+                }
+              },
+              "required": [
+                "name",
+                "path",
+                "json_pointer"
+              ]
+            }
+          },
+          "user": {
+            "type": "string"
+          },
+          "user_namespace": {
+            "type": "string",
+            "enum": [
+              "default",
+              "keep-id"
+            ]
+          },
+          "network": {
+            "type": "string",
+            "enum": [
+              "default",
+              "none",
+              "host"
+            ]
+          },
+          "cpus": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.1,
+            "maximum": 64
+          },
+          "memory_mb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 64,
+            "maximum": 262144
+          },
+          "pids_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 16,
+            "maximum": 4096
+          },
+          "model": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "description": "Partial per-launch override, bound into preparation; does not save or edit the profile."
+      },
+      "AcpContainerReview": {
+        "type": "object",
+        "description": "Resolved literal runtime configuration, immutable image_id, runtime engine_scope, mounts, state_target, environment and secret references only. Never contains secret values. Rechecked at Start and saved for restart.",
+        "properties": {
+          "engine": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "image_id": {
+            "type": "string"
+          },
+          "secret_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Private owned host-local JSON file; value never returned."
+                },
+                "json_pointer": {
+                  "type": "string",
+                  "description": "RFC6901 pointer into the private JSON file."
+                }
+              },
+              "required": [
+                "name",
+                "path",
+                "json_pointer"
+              ]
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "AcpContainerSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "string"
+          },
+          "profiles": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/components/schemas/AcpContainerConfig"
+            }
+          }
+        },
+        "required": [
+          "revision",
+          "profiles"
+        ]
+      },
+      "AcpContainerSettingsSave": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connection_revision": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "profiles": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/components/schemas/AcpContainerConfig"
+            }
+          }
+        },
+        "required": [
+          "connection_revision",
+          "revision",
+          "profiles"
+        ]
       }
     },
     "responses": {

@@ -16,3 +16,5 @@ Human-scoped design collaboration may use cc-whiteboard for semantic reads/drawi
 When the human explicitly requests closure or delegates cleanup of a bounded set, switch to `cc-close` for those targets. That explicit close delegation is distinct from this skill’s ordinary messaging scope; inspect whole-window and linked-session effects and preserve uncertainty without retrying.
 
 For a human restart request or maintenance task explicitly including restarts, switch to `cc-restart`. Finish separately authorized package updates before restart preparation; a fresh preparation selects the installed CLI and binds its identity. Ordinary coordination/messaging permission alone does not authorize interruption.
+
+For container Goose profile discovery, host/container path mapping and explicitly requested configuration or launch overrides, use cc-container-profiles and repository-root docs/reference/acp-containers.md. Profile edits are separate configuration actions, never implicit launches or restarts. Existing v2 agents retain saved runtime settings on restart.

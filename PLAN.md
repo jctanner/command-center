@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0120: release container profiles](docs/tasks/current/0120-release-container-profiles.md) — human-authorized commit/push/deploy in progress.
+
+- [Task0119: configurable container profiles](docs/tasks/done/0119-configurable-container-profiles.md) — implemented and tested; coordinator skills updated. Real runtime follow-up awaits rhlaptop availability; not deployed.
+
 - [Task0118: release container Goose and HTML preview](docs/tasks/done/0118-release-container-goose-and-html-preview.md) — committed/pushed/deployed; four access paths healthy, live agents unchanged.
 
 - [Task0117: CC-89 HTML file preview](docs/tasks/done/0117-sandboxed-html-file-preview.md) — deployed in task0118; static sandboxed preview and inline-code links;15 browser cases pass.

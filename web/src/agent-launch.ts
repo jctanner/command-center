@@ -1,3 +1,4 @@
+import {ContainerConfigEditor,defaultContainerConfig,describeContainerReview,type ContainerProfile} from './container-config';
 export type LaunchedAgent = { acp?:{broker:string;instance:string;endpoint:string}; host: string; connection_revision: string; launch_id: string; session: string; window: string; pane: string; project: string; provider: string; session_name: string; running: boolean; exited: boolean; context: string; found: boolean };
 type Host = { id: string; name: string; connection_revision: string };
 type Project = { python_venv?: string | null; path: string; name: string; pinned: boolean };
@@ -10,6 +11,7 @@ async function request<T>(url: string, body?: unknown): Promise<T> {
 }
 export class AgentLauncher {
   private dialog = element('dialog');private protocol=element('select');private nativeProvider='codex';private acpReceipt?:{host:string;connection_revision:string;broker:string;endpoint:string;provider?:string};
+  private containerPrepared?:{token:string;broker:string;endpoint:string;path:string;provider:string;container_review:unknown};private containerProfiles:ContainerProfile[]=[];private containerAdvanced=element('details');private containerEditor=new ContainerConfigEditor(()=>{this.invalidate();this.update();});
   private containerProfile=element('select');private containerHelp=element('small');private profileGeneration=0;
   private machine = element('select');
   private project = element('select');
@@ -60,7 +62,7 @@ export class AgentLauncher {
     const gooseOption=new Option('Goose (container only)','goose');gooseOption.hidden=true;gooseOption.disabled=true;this.provider.append(gooseOption);
     this.pin.type = 'checkbox'; this.name.placeholder = 'Optional project name'; this.name.setAttribute('aria-label', 'Pinned project name');
     const protocol=this.protocol;protocol.setAttribute('aria-label','Agent connection protocol');protocol.append(new Option('Native tmux (default)','native'),new Option('ACP broker · Claude','acp'),new Option('ACP broker · Codex','acp-codex'),new Option('ACP container · Goose','acp-goose'));label('Connection protocol',protocol);protocol.onchange=()=>{this.invalidate();if(protocol.value.startsWith('acp')){if(!this.provider.closest('label')!.hidden)this.nativeProvider=this.provider.value;this.provider.value=protocol.value==='acp-goose'?'goose':protocol.value==='acp-codex'?'codex':'claude';this.conversation.replaceChildren(new Option('New conversation',''));this.model.value='';this.preTrust.checked=false;this.approvalPolicy.value='';}else this.provider.value=this.nativeProvider;this.update();if(protocol.value==='acp-goose')void this.loadContainerProfiles();if(!this.projects&&this.host())void this.loadProjects();else if(protocol.value==='native'&&this.path.value)void this.prepare();};
-    this.containerProfile.setAttribute('aria-label','Goose container profile');label('Reviewed container profile',this.containerProfile);this.containerProfile.parentElement!.append(this.containerHelp);this.containerProfile.onchange=()=>this.update();
+    this.containerProfile.setAttribute('aria-label','Goose container profile');label('Reviewed container profile',this.containerProfile);this.containerProfile.parentElement!.append(this.containerHelp);this.containerProfile.onchange=()=>{this.invalidate();this.resetContainerEditor();this.update();};const summary=element('summary','Advanced container options (this launch only)');this.containerAdvanced.className='container-launch-options';this.containerAdvanced.append(summary,this.containerEditor.element);fields.append(this.containerAdvanced);
     label('Machine', this.machine); label('Project', this.project); label('Directory', this.path); label('Agent', this.provider); label('Model (optional)', this.model);
     this.venv.setAttribute('aria-label','Python venv');this.venv.placeholder='None, .venv or /absolute/venv';this.venv.maxLength=4096;label('Python venv (optional)',this.venv);this.rememberVenv.type='checkbox';const remember=element('label','Remember venv for this project');remember.className='agent-launch-pin';remember.prepend(this.rememberVenv);fields.append(remember,element('small','Uses the venv for commands the agent runs. Does not source activation scripts. Remembering a venv also pins the project.'));
     fields.append(element('small', 'Enter a model name or alias, or leave blank for no override.'));
@@ -89,7 +91,7 @@ export class AgentLauncher {
     this.provider.onchange = () => { this.preTrust.checked=false;this.approvalPolicy.value = ''; this.model.value = ''; this.invalidate(); if (this.path.value.trim()) void this.prepare(); };
     this.destination.onchange=()=>{this.invalidate();this.update();if(this.path.value.trim()&&this.destination.value!=='named')void this.prepare();};this.sessionName.oninput=()=>{this.invalidate();this.update();};
     this.conversation.onchange = () => this.update(); this.pin.onchange = () => this.update();
-    this.check.onclick = () => { void this.prepare(); }; this.start.onclick = () => { void this.launch(); };
+    this.check.onclick = () => { if(this.protocol.value==='acp-goose')void this.prepareContainer();else void this.prepare(); }; this.start.onclick = () => { void this.launch(); };
     this.recover.onclick = () => { if(this.acpReceipt)void this.checkAcp();else void this.checkLaunch(); };
     this.close.onclick = () => this.dialog.close();
     this.another.onclick = () => { if (!this.busy && this.checkedReceipt) { const host = this.receipt?.host; this.clearReceipt();this.acpReceipt=undefined;localStorage.removeItem('cc.acp.launch.v1'); this.checkedReceipt = false; this.invalidate(); this.dialog.close(); void this.open(host); } };
@@ -118,14 +120,14 @@ export class AgentLauncher {
       await this.loadProjects();
     } catch (e) { this.feedback.textContent = String(e); this.update(); }
   }
-  private invalidate() { this.generation++; this.prepared = undefined; this.checking = false; this.conversation.replaceChildren(); this.context.hidden = true; }
+  private invalidate() { this.containerPrepared=undefined;this.context.classList.remove('container-launch-review');this.generation++; this.prepared = undefined; this.checking = false; this.conversation.replaceChildren(); this.context.hidden = true; }
   private host() { return this.hosts.find(h => h.id === this.machine.value); }
   private url(host: string, action: string) { return `/api/v1/hosts/${encodeURIComponent(host)}/agents/${action}`; }
   private update() {
     const acp=this.protocol.value.startsWith('acp'),locked = this.busy || !!this.receipt||!!this.acpReceipt;this.protocol.disabled=locked;
     for (const field of [this.machine, this.project, this.path, this.provider, this.model, this.venv, this.rememberVenv, this.approvalPolicy, this.preTrust, this.destination, this.sessionName, this.conversation, this.initialPrompt, this.pin, this.name]) field.disabled = locked || (field !== this.machine && !this.projects);
     this.sessionName.closest('label')!.hidden=acp||this.destination.value!=='named';
-    this.containerProfile.closest('label')!.hidden=this.protocol.value!=='acp-goose';this.containerProfile.disabled=locked;
+    this.containerProfile.closest('label')!.hidden=this.protocol.value!=='acp-goose';this.containerProfile.disabled=locked;this.containerAdvanced.hidden=this.protocol.value!=='acp-goose';this.containerEditor.disabled(locked||!this.containerProfile.value);
     this.preTrust.disabled=locked||!this.projects||!['codex','claude'].includes(this.provider.value);
     this.approvalPolicy.disabled = locked || !this.projects || this.provider.value !== 'codex';
     this.check.disabled = locked || this.checking || !this.path.value.trim() || !this.projects;
@@ -144,7 +146,8 @@ export class AgentLauncher {
     this.pin.closest('label')!.hidden=acp||!!this.projects?.projects.find(p=>p.path===this.project.value&&p.pinned);this.name.hidden=acp||!this.pin.checked;
     if(acp){this.check.hidden=true;this.start.hidden=!!this.acpReceipt;this.start.disabled=locked||!this.projects||!this.path.value.trim()||tooLong||this.protocol.value==='acp-goose'&&!this.containerProfile.value;this.initialPrompt.disabled=locked||!this.projects;this.promptHelp.textContent=tooLong?'ACP initial prompt is limited to12,000 UTF-8 bytes.':'New '+(this.provider.value==='goose'?'Goose':this.provider.value==='codex'?'Codex':'Claude')+' ACP conversation in a dedicated tmux session. Preparation runs automatically when you start. Model/resume/venv/pre-trust overrides are not yet supported.';}
 
-    if(this.protocol.value==='acp-goose')this.promptHelp.textContent='Goose runs only in the reviewed rootless container, with human tool approvals. Choose a dedicated directory under the managed scratch root. No project copying or synchronization.';
+    if(this.protocol.value==='acp-goose')this.promptHelp.textContent='Goose runs only in the reviewed container, with human tool approvals. Choose a host directory permitted by the profile; review its container mounts and runtime settings before Start. No project copying or synchronization.';
+    this.check.textContent=this.protocol.value==='acp-goose'?'Review container launch':'Check project';if(this.protocol.value==='acp-goose'){this.check.hidden=!!this.acpReceipt;this.check.disabled=locked||this.checking||!this.projects||!this.path.value.trim()||!this.containerProfile.value;this.start.disabled=locked||this.checking||!this.containerPrepared||tooLong;}
     this.start.textContent = acp?`Start ${this.provider.value==='goose'?'Goose':this.provider.value==='codex'?'Codex':'Claude'} (ACP)`:`${this.conversation.value ? 'Resume' : 'Start'} ${this.provider.value === 'pi' ? 'pi' : this.provider.value === 'claude' ? 'Claude' : 'Codex'}`;
   }
   private async loadProjects() {
@@ -208,14 +211,20 @@ export class AgentLauncher {
   }
   private async loadContainerProfiles(){
     const host=this.host(),generation=++this.profileGeneration;this.containerProfile.replaceChildren();this.containerHelp.textContent='Loading reviewed profiles…';this.update();if(!host)return;
-    try{const profiles=await request<{id:string;label:string;model:string;workspace_root:string}[]>(`/api/v1/hosts/${host.id}/acp/profiles?`+new URLSearchParams({connection_revision:host.connection_revision}));if(generation!==this.profileGeneration||this.host()?.id!==host.id||this.protocol.value!=='acp-goose')return;
-      this.containerProfile.replaceChildren(...profiles.map(p=>new Option(`${p.label} · ${p.model}`,p.id)));this.containerHelp.textContent=profiles.length?'Scratch root: '+profiles[0].workspace_root:'No reviewed container profiles installed on this machine.';
+    try{const profiles=await request<ContainerProfile[]>(`/api/v1/hosts/${host.id}/acp/profiles?`+new URLSearchParams({connection_revision:host.connection_revision}));if(generation!==this.profileGeneration||this.host()?.id!==host.id||this.protocol.value!=='acp-goose')return;
+      this.containerProfiles=profiles;this.containerProfile.replaceChildren(...profiles.map(p=>new Option(`${p.label} · ${p.model}`,p.id)));this.containerHelp.textContent=profiles.length?'Scratch root: '+profiles[0].workspace_root:'No reviewed container profiles installed on this machine.';this.resetContainerEditor();
     }catch(error){if(generation===this.profileGeneration)this.containerHelp.textContent=String(error);}this.update();
   }
+  private resetContainerEditor(){const profile=this.containerProfiles.find(p=>p.id===this.containerProfile.value);if(profile)this.containerEditor.set(profile.config||{...defaultContainerConfig(profile.id),label:profile.label,image:profile.image,model:profile.model},true);this.containerAdvanced.open=false;}
+  private async prepareContainer(){
+    const host=this.host();if(!host||this.busy||this.checking||this.receipt||this.acpReceipt)return;this.invalidate();const version=this.generation;this.checking=true;this.update();this.feedback.textContent='Resolving container configuration and cached image…';
+    try{const overrides=this.containerEditor.overrides();const data=await request<{token:string;broker:string;endpoint:string;path:string;provider:string;container_review:unknown}>(`/api/v1/hosts/${host.id}/acp/prepare`,{connection_revision:host.connection_revision,path:this.path.value,provider:'goose',container_profile:this.containerProfile.value,...(Object.keys(overrides).length?{container_overrides:overrides}:{})});if(version!==this.generation)return;this.containerPrepared=data;this.context.textContent=describeContainerReview(data.container_review);this.context.classList.add('container-launch-review');this.context.hidden=false;this.feedback.textContent='Review these exact settings, then Start Goose. Images are not pulled and nothing has launched.';}
+    catch(error){if(version===this.generation)this.feedback.textContent=String(error);}finally{if(version===this.generation){this.checking=false;this.update();}}
+  }
   private async launchAcp(){
-    const host=this.host();if(!host||this.busy||this.acpReceipt||this.receipt||this.start.disabled)return;this.busy=true;this.invalidate();this.update();this.feedback.textContent='Preparing and starting ACP…';
+    const host=this.host();if(!host||this.busy||this.acpReceipt||this.receipt||this.start.disabled)return;const reviewed=this.protocol.value==='acp-goose'?this.containerPrepared:undefined;if(this.protocol.value==='acp-goose'&&!reviewed)return;this.busy=true;this.invalidate();this.update();this.feedback.textContent='Preparing and starting ACP…';
     try{
-      const prepared=await request<{token:string;broker:string;endpoint:string;path:string;provider:string}>(`/api/v1/hosts/${host.id}/acp/prepare`,{connection_revision:host.connection_revision,path:this.path.value,provider:this.provider.value,...(this.protocol.value==='acp-goose'?{container_profile:this.containerProfile.value}:{})});
+      const prepared=reviewed||await request<{token:string;broker:string;endpoint:string;path:string;provider:string}>(`/api/v1/hosts/${host.id}/acp/prepare`,{connection_revision:host.connection_revision,path:this.path.value,provider:this.provider.value,...(this.protocol.value==='acp-goose'?{container_profile:this.containerProfile.value}:{})});
       this.acpReceipt={host:host.id,connection_revision:host.connection_revision,broker:prepared.broker,endpoint:prepared.endpoint,provider:prepared.provider};
       try{localStorage.setItem('cc.acp.launch.v1',JSON.stringify(this.acpReceipt));}catch{this.acpReceipt=undefined;throw Error('Cannot persist recovery identity; nothing launched.');}
       await request(`/api/v1/hosts/${host.id}/acp/start`,{token:prepared.token,initial_prompt:this.initialPrompt.value.trim()?this.initialPrompt.value:null});

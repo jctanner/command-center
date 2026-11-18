@@ -5,6 +5,37 @@
     "image": "ghcr.io/aaif-goose/goose@sha256:d1f8264826e35ad064cb3f97eb6fb6498fe3b424ac8d0f61ee4eef030ef10860",
     "model": "provider/model",
     "base_url": "https://provider.example/v1",
-    "secret_file": "/home/USER/.pi/agent/auth.json"
+    "engine": "podman",
+    "entrypoint": "/usr/local/bin/goose",
+    "args": [
+      "acp"
+    ],
+    "workdir": "/workspace",
+    "state_target": "/home/goose",
+    "workspace_policy": "managed",
+    "selinux": "host",
+    "mounts": [
+      {
+        "source": "{workspace}",
+        "target": "/workspace",
+        "read_only": false,
+        "selinux": "private"
+      }
+    ],
+    "volumes": [],
+    "environment": {},
+    "secret_refs": [
+      {
+        "name": "OPENAI_API_KEY",
+        "path": "/home/USER/.pi/agent/auth.json",
+        "json_pointer": "/enmaas/key"
+      }
+    ],
+    "user": "1000:1000",
+    "user_namespace": "keep-id",
+    "network": "default",
+    "cpus": null,
+    "memory_mb": null,
+    "pids_limit": null
   }
 ]

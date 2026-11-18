@@ -116,7 +116,7 @@ def plan(request,a,b,probe=False):
         original=b['read_json'](os.path.join(b['target_root'](request),'intent.json'))
         if native['provider']!='goose' and any(k in original.get('prepared',{}) for k in ('profile','container','container_profile')):
             raise ValueError('Container broker restart is not supported; no host fallback')
-        adapter=b['options']({'path':native['project'],'provider':native['provider'],**({'container_profile':original['prepared']['container_profile'],'_container_code':request.get('_container_code'),'_existing_container':native['container']['id']}if native['provider']=='goose'else{})})
+        adapter=b['container_helpers'](request)['resume_options'](original['prepared'],native['container']['id'])if native['provider']=='goose'else b['options']({'path':native['project'],'provider':native['provider']})
         if probe and native['provider']!='goose':probe_load(adapter['executable'])
         native['adapter']=adapter
         native['broker_digest']=hashlib.sha256(request['_broker_code'].encode()).hexdigest()

@@ -94,7 +94,7 @@ def options(request):
         raise ValueError('ACP broker requires Linux /proc and pidfd support; native mode remains available')
     provider = request.get('provider', 'claude')
     if provider=='goose':return container_helpers(request)['options'](request)
-    if request.get('container_profile') is not None:raise ValueError('Container profiles are supported only for Goose')
+    if request.get('container_profile') is not None or request.get('container_overrides')is not None:raise ValueError('Container profiles are supported only for Goose')
     if provider not in ('claude', 'codex'):
         raise ValueError('Unsupported ACP provider')
     name = 'codex-acp' if provider == 'codex' else 'claude-agent-acp'
@@ -296,6 +296,8 @@ def launch(request):
 
 def main(request):
     action = request.get('action')
+    if action == 'profile_settings':return container_helpers(request)['profile_settings']()
+    if action == 'save_profiles':return container_helpers(request)['save_profiles'](request)
     if action == 'profiles':return [container_helpers(request)['summary'](p)for p in container_helpers(request)['profiles']()]
     if action == 'prepare':
         return options(request)
@@ -358,4 +360,4 @@ if __name__ == '__main__':
             print(json.dumps(dict(ok=result)))
     except Exception as error:
         # No raw adapter stderr/environment/credentials in backend responses.
-        print(json.dumps(dict(error=str(error)[:300], status=409)))
+        print(json.dumps(dict(error=str(error)[:300], status=getattr(error,'status',409))))

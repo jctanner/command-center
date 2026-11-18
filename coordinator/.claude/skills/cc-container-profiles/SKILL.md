@@ -1,0 +1,14 @@
+---
+name: cc-container-profiles
+description: Discover and explain CC container profiles, review explicitly requested Goose ACP launches and overrides, or perform human-requested profile configuration edits through CC REST.
+---
+
+Read repository-root docs/reference/acp-containers.md for the schema and lifecycle; use the served OpenAPI contract. Discover the configured machine ID and current connection revision, then GET its `/api/v1/hosts/{host}/acp/profiles`. Profiles are machine-local, not portable assumptions. Native launching remains default; use container Goose only when requested. Never install Goose on the host or use SSH, shell commands or engine APIs as a fallback.
+
+Explain the selected profile before preparing: engine, cached image, container executable/args, workspace policy, binds, user, labeling, network, limits, persistent state and secret **references**. `path` and bind `source` are host paths; `{workspace}` expands to the validated launch directory. Bind targets, workdir and entrypoint are container paths. Do not tell an agent that an unmounted host path is available inside its container. Real projects must never be relabeled; managed scratch is required for private/shared relabeling.
+
+For an explicitly requested launch, follow cc-launch's private durable receipt workflow and `/acp/prepare` with provider goose, container_profile and canonical host path. Supply container_overrides only for settings requested or clearly included in that scoped task; overrides do not edit the saved profile. Review returned container_review, especially immutable image_id, host paths, user, network and secret references, before the single Start. Missing engine/image/profile is a setup blocker, not permission to install/pull or substitute. Keep approvals with the human. Start uncertainty means inspect the original broker, never retry automatically.
+
+Profile editing is a separate human-requested configuration action. GET `/acp/profile-settings?connection_revision=...`, preserve its revision and unrelated profiles, then PUT `{connection_revision,revision,profiles}`. No value of a secret may be supplied, read back, logged or copied: use existing private host JSON references only. Do not edit credential stores or create arbitrary files to satisfy a profile. Preserve drafts on409; inspect after an uncertain write before another attempt. Saving profiles starts/restarts nothing.
+
+For an authorized restart, use cc-restart. V2 agents retain their saved configuration, immutable image and state volume even when a reusable profile changes or disappears. Do not promise that editing a profile updates existing agents. Legacy active profiles may reject edits until a separately authorized broker upgrade; duplicating a profile for future launches is available. Never change an agent's conversation, mounts, image or secrets as a restart workaround.

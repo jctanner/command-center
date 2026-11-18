@@ -1,0 +1,3 @@
+# Bug0051: Profile snapshots could mix content and revision
+
+Found/fixed2026-11-18 in task0119 during review before deployment. A registry read parsed one file read, then hashed another; concurrent atomic replacement could pair old configuration with a new revision and defeat optimistic editing. The reader now parses and hashes the same bounded private-file bytes. A regression injects a replacement between the read and response and checks the original content/hash stay paired. Also reject dangling registry symlinks instead of reporting an empty registry. Validation: tests/test_acp_container.py and profile API contract tests pass. No live profile changes were made.

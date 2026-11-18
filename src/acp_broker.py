@@ -130,7 +130,7 @@ class Broker:
                 json.dump(intent, out);out.flush();os.fsync(out.fileno())
             os.replace(temporary, intent_path)
         self.container=None;self.container_module=None;self.prepared=prepared if os.path.exists(intent_path) else {}
-        self.session_cwd='/workspace' if self.provider=='goose' else cwd
+        self.session_cwd=self.prepared.get('container_config',{}).get('workdir','/workspace')if self.provider=='goose'else cwd
         self.closed = False
         self.db = sqlite3.connect(os.path.join(root, 'receipts.sqlite3'), check_same_thread=False)
         self.db.execute('pragma synchronous=FULL')
