@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0134: release table artifact paths](docs/tasks/current/0134-release-table-artifact-paths.md) — commit/push/frontend deployment authorized.
+
+- [Task0133: table artifact paths](docs/tasks/done/0133-table-artifact-download-paths.md) — fixed table folder resolution;18 browser cases and9 live artifact paths verified, not deployed.
+
 - [Task0132: release profile shortcut](docs/tasks/done/0132-release-launcher-profile-shortcut.md) — committed/pushed/deployed; four paths/assets and unchanged backend/tmux PIDs verified.
 
 - [Task0131: launcher profile creation](docs/tasks/done/0131-launcher-create-container-profile.md) — implemented; selected-machine new draft, save/return and unsaved guards verified;22 browser cases pass; deployed in task0132.

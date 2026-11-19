@@ -33,10 +33,20 @@ export function conversationFilePaths(messages:readonly {id?:string;text:string;
   const seen=new Set<string>();for(const m of messages){if(m.role!=='assistant'||m.kind||budget<=0)continue;const text=m.text.slice(0,budget);budget-=text.length;if(m.id)seen.add(m.id);const existing=m.id&&cache?.get(m.id),found=existing&&existing.text===text?existing.paths:explicitFilePaths(text);if(m.id&&cache)cache.set(m.id,{text,paths:found});for(const path of found){paths.add(path);if(paths.size>=256)break;}if(paths.size>=256)break;}
   if(cache)for(const id of cache.keys())if(!seen.has(id))cache.delete(id);return [...paths];
 }
-function resolveFilePath(href:string,files:ChatFileContext,text:string,literal=false):string|null{
+function tableDirectory(node:HTMLElement):string|undefined{
+  const paragraph=node.closest('table')?.previousElementSibling;
+  if(paragraph?.tagName!=='P')return;
+  const folders=[...paragraph.querySelectorAll('code')].filter(code=>/^(?:~\/|\/).*\/$/.test(code.textContent||''));
+  if(folders.length!==1)return;
+  const folder=folders[0].textContent||'',prefix=(paragraph.textContent||'').split(folder,1)[0];
+  if(!/\b(?:in|under|inside|to)\s*$/i.test(prefix))return;
+  return filePath(folder,'',true)||undefined;
+}
+function resolveFilePath(href:string,files:ChatFileContext,text:string,literal=false,directory?:string):string|null{
   const path=filePath(href,files.project,literal);if(!path||href.startsWith('/')||href.startsWith('~/'))return path;
   const relative=(literal?href:decodeURIComponent(href.split(/[?#]/,1)[0])).replace(/^\.\//,'');
   if(relative.split('/').some(p=>p==='..'))return path;
+  if(directory)return filePath(directory.replace(/\/$/,'')+'/'+relative,files.project,true);
   // An explicit "same folder" statement binds a bare sibling filename to the
   // one directory actually named in this message, never to a guessed worktree.
   if(!relative.includes('/')){
@@ -61,7 +71,7 @@ export function chatMarkdown(text: string,files?:ChatFileContext): HTMLElement {
   for (const link of body.querySelectorAll<HTMLAnchorElement>('a')) {
     const href = link.getAttribute('href') || '';
     if (/^(https?:|mailto:)/i.test(href)) {link.target='_blank';link.rel='noopener noreferrer';continue;}
-    const path=files&&resolveFilePath(href,files,text);
+    const path=files&&resolveFilePath(href,files,text,false,tableDirectory(link));
     if(!files||!path){link.removeAttribute('href');continue;}
     link.replaceWith(fileButton(link,files,path));
   }
@@ -70,7 +80,7 @@ export function chatMarkdown(text: string,files?:ChatFileContext): HTMLElement {
     const value=code.textContent||'';
     // Whole, file-like tokens only; don't reinterpret code, URLs or shell paths.
     if(!(/^(?:~\/|\/|\.\.?\/)?[a-z0-9_@+.-]+(?:\/[a-z0-9_@+.-]+)*\.(?:html?|md|markdown|txt|json|jsonl|ya?ml|toml|csv|ts|tsx|js|jsx|py|rs|sh|css|sql|log|svg|png|jpe?g|gif|webp|pdf|mp4|webm|mov|mkv|m4v|avi|mp3|wav|flac|ogg|zip|gz|tar|7z)$/i.test(value)||/^(?:~\/|\/)[^\\\x00-\x1f\x7f]+\.(?:html?|md|txt|json|png|jpe?g|gif|webp|svg|pdf|mp4|webm|mov|mkv|m4v|avi|mp3|wav|flac|ogg|zip|gz|tar|7z)$/i.test(value)))continue;
-    const path=resolveFilePath(value,files,text,true);if(!path)continue;
+    const path=resolveFilePath(value,files,text,true,tableDirectory(code));if(!path)continue;
     const button=fileButton(code.cloneNode(true) as HTMLElement,files,path);code.replaceWith(button);
   }
   if(files){const walker=document.createTreeWalker(body,NodeFilter.SHOW_TEXT);const nodes:Text[]=[];while(walker.nextNode()){const n=walker.currentNode as Text;if(!n.parentElement?.closest('pre,code,a,button'))nodes.push(n);}for(const n of nodes){const text=n.data,pattern=/(?:^|[\s(])(\/(?!\/)[^\s<>"'`(),;]+\.(?:html?|md|txt|json|png|jpe?g|gif|webp|pdf|mp4|webm|mov|mkv|m4v|avi|mp3|wav|flac|ogg|zip|gz|tar|7z))(?=$|[\s),.;])/gi;let end=0,matched=false;const fragment=document.createDocumentFragment();for(const m of text.matchAll(pattern)){const start=m.index!+m[0].length-m[1].length,path=resolveFilePath(m[1],files,text,true);if(!path)continue;fragment.append(text.slice(end,start));const label=document.createElement('span');label.textContent=m[1];fragment.append(fileButton(label,files,path));end=start+m[1].length;matched=true;}if(matched){fragment.append(text.slice(end));n.replaceWith(fragment);}}}
