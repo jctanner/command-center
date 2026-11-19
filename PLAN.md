@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0164: release runtime inside meter](docs/tasks/current/0164-release-runtime-inside-meter.md) — in progress.
+- [Task0164: release runtime inside meter](docs/tasks/done/0164-release-runtime-inside-meter.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
-- [Task0163: runtime inside meter](docs/tasks/done/0163-runtime-inside-context-meter.md) — complete; build and2 responsive browser cases pass; screenshot inspected; not deployed.
+- [Task0163: runtime inside meter](docs/tasks/done/0163-runtime-inside-context-meter.md) — complete; build and2 responsive browser cases pass; screenshot inspected; deployed in task0164.
 
 - [Task0162: release card models](docs/tasks/done/0162-release-agent-card-model.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
