@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0162: release card models](docs/tasks/current/0162-release-agent-card-model.md) — in progress.
+- [Task0162: release card models](docs/tasks/done/0162-release-agent-card-model.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
-- [Task0161: model on agent cards](docs/tasks/done/0161-agent-card-model.md) — complete; build and2 desktop/mobile browser cases pass; not deployed.
+- [Task0161: model on agent cards](docs/tasks/done/0161-agent-card-model.md) — complete; build and2 desktop/mobile browser cases pass; deployed in task0162.
 
 - [Task0160: release wider context meter](docs/tasks/done/0160-release-wider-context-meter.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
