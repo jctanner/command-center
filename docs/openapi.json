@@ -7191,7 +7191,8 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "description": "cli_submitted means a recognized native Codex/Claude /status command was submitted to the terminal; no chat receipt is expected. It does not prove execution or model read. Uncertain sends remain uncertain."
           },
           "note": {
             "type": "string"

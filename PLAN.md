@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0154: release native status receipts](docs/tasks/current/0154-release-native-status-receipts.md) — in progress.
+
+- [Task0153: native status receipts](docs/tasks/done/0153-native-status-command-receipts.md) — fixed;10 Rust tests and2 real-tmux browser cases pass; not deployed.
+
 - [Task0152: release send banner removal](docs/tasks/done/0152-release-send-banner-removal.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
 - [Task0151: remove send success banner](docs/tasks/done/0151-remove-send-success-banner.md) — complete; frontend build passed; deployed in task0152.

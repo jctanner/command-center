@@ -293,3 +293,14 @@ test('Claude absorbed human steering becomes Seen at its native attachment offse
  await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('seen');expect((await entry(receipt.id)).seen_message).toBe(offset);expect(tmux('capture-pane','-p','-t',pane)).toBe(nativeScreen);const query=await detail();expect(query.messages.filter((m:any)=>m.text===receipt.text)).toHaveLength(1);expect(JSON.stringify(query.messages)).not.toContain('PRIVATE_RENDERED_SYSTEM_CONTEXT');const host=(await(await fetch(base+'/api/v1/hosts')).json())[0];const params=new URLSearchParams({session,window,pane,connection_revision:host.connection_revision,known_version:'claude-visible-v3:old-cache'});const refreshed=await(await fetch(base+'/api/v1/hosts/local/agents/conversation?'+params)).json();expect(refreshed.history_reset).toBe(true);expect(refreshed.history_version).toMatch(/^claude-visible-v5:/);
  await page.setViewportSize({width:393,height:852});await page.goto(base+'/#/queue');await page.locator('.queue-card').click();await expect(page.locator('.agent-user-text').filter({hasText:receipt.text})).toHaveCount(1);await expect(page.locator('.outbox-confirmation')).toContainText('Seen in conversation');await expect(page.locator('.outbox-inline')).toHaveCount(0);expect(tmux('capture-pane','-p','-t',pane)).toBe(nativeScreen);
 });
+
+for(const width of [1440,393])test(`native status command settles without a chat receipt at ${width}px`,async({page})=>{
+ phase('ready');const receipt=await enqueue('/status');
+ await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('cli_submitted');
+ const settled=await entry(receipt.id);expect(settled.seen_message).toBeNull();expect(settled.command_message).toBeNull();
+ await page.setViewportSize({width,height:852});await page.goto(base+'/#/queue');await page.locator('.queue-card').click();
+ const bubble=page.locator('.outbox-inline').filter({hasText:'/status'});await expect(bubble).toContainText('Sent to CLI · no chat receipt expected');await expect(bubble.locator('.outbox-spinner')).toHaveCount(0);
+ expect(tmux('capture-pane','-p','-t',pane)).toContain('/status');
+ const followup=await enqueue('CC_AFTER_NATIVE_STATUS');await expect.poll(async()=>(await entry(followup.id)).status,{timeout:15000}).toBe('submitted');
+ expect((await entry(receipt.id)).status).toBe('cli_submitted');
+});

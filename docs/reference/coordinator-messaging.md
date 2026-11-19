@@ -55,6 +55,7 @@ Links to files are references, not attachments. A recipient on a different host 
 | `seen` | Input observed in the original process-linked conversation. It does not mean work is complete or a reply is available. |
 | `blocked` | Original process/conversation/endpoint or earlier receipt needs review. Do not move it to a replacement agent. |
 | `uncertain` | Delivery cannot be established. Retain the UUID and inspect history/receipt; do not resend automatically. |
+| `cli_submitted` | Known native Codex/Claude `/status` was submitted to the terminal. No conversation receipt is expected; execution and model read are unconfirmed. Inspect terminal output; never resend automatically. |
 | `command` | Pi interpreted prior input as a native shell command, not user chat. Retain the audit receipt; never automatically resend. A corrected message is a separate human-authorized intent. |
 | `cancelled` / `archived` | Retained metadata; neither undoes any earlier input nor authorizes a new send. |
 

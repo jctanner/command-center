@@ -1,0 +1,9 @@
+# Task0153: Native status command receipts
+
+Claimed2026-11-18 by CC-dev. Native Codex/Claude /status is terminal-local and may never enter conversation history. Add a terminal-submitted command outcome without claiming execution or model read. Scope recognition narrowly; retain uncertainty and normal chat matching. Repair existing successfully submitted /status receipts through process-linked observation. Validate Rust and frontend.
+
+## Completed2026-11-18
+
+Bug[0057](../../bugs/fixed/0057-native-status-receipt.md). Added cli_submitted for exact standalone /status on observed Codex/Claude providers. Persist recognition before transport; successful sends settle without chat-read evidence. Existing submitted receipts settle on the next process-linked observation; uncertain/submitting/queued receipts are not inferred successful. No resend, execution claim or invented history position. Inline bubble has a terminal-submitted label without spinner; skip local waiting-for-model hint. OpenAPI and coordinator messaging reference updated. Unknown slash commands, arguments, paths, multiline text and pi remain ordinary inputs.
+
+Validation: cargo fmt --check; cargo test outbox::tests (10 passed); cargo clippy --all-targets -- -D warnings; cargo build; frontend TypeScript/Vite build all passed. Two isolated real-tmux Playwright cases (1440/393px) passed: /status settles without transcript message, no seen/command cursor, no spinner, later chat still sends. Rust tests cover exact/provider matching, old receipt recovery, uncertain/queued/submitting preservation, successful send and transport timeout. Logs .local/native-status-receipts-{tests,clippy,build,web,browser}.log. git diff --check passed. No live-agent keys, restart, deployment or commit. Existing production receipt will settle after deployment; not changed manually.

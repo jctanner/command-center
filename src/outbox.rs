@@ -65,6 +65,8 @@ struct Record {
     #[serde(default)]
     command_message: Option<u64>,
     #[serde(default)]
+    native_status_command: bool,
+    #[serde(default)]
     attachment: Option<crate::attachments::Attachment>,
 }
 fn now() -> u64 {
@@ -142,7 +144,7 @@ async fn change(
     r.status = status.into();
     r.note = note.into();
     if let Some(a) = r.attachment.as_mut() {
-        if status == "submitted" && a.submitted_at.is_none() {
+        if matches!(status, "submitted" | "cli_submitted") && a.submitted_at.is_none() {
             a.submitted_at = Some(r.updated_at);
         }
         if status == "seen" && a.seen_at.is_none() {
@@ -386,6 +388,7 @@ pub(crate) async fn enqueue(
         pending_codex_screen,
         seen_message: None,
         command_message: None,
+        native_status_command: false,
         attachment,
     };
     let view = public(&record);
@@ -468,6 +471,11 @@ fn matching_receipt(r: &Record, observation: &Value, used: &HashSet<(String, u64
         .then_some(position)
     })
 }
+fn native_status_command(provider: &str, text: &str) -> bool {
+    matches!(provider, "codex" | "claude") && text.trim() == "/status"
+}
+const CLI_SUBMITTED_NOTE: &str = "Submitted native /status command to the CLI. This command may not appear in conversation history; execution and model read are not confirmed. Check the terminal for its output. No resend was made.";
+
 async fn confirm_observed(
     s: &AppState,
     entries: &mut [Record],
@@ -519,6 +527,15 @@ async fn confirm_observed(
             let note = "An earlier identical submission has unconfirmed delivery; transcript matching is ambiguous. No retry was made.";
             if r.note != note
                 && let Some(updated) = change(s, r.clone(), &r.status, note).await?
+            {
+                *r = updated;
+            }
+            continue;
+        }
+        if r.status == "submitted"
+            && native_status_command(observation["provider"].as_str().unwrap_or(""), &r.text)
+        {
+            if let Some(updated) = change(s, r.clone(), "cli_submitted", CLI_SUBMITTED_NOTE).await?
             {
                 *r = updated;
             }
@@ -1013,6 +1030,8 @@ async fn process(s: &AppState, scope: String, dispatch: bool) -> Result<(), ApiE
     } else {
         None
     };
+    next.native_status_command =
+        native_status_command(observation["provider"].as_str().unwrap_or(""), &next.text);
     next.baseline = log;
     let Some(claimed) = change(
         s,
@@ -1051,6 +1070,9 @@ async fn complete(
         return Ok(());
     }
     let (phase, note) = match response {
+        Ok(v) if v["ok"]["sent"] == true && r.native_status_command => {
+            ("cli_submitted", CLI_SUBMITTED_NOTE)
+        }
         Ok(v) if v["ok"]["sent"] == true && v["ok"]["submitted_while_working"] == true => (
             "submitted",
             "Submitted to terminal while the agent was working. The native CLI may queue or steer this input; awaiting native conversation confirmation.",
@@ -1246,6 +1268,8 @@ async fn manual(s: &AppState, r: Record, token: &str) -> Result<(), ApiError> {
     } else {
         None
     };
+    intent.native_status_command =
+        native_status_command(observed["provider"].as_str().unwrap_or(""), &intent.text);
     intent.baseline = log;
     if intent.conversation.is_none() {
         intent.conversation = intent.baseline.as_ref().map(|l| l.conversation.clone());
@@ -1369,8 +1393,114 @@ mod tests {
             pending_codex_screen: None,
             seen_message: None,
             command_message: None,
+            native_status_command: false,
             attachment: None,
         }
+    }
+    #[test]
+    fn status_recognition_is_provider_specific_and_exact() {
+        for provider in ["codex", "claude"] {
+            assert!(native_status_command(provider, " /status\n"));
+            for text in [
+                "/status details",
+                "/status\nhello",
+                "/status/file",
+                "Please /status",
+                "/unknown",
+                "/STATUS",
+            ] {
+                assert!(!native_status_command(provider, text));
+            }
+        }
+        assert!(!native_status_command("pi", "/status"));
+        assert!(!native_status_command("", "/status"));
+    }
+    #[tokio::test]
+    async fn status_receipts_settle_transport_only_and_preserve_uncertainty() {
+        let state =
+            AppState::new(serde_json::from_value(json!({"hosts":[]})).unwrap(), 8080).unwrap();
+        let mut rows = Vec::new();
+        for phase in ["submitted", "uncertain", "submitting", "queued"] {
+            let mut r = fixture();
+            r.text = "/status".into();
+            r.status = phase.into();
+            r.digest = digest(&r.text);
+            rows.push(r);
+        }
+        let stored = rows.clone();
+        state.board.with(move |c| {
+            for r in stored { c.execute("INSERT INTO agent_outbox(id,scope,phase,revision,data) VALUES(?1,?2,?3,?4,?5)",params![r.id,r.scope,r.status,r.revision,serde_json::to_string(&r).map_err(storage)?]).map_err(storage)?; }
+            Ok(())
+        }).await.unwrap();
+        confirm_observed(&state, &mut rows, &json!({"provider":"codex","users":[]}))
+            .await
+            .unwrap();
+        assert_eq!(rows[0].status, "cli_submitted");
+        assert!(rows[0].seen_message.is_none());
+        assert!(rows[0].command_message.is_none());
+        assert!(!unresolved(&rows[0]));
+        assert_eq!(rows[1].status, "uncertain");
+        assert_eq!(rows[2].status, "submitting");
+        assert_eq!(rows[3].status, "queued");
+        let mut r = fixture();
+        r.native_status_command = true;
+        let stored = r.clone();
+        state
+            .board
+            .with(move |c| {
+                c.execute(
+                    "INSERT INTO agent_outbox(id,scope,phase,revision,data) VALUES(?1,?2,?3,?4,?5)",
+                    params![
+                        stored.id,
+                        stored.scope,
+                        stored.status,
+                        stored.revision,
+                        serde_json::to_string(&stored).map_err(storage)?
+                    ],
+                )
+                .map_err(storage)?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        complete(&state, r.clone(), Ok(json!({"ok":{"sent":true}})))
+            .await
+            .unwrap();
+        let settled = lookup(&state, r.id.clone()).await.unwrap().unwrap();
+        assert_eq!(settled.status, "cli_submitted");
+        assert!(settled.seen_message.is_none());
+        r = fixture();
+        r.native_status_command = true;
+        let stored = r.clone();
+        state
+            .board
+            .with(move |c| {
+                c.execute(
+                    "INSERT INTO agent_outbox(id,scope,phase,revision,data) VALUES(?1,?2,?3,?4,?5)",
+                    params![
+                        stored.id,
+                        stored.scope,
+                        stored.status,
+                        stored.revision,
+                        serde_json::to_string(&stored).map_err(storage)?
+                    ],
+                )
+                .map_err(storage)?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        complete(
+            &state,
+            r.clone(),
+            Err(anyhow::anyhow!("test transport timeout")),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            lookup(&state, r.id).await.unwrap().unwrap().status,
+            "uncertain"
+        );
     }
     #[tokio::test]
     async fn pi_command_evidence_settles_only_its_own_receipt_without_chat_seen_or_reuse() {

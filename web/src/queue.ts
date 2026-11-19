@@ -767,7 +767,7 @@ export class AttentionQueue {
     try {
       const entry=await this.outbox.send({host:chosen.h.id,session:chosen.item.session,window:chosen.item.window,pane:chosen.item.pane,instance:this.detailData?.instance||'',conversation:this.detailData?.selected},token,text);
       uncertain = false; this.recall=undefined; this.drafts.delete(key);
-      if(entry.status!=='queued')this.pendingReplies.set(key, { at: Date.now(), reply: baselineReply, activity: baselineActivity });
+      if(!['queued','cli_submitted'].includes(entry.status))this.pendingReplies.set(key, { at: Date.now(), reply: baselineReply, activity: baselineActivity });
       if (this.selected === selected) { this.composer.value = ''; this.fitComposer(); this.sendFeedback.textContent = ''; }
     } catch (error) {
       if(error instanceof OutboxSendError)uncertain=error.uncertain;

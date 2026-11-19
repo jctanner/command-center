@@ -5,7 +5,7 @@ export type OutboxEntry = {
  text:string;status:string;note:string;revision:number;created_at:number;updated_at:number;seen_message?:number;command_message?:number;local?:boolean;
 };
 export type OutboxTarget = {host:string;session:string;window:string;pane:string;instance:string;conversation?:string};
-const labels:Record<string,string>={queued:'Queued in CC',submitting:'Submitting…',submitted:'Submitted to terminal',seen:'Seen in conversation',command:'Interpreted as CLI command',uncertain:'Delivery uncertain',blocked:'Blocked · review needed',cancelled:'Cancelled in CC',archived:'Archived'};
+const labels:Record<string,string>={queued:'Queued in CC',submitting:'Submitting…',submitted:'Submitted to terminal',seen:'Seen in conversation',command:'Interpreted as CLI command',cli_submitted:'Sent to CLI · no chat receipt expected',uncertain:'Delivery uncertain',blocked:'Blocked · review needed',cancelled:'Cancelled in CC',archived:'Archived'};
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text='')=>{const n=document.createElement(tag);n.textContent=text;return n;};
 function messageId(){
  const source=globalThis.crypto;
