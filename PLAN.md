@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0160: release wider context meter](docs/tasks/current/0160-release-wider-context-meter.md) — in progress.
+
+- [Task0159: wider context meter](docs/tasks/done/0159-wider-context-meter.md) — complete; build and2 responsive browser cases pass; not deployed.
+
 - [Task0158: release agent runtime](docs/tasks/done/0158-release-agent-card-runtime.md) — committed/pushed/deployed; four access paths healthy, tmux processes unchanged; native/ACP runtime verified live.
 
 - [Task0157: agent card runtime](docs/tasks/done/0157-agent-card-runtime.md) — complete; Rust/Python/build and2 responsive browser cases pass; deployed in task0158.
