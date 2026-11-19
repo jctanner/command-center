@@ -324,14 +324,14 @@ export class AttentionQueue {
     this.composer.style.height = '';
     if (this.composer.value) this.composer.style.height = `${Math.min(132, Math.max(40, this.composer.scrollHeight))}px`;
   }
-  private syncPresentation() {
+  private syncPresentation(dock=true) {
     this.acpChat?.setVisible(this.visible&&(!compactClient()||this.body.dataset.detail==='true'));
     const conversation = this.visible && compactClient() && this.body.dataset.detail === 'true';
     document.documentElement.classList.toggle('queue-chat-active', conversation);
-    this.dockHeader(this.chosen()?.item.acp?this.acpChat.headerElement:this.chosen()?this.nativeNodes[0]:undefined);this.fitComposer();
+    if(dock)this.dockHeader(this.chosen()?.item.acp?this.acpChat.headerElement:this.chosen()?this.nativeNodes[0]:undefined);this.fitComposer();
   }
   private closeFilters(focus=true){if(this.filterPanel.open)this.filterPanel.close();if(focus&&this.visible)this.filterTrigger.focus({preventScroll:true});}
-  private dockHeader(header?:HTMLElement){const next=!compactClient()&&this.visible?header:undefined;if(next===this.dockedHeader)return;if(this.dockedHeader&&this.headerAnchor){this.headerAnchor.replaceWith(this.dockedHeader);this.headerAnchor=undefined;}this.dockedHeader=next;this.chatTabbar.hidden=!next;if(next){this.headerAnchor=document.createComment('chat header');next.before(this.headerAnchor);this.chatTabbar.append(next);}}
+  private dockHeader(header?:HTMLElement){const next=!compactClient()&&this.visible?header:undefined;if(next===this.dockedHeader&&(!next||next.parentElement===this.chatTabbar))return;if(this.dockedHeader&&this.headerAnchor){this.headerAnchor.replaceWith(this.dockedHeader);this.headerAnchor=undefined;}this.dockedHeader=next;this.chatTabbar.hidden=!next;if(next){this.headerAnchor=document.createComment('chat header');next.before(this.headerAnchor);this.chatTabbar.append(next);}}
   private options(select: HTMLSelectElement, all: string, entries: [string, string][], selected: string) {
     select.replaceChildren(...[['', all], ...entries].map(([value, label]) => { const o = node('option', label); o.value = value; return o; })); select.value = selected;
   }
@@ -418,7 +418,7 @@ export class AttentionQueue {
     if(focusedCard)[...this.list.querySelectorAll<HTMLButtonElement>('.queue-card')].find(b=>b.dataset.agentId===focusedCard)?.focus({preventScroll:true});
     this.list.scrollTop = scroll;
     if (!entries.length) this.list.append(node('p', this.snapshot ? 'No agents match these filters.' : 'Checking machines…'));
-    this.syncPresentation();
+    this.syncPresentation(false);
     this.root.querySelector('h1')!.textContent = compactClient() ? 'Agents' : 'AI Queue';
     for (const b of this.inboxControls.querySelectorAll('button')) b.setAttribute('aria-pressed', String(this.statusSelect.value === b.dataset.filter));
     const chosen = this.chosen();

@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0144: release chat tab switching](docs/tasks/current/0144-release-chat-tab-switch.md) — release in progress.
+
+- [Task0143: cross-protocol chat tab](docs/tasks/done/0143-chat-tab-protocol-switch.md) — fixed;26 browser cases pass, including cross-provider/resize drafts; not deployed.
+
 - [Task0142: release agent toolbar/tab](docs/tasks/done/0142-release-agent-toolbar-tab.md) — committed/pushed/deployed; four paths/assets and unchanged backend/tmux PIDs verified.
 
 - [Task0141: compact agent toolbar/chat tab](docs/tasks/done/0141-agent-toolbar-chat-tab.md) — implemented; folder-style desktop title and tools modal,59 browser cases pass; deployed in task0142.
