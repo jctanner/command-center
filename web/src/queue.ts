@@ -45,7 +45,7 @@ function stateBadge(activity?: Activity, fallback: AgentState = 'unknown') {
   return badge;
 }
 export class AttentionQueue {
-  private orderBusy=false;private dragging?:{key:string;revision:number;x?:number;y?:number;moved?:boolean;target?:string;before?:boolean};
+  private orderError?:string;private orderBusy=false;private dragging?:{key:string;revision:number;x?:number;y?:number;moved?:boolean;target?:string;before?:boolean};
   private acpChat!:AcpChat;private nativeNodes:HTMLElement[]=[];private nativeHidden=new Map<HTMLElement,boolean>();
   private notifications = new AgentNotifications();
   private mute = node('button', 'Mute notifications');
@@ -109,7 +109,7 @@ export class AttentionQueue {
   private metadata = node('div');
   private detailsPanel!:AgentDetails;
   private detailsButton = node('button', 'Details');
-  private subtitle = node('p');
+  private historyBadge=node('span','Project history');private subtitle = node('p');
   private chatNotice = node('p');
   private cardTokens=new Map<string,AgentTokenMetrics>();
   private tokenMetrics=new AgentTokenMetrics(true);
@@ -118,7 +118,7 @@ export class AttentionQueue {
   private questionControls=new QuestionControls(value=>{this.submitting=value;this.updateSend();},()=>{void this.loadDetail();void this.refresh();});
   private approvalFeedback = new Map<string, string>();
   private approvalPending = new Set<string>();
-  private filterPanel = node('details');
+  private filterPanel = node('dialog');private filterTrigger=node('button','Filters');private filterChecked=node('p');private chatTabbar=node('div');private dockedHeader?:HTMLElement;private headerAnchor?:Comment;
   private inboxControls = node('div');
   constructor(private open: (target: QueueTarget) => Promise<void>,private openFile:(target:AgentFileTarget)=>Promise<void>,private openProfiles:(host:string)=>boolean) {
     window.addEventListener('cc-agent-layout',()=>this.render());window.addEventListener('blur',()=>{if(this.dragging){this.clearPinnedDrag();this.render();}});
@@ -183,12 +183,13 @@ export class AttentionQueue {
     this.hostSelect.onchange = () => { this.openedForRead = ''; this.host = this.hostSelect.value; this.project = ''; this.render(); };
     this.projectSelect.onchange = () => { this.openedForRead = ''; this.project = this.projectSelect.value; this.render(); };
     this.statusSelect.onchange = () => { this.openedForRead = ''; this.render(); };
-    const refresh = node('button', 'Refresh'); refresh.setAttribute('aria-label','Refresh queue'); refresh.onclick = () => { void this.refresh(); if (this.selected) void this.loadDetail(); };
-    const done = node('button', 'Done'); done.className = 'queue-filters-done'; done.onclick = () => { this.filterPanel.open = false; };
-    filters.append(this.statusSelect, this.hostSelect, this.projectSelect, refresh, done);
-    this.filterPanel.className = 'queue-filter-panel'; this.filterPanel.open = !compactClient();
-    document.addEventListener('pointerdown', event => { if (compactClient() && this.filterPanel.open && !this.filterPanel.contains(event.target as Node)) this.filterPanel.open = false; });
-    this.filterPanel.append(node('summary', 'Filters'), filters); heading.append(title, startAgent, this.outbox.button('All outboxes'), this.search, this.filterPanel, this.searchStatus);
+    const refresh = node('button', 'Refresh'); refresh.setAttribute('aria-label','Refresh queue'); refresh.onclick = () => { this.orderError=undefined;void this.refresh(); if (this.selected) void this.loadDetail(); };
+    const done=node('button','Done');done.type='button';done.className='queue-filters-done';done.onclick=()=>this.closeFilters();
+    const reset=node('button','Clear filters');reset.type='button';reset.onclick=()=>{this.host=this.project='';this.statusSelect.value='';this.openedForRead='';this.render();};
+    const label=(text:string,control:HTMLElement)=>{const label=node('label',text);label.append(control);return label;};filters.append(label('Status',this.statusSelect),label('Machine',this.hostSelect),label('Project',this.projectSelect));
+    this.filterPanel.className='queue-filter-dialog';this.filterPanel.id='queue-filter-dialog';this.filterPanel.setAttribute('aria-labelledby','queue-filter-title');const filterTitle=node('h2','Agent filters and tools');filterTitle.id='queue-filter-title';const explanation=node('p','Search stays in the toolbar. These filters narrow the agent list; Clear filters leaves your search intact.');
+    this.filterTrigger.type='button';this.filterTrigger.className='queue-filter-trigger';this.filterTrigger.setAttribute('aria-haspopup','dialog');this.filterTrigger.setAttribute('aria-controls',this.filterPanel.id);this.filterTrigger.onclick=()=>{this.filterPanel.showModal();this.statusSelect.focus();};this.filterPanel.addEventListener('cancel',e=>{e.preventDefault();this.closeFilters();});
+    const tools=node('div');tools.className='queue-filter-tools';const allOutboxes=node('button','All outboxes');allOutboxes.type='button';allOutboxes.onclick=()=>{this.closeFilters();this.outbox.open();};tools.append(refresh,allOutboxes,reset,done);this.filterPanel.append(filterTitle,explanation,filters,this.inboxControls,tools,this.filterChecked);document.body.append(this.filterPanel);heading.append(title,startAgent,this.search,this.filterTrigger,this.searchStatus);
     this.inboxControls.className = 'queue-inbox-controls';
     for (const [value, label] of [['', 'All agents'], ['needs_attention', 'Needs attention']]) {
       const b = node('button', label); b.dataset.filter = value; b.onclick = () => { this.statusSelect.value = value; this.openedForRead = ''; this.render(); }; this.inboxControls.append(b);
@@ -198,19 +199,19 @@ export class AttentionQueue {
     this.feedback.setAttribute('role', 'status');
     this.body.className = 'queue-body'; this.body.append(this.list, this.detail);
     this.hostIssues.className='queue-host-dialog';this.hostIssues.id='queue-machine-status';this.hostIssues.setAttribute('aria-labelledby','queue-machine-status-title');const issueTitle=node('h2','Machine availability');issueTitle.id='queue-machine-status-title';const issueClose=node('button','Close');issueClose.type='button';issueClose.setAttribute('aria-label','Close machine status');issueClose.autofocus=true;issueClose.onclick=()=>this.hostIssues.close();this.hostIssueBody.className='queue-host-diagnostics';this.hostIssueSummary.id='queue-host-status';this.hostIssueSummary.type='button';this.hostIssueSummary.hidden=true;this.hostIssueSummary.setAttribute('aria-haspopup','dialog');this.hostIssueSummary.setAttribute('aria-controls',this.hostIssues.id);this.hostIssueSummary.onclick=()=>{this.hostIssues.showModal();issueClose.focus();};this.hostIssues.addEventListener('close',()=>{if(this.visible){if(!this.hostIssueSummary.hidden)this.hostIssueSummary.focus({preventScroll:true});else startAgent.focus({preventScroll:true});}});this.hostIssues.append(issueTitle,this.hostIssueChecked,this.hostIssueBody,issueClose);document.body.append(this.hostIssues);document.querySelector('.header-actions')!.insertBefore(this.hostIssueSummary,document.getElementById('connection'));
-    this.root.append(heading, this.inboxControls, this.feedback, this.body);
+    this.chatTabbar.className='queue-chat-tabbar';this.chatTabbar.hidden=true;this.feedback.className='queue-feedback';this.root.append(heading,this.chatTabbar,this.feedback,this.body);
     const back = node('button', '← Agents'); back.className = 'queue-back'; back.setAttribute('aria-label', '← Agents'); back.onclick = () => { delete this.body.dataset.detail; this.syncPresentation(); };
     const openButton = node('button', 'Open terminal'); openButton.className = 'primary queue-terminal-link';
     const updateTerminalLink = () => { openButton.hidden = compactClient(); };
     updateTerminalLink(); compactViewport.addEventListener('change', updateTerminalLink);
     openButton.onclick = () => { if (compactClient()) return; const entry = this.chosen(); if (entry) void this.open({ host: entry.h.id, connection: entry.h.connection_revision, session: entry.item.session, window: entry.item.window, pane: entry.item.pane }); };
     const createTicket=node('button','Create ticket');createTicket.onclick=()=>{const c=this.chosen();if(c)document.dispatchEvent(new CustomEvent('cc-create-ticket',{detail:{host:c.h.id,session:c.item.session,session_name:c.item.session_name,window:c.item.window,window_name:c.item.window_name,pane:c.item.pane,path:c.item.project,provider:c.item.agent,conversation:c.item.acp?.conversation||this.detailData?.conversations.find(v=>v.id===this.detailData?.selected)?.session||''}}));};
-    const actions = node('div'); actions.className = 'queue-detail-actions'; actions.append(back, this.activityBadge, agentOutbox(), this.detailsButton, openButton);
+    const actions = node('div'); actions.className = 'queue-detail-actions'; this.historyBadge.className='queue-history-badge';this.historyBadge.hidden=true;actions.append(back,this.activityBadge,this.historyBadge,this.detailsButton,openButton);
     this.detailsButton.className = 'queue-details-button'; this.detailsButton.setAttribute('aria-controls', 'queue-agent-metadata');
     this.metadata.id = 'queue-agent-metadata'; this.metadata.className = 'queue-agent-metadata'; this.metadata.hidden = true;
     this.detailsButton.setAttribute('aria-expanded', String(!this.metadata.hidden));
     this.subtitle.className = 'queue-chat-subtitle'; this.chatNotice.className = 'queue-chat-notice'; this.chatNotice.hidden = true;
-    compactViewport.addEventListener('change', () => { this.filterPanel.open = !compactClient(); this.syncPresentation(); });
+    compactViewport.addEventListener('change', () => { this.closeFilters(false);this.syncPresentation(); });
     this.detailFeedback.setAttribute('role', 'status'); this.sendFeedback.setAttribute('role', 'status');
     this.conversationSelect.setAttribute('aria-label', 'Conversation history');
     this.conversationSelect.onchange = () => { this.openedForRead = this.selected; this.conversations.set(this.selected, this.conversationSelect.value); void this.loadDetail(true); };
@@ -258,7 +259,7 @@ export class AttentionQueue {
       if (Date.now() - this.lastDetailPoll >= (active ? 1800 : 5800)) void this.loadDetail();
     }, 2000);
   }
-  setVisible(value: boolean) { if(!value){this.hostIssueSummary.hidden=true;if(this.hostIssues.open)this.hostIssues.close();}if(!value)this.clearPinnedDrag();this.visible = value;if(!value)this.detailsPanel.reset(); if(value)void this.outbox.refresh(); this.syncPresentation(); if (value) { this.render(); void this.refresh(); if (this.selected) void this.loadDetail(); } }
+  setVisible(value: boolean) { if(!value){this.closeFilters(false);this.dockHeader();this.hostIssueSummary.hidden=true;if(this.hostIssues.open)this.hostIssues.close();}if(!value)this.clearPinnedDrag();this.visible = value;if(!value)this.detailsPanel.reset(); if(value)void this.outbox.refresh(); this.syncPresentation(); if (value) { this.render(); void this.refresh(); if (this.selected) void this.loadDetail(); } }
   async openTarget(target:QueueTarget){
     await this.refresh();let host=this.snapshot?.hosts.find(h=>h.id===target.host&&h.connection_revision===target.connection);
     let item=host?.items.find(i=>i.session===target.session&&i.window===target.window&&i.pane===target.pane);
@@ -305,7 +306,7 @@ export class AttentionQueue {
   private canReorder(item:Item){return !!item.card?.pinned&&!!item.card.order_key&&agentLayout()?.pinned_sort==='manual'&&!this.orderBusy;}
   private visiblePinnedKeys(){return [...this.list.querySelectorAll<HTMLElement>('[data-order-key]')].map(card=>card.dataset.orderKey!);}
   private async stepPinned(key:string,step:number){const keys=this.visiblePinnedKeys(),index=keys.indexOf(key),target=keys[index+step];if(target)await this.movePinned(key,target,step<0,agentLayout()?.revision);}
-  private async movePinned(key:string,target:string,before:boolean,revision?:number){const layout=agentLayout();if(!layout||layout.pinned_sort!=='manual'||this.orderBusy||key===target)return;if(revision!==layout.revision){this.feedback.textContent='Pinned order changed while moving. Check the list and try again.';this.render();return;}const order=layout.order.filter(k=>k!==key),index=order.indexOf(target);if(index<0||!layout.order.includes(key))return;order.splice(index+(before?0:1),0,key);this.orderBusy=true;this.render();try{await saveAgentLayout({revision:layout.revision,order});this.feedback.textContent='Pinned order saved.';}catch(e){this.feedback.dataset.error='true';this.feedback.textContent=String(e)+' Order was not retried.';try{await loadAgentLayout();}catch{/* Keep the last observed order. */}}finally{this.orderBusy=false;this.render();const card=this.list.querySelector<HTMLElement>(`[data-order-key="${key}"]`);card?.focus({preventScroll:true});}}
+  private async movePinned(key:string,target:string,before:boolean,revision?:number){const layout=agentLayout();if(!layout||layout.pinned_sort!=='manual'||this.orderBusy||key===target)return;if(revision!==layout.revision){this.orderError='Pinned order changed while moving. Check the list and try again.';this.render();return;}const order=layout.order.filter(k=>k!==key),index=order.indexOf(target);if(index<0||!layout.order.includes(key))return;order.splice(index+(before?0:1),0,key);this.orderError=undefined;this.orderBusy=true;this.render();try{await saveAgentLayout({revision:layout.revision,order});this.feedback.textContent='Pinned order saved.';}catch(e){this.feedback.dataset.error='true';this.orderError=String(e)+' Order was not retried.';this.feedback.textContent=this.orderError;try{await loadAgentLayout();}catch{/* Keep the last observed order. */}}finally{this.orderBusy=false;this.render();const card=this.list.querySelector<HTMLElement>(`[data-order-key="${key}"]`);card?.focus({preventScroll:true});}}
   private clearPinnedDrag(){this.dragging=undefined;for(const card of this.list.querySelectorAll('.queue-card'))card.classList.remove('pin-drop-before','pin-drop-after','pin-dragging');}
   private bindPinnedDrag(card:HTMLButtonElement,handle:HTMLElement,key:string){
     handle.classList.add('queue-pin-drag');handle.title='Drag to reorder. Alt+↑/↓ or card menu also moves this card.';handle.setAttribute('aria-label','Drag pinned card to reorder');
@@ -327,8 +328,10 @@ export class AttentionQueue {
     this.acpChat?.setVisible(this.visible&&(!compactClient()||this.body.dataset.detail==='true'));
     const conversation = this.visible && compactClient() && this.body.dataset.detail === 'true';
     document.documentElement.classList.toggle('queue-chat-active', conversation);
-    this.fitComposer();
+    this.dockHeader(this.chosen()?.item.acp?this.acpChat.headerElement:this.chosen()?this.nativeNodes[0]:undefined);this.fitComposer();
   }
+  private closeFilters(focus=true){if(this.filterPanel.open)this.filterPanel.close();if(focus&&this.visible)this.filterTrigger.focus({preventScroll:true});}
+  private dockHeader(header?:HTMLElement){const next=!compactClient()&&this.visible?header:undefined;if(next===this.dockedHeader)return;if(this.dockedHeader&&this.headerAnchor){this.headerAnchor.replaceWith(this.dockedHeader);this.headerAnchor=undefined;}this.dockedHeader=next;this.chatTabbar.hidden=!next;if(next){this.headerAnchor=document.createComment('chat header');next.before(this.headerAnchor);this.chatTabbar.append(next);}}
   private options(select: HTMLSelectElement, all: string, entries: [string, string][], selected: string) {
     select.replaceChildren(...[['', all], ...entries].map(([value, label]) => { const o = node('option', label); o.value = value; return o; })); select.value = selected;
   }
@@ -419,7 +422,9 @@ export class AttentionQueue {
     this.root.querySelector('h1')!.textContent = compactClient() ? 'Agents' : 'AI Queue';
     for (const b of this.inboxControls.querySelectorAll('button')) b.setAttribute('aria-pressed', String(this.statusSelect.value === b.dataset.filter));
     const chosen = this.chosen();
-    this.detailsPanel.setContext(chosen&&!chosen.item.acp?`${chosen.item.id}/${chosen.item.attention?.instance||''}`:'',chosen?`${agentTitle(chosen.item)} · ${chosen.h.name}`:'');
+    const nextHeader=chosen?.item.acp?this.acpChat.headerElement:chosen?this.nativeNodes[0]:undefined;if(this.dockedHeader&&this.dockedHeader!==nextHeader)this.dockHeader();
+    const activeFilters=Number(!!this.host)+Number(!!this.project)+Number(!!this.statusSelect.value);this.filterTrigger.textContent=activeFilters?`Filters (${activeFilters})`:'Filters';this.filterTrigger.title=activeFilters?`${activeFilters} active filters`:'Agent filters and tools';
+    this.detailsPanel.setContext(chosen&&!chosen.item.acp?`${chosen.item.id}/${chosen.item.attention?.instance||''}`:'',chosen?`${agentTitle(chosen.item)} · ${chosen.h.name} · ${chosen.item.agent} · ${chosen.item.project}`:'');
     if(chosen?.item.acp){
       if(!this.nativeHidden.size){for(const node of this.nativeNodes)this.nativeHidden.set(node,node.hidden);this.detailData=undefined;this.detailKey='';this.detailRequest++;this.loadingDetail=false;}
       for(const node of this.nativeNodes)node.remove();
@@ -432,8 +437,9 @@ export class AttentionQueue {
     this.restartAgent.disabled=this.closeAgent.disabled=this.editCard.disabled=!chosen?.item.attention?.instance||stateOf(chosen.item)==='disconnected';this.switchMode.disabled=this.editCard.disabled||!chosen||!['codex','claude'].includes(chosen.item.agent);this.switchMode.title=chosen&&['codex','claude'].includes(chosen.item.agent)?'Resume this conversation in '+(chosen.item.acp?'native':'ACP')+' mode':'Pi resume handoffs are not verified';this.cardNotes.textContent=chosen?.item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;
     this.mute.hidden = !chosen?.item.attention;
     if (chosen?.item.attention) { this.mute.textContent = this.notifications.isMuted(JSON.stringify([chosen.item.attention.key, chosen.item.attention.instance])) ? 'Unmute notifications' : 'Mute notifications'; }
+    this.historyBadge.hidden=this.detailData?.association!=='project'||this.detailKey!==this.selected;
     this.subtitle.textContent = chosen ? `${chosen.h.name} · ${projectName(chosen.item.project)}${this.detailData?.association === 'project' && this.detailKey === this.selected ? ' · Project history' : ''}` : '';
-    this.title.textContent = chosen ? (chosen.item.card?.name || (waiting(chosen.item) ? chosen.item.prompt : agentTitle(chosen.item))) : 'Nothing to review';
+    this.title.textContent = chosen ? (chosen.item.card?.name || (waiting(chosen.item) ? chosen.item.prompt : agentTitle(chosen.item))) : 'Nothing to review';this.title.title=this.title.textContent;
     this.location.textContent = chosen ? `${chosen.h.name} · ${chosen.item.project}` : 'Codex, Claude and pi panes appear here while running, including when they are not waiting for input.';
     const badge = stateBadge(this.currentActivity(), chosen ? stateOf(chosen.item) : 'unknown');
     this.activityBadge.replaceWith(badge); this.activityBadge = badge;
@@ -455,9 +461,11 @@ export class AttentionQueue {
     this.updateSend();
     this.markRead.hidden = !unread(this.detailData?.read_state || chosen?.item.attention);
     }
+    this.dockHeader(nextHeader);
     const issues = hosts.filter(h => h.error || h.limited);
-    this.feedback.dataset.error = 'false';
-    this.feedback.textContent = this.snapshot ? `Checked ${new Date(this.snapshot.checked_at * 1000).toLocaleTimeString()}` : 'Checking machines…';
+    this.feedback.dataset.error = this.orderError?'true':'false';
+    this.feedback.textContent = this.orderError || (this.snapshot ? `Checked ${new Date(this.snapshot.checked_at * 1000).toLocaleTimeString()}` : 'Checking machines…');
+    this.filterChecked.textContent=this.feedback.textContent;
     this.hostIssueSummary.hidden=issues.length===0;
     const issueLabel=`${issues.length} machine${issues.length===1?'':'s'} unavailable or limited`;this.hostIssueSummary.textContent=`⚠ ${issues.length}`;this.hostIssueSummary.title=issueLabel;this.hostIssueSummary.setAttribute('aria-label',issueLabel);this.hostIssueChecked.textContent=this.snapshot?`Checked ${new Date(this.snapshot.checked_at*1000).toLocaleTimeString()}`:'Checking machines…';
     const issueSignature=JSON.stringify(issues.map(h=>[h.id,h.name,h.error,h.limited]));
@@ -623,7 +631,7 @@ export class AttentionQueue {
         data.activities = [...(previous.activities || []).filter(a => !activityIds.has(a.id) && a.position < activityFirst), ...(data.activities || [])];
         data.older_cursor = previous.older_cursor;
       }
-      if(data.card&&data.instance&&data.instance===item.attention?.instance){this.mergeCard(item,data.instance,data.card);this.title.textContent=item.card?.name||(waiting(item)?item.prompt:agentTitle(item));this.cardNotes.textContent=item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;const label=this.list.querySelector('.queue-card.selected strong');if(label)label.textContent=this.title.textContent;}
+      if(data.card&&data.instance&&data.instance===item.attention?.instance){this.mergeCard(item,data.instance,data.card);this.title.textContent=item.card?.name||(waiting(item)?item.prompt:agentTitle(item));this.title.title=this.title.textContent;this.cardNotes.textContent=item.card?.notes||'';this.cardNotes.hidden=!this.cardNotes.textContent;const label=this.list.querySelector('.queue-card.selected strong');if(label)label.textContent=this.title.textContent;}
       if(previous?.selected!==data.selected||previous?.instance!==data.instance||previous?.history_branch!==data.history_branch||data.history_reset)this.clearRecall();
       this.detailUnavailable = false; this.detailData = data; this.readAvailable = before == null;
       this.composer.value = this.drafts.get(this.draftKey()) || ''; this.fitComposer();
@@ -631,6 +639,7 @@ export class AttentionQueue {
       const sendReason = data.provider !== 'pi' && !data.approval && !data.folder_trust && compactClient() && data.send_reason ? (data.attention ? 'Awaiting approval. Respond from a desktop terminal.' : 'Messaging is unavailable here. Use a desktop terminal.') : data.send_reason;
       this.detailFeedback.textContent = sendReason || (previous?.instance && previous.instance !== data.instance ? 'Agent process changed. Drafts for the previous process have been kept separately.' : data.activity?.reason || 'Provider status unknown.');
       this.chatNotice.hidden = !!data.approval || !data.send_reason; this.chatNotice.textContent = sendReason || '';
+      this.historyBadge.hidden=data.association!=='project';
       this.subtitle.textContent = `${h.name} · ${projectName(item.project)}${data.association === 'project' ? ' · Project history' : ''}`;
       const badge = stateBadge(this.currentActivity()); this.activityBadge.replaceWith(badge); this.activityBadge = badge;
       this.options(this.conversationSelect, data.pending_codex_session?'Current new session · '+data.pending_codex_session.slice(0,8):'Choose a project conversation', data.conversations.map(c => [c.id, `${c.timestamp || 'Conversation'} · ${(c.session || c.id).slice(0, 8)}${c.linked ? ' · process linked' : ''}`]), data.selected || '');
@@ -695,7 +704,7 @@ export class AttentionQueue {
     }
   }
   private async acknowledge(explicit = false) {
-    if (!explicit && this.detailsPanel.modalOpen) return;
+    if (!explicit && document.querySelector('dialog[open]')) return;
     if(this.chosen()?.item.acp)return;
     const observed = this.detailData?.read_state || (explicit ? this.chosen()?.item.attention : undefined);
     if (this.reading || !observed || !unread(observed) || !this.visible || document.hidden || !this.detail.getClientRects().length) return;
@@ -798,7 +807,7 @@ export class AttentionQueue {
         if (state.new_approval) tokens.push(JSON.stringify([scope, 'approval', state.revision]));
         if (state.finished) tokens.push(JSON.stringify([scope, 'finished', state.revision]));
         if (state.unread_reply && state.reply_cursor) tokens.push(JSON.stringify([scope, 'reply', state.conversation, state.reply_cursor]));
-        return { scope, tokens, title: `${h.name} · ${item.card?.name||item.window_name}`, body: state.new_approval ? (inputSource(item.activity?.source) ? 'Agent needs input' : 'Agent needs approval') : state.finished ? 'Agent finished working' : 'New agent reply', reading: !this.detailsPanel.modalOpen && this.visible && document.hasFocus() && this.openedForRead === item.id && this.selected === item.id && (item.acp?this.acpChat.isReading():this.history.scrollHeight - this.history.scrollTop - this.history.clientHeight < 60),
+        return { scope, tokens, title: `${h.name} · ${item.card?.name||item.window_name}`, body: state.new_approval ? (inputSource(item.activity?.source) ? 'Agent needs input' : 'Agent needs approval') : state.finished ? 'Agent finished working' : 'New agent reply', reading: !document.querySelector('dialog[open]') && this.visible && document.hasFocus() && this.openedForRead === item.id && this.selected === item.id && (item.acp?this.acpChat.isReading():this.history.scrollHeight - this.history.scrollTop - this.history.clientHeight < 60),
           open: () => { void this.openNotification(h, item); } };
       })));
       this.render();

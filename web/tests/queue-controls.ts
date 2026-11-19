@@ -1,0 +1,3 @@
+import type {Page} from '@playwright/test';
+export async function openQueueFilters(page:Page){const dialog=page.getByRole('dialog',{name:'Agent filters and tools',exact:true});if(!await dialog.isVisible())await page.getByRole('button',{name:/^Filters(?: \(\d+\))?$/}).click();return dialog;}
+export async function refreshQueue(page:Page){const dialog=page.getByRole('dialog',{name:'Agent filters and tools',exact:true}),wasOpen=await dialog.isVisible();await openQueueFilters(page);await dialog.getByRole('button',{name:'Refresh queue',exact:true}).click();if(!wasOpen)await dialog.getByRole('button',{name:'Done',exact:true}).click();}

@@ -1239,3 +1239,23 @@ button:disabled { opacity: .5; cursor: default; }
 .queue-host-dialog h2 {margin:0;font-size:20px;}.queue-host-dialog>p {margin:0;font-size:12px;color:var(--cc-muted);}.queue-host-dialog>button {align-self:flex-end;min-height:40px;flex:none;}
 .queue-host-diagnostics {overflow:auto;min-height:0;overscroll-behavior:contain;}.queue-host-diagnostics section+section {margin-top:16px;}.queue-host-diagnostics p {line-height:1.5;}.queue-host-diagnostics pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.5;background:var(--cc-bg);padding:10px;border-radius:5px;}
 @media(max-width:900px),(pointer:coarse)and(max-width:1100px){#queue-host-status {min-width:36px;height:32px;padding:4px;font-size:11px;}.queue-host-dialog {padding:16px;}}
+
+/* Agents: primary tools at left, one active chat tab at right. */
+.queue-feedback[data-error=false] {display:none;}
+.queue-filter-trigger {white-space:nowrap;}
+.queue-filter-dialog {width:min(580px,calc(100vw - 24px));max-height:calc(100dvh - 24px);box-sizing:border-box;padding:22px;overflow:auto;}
+.queue-filter-dialog h2 {margin:0 0 12px;font-size:20px;}.queue-filter-dialog>p {font-size:12px;line-height:1.5;color:var(--cc-muted);}.queue-filter-dialog .queue-filters {display:grid;grid-template-columns:1fr;gap:12px;}.queue-filter-dialog label {display:flex;flex-direction:column;gap:6px;font-size:13px;}.queue-filter-dialog select {width:100%;max-width:none;min-height:40px;}.queue-filter-dialog .queue-inbox-controls {display:flex;margin:14px 0;gap:8px;}.queue-filter-tools {display:flex;gap:8px;flex-wrap:wrap;}.queue-filter-tools button {min-height:40px;}.queue-filter-dialog .queue-filters-done {display:block;margin-left:auto;}
+@media (min-width:901px) and (pointer:fine),(min-width:1101px){
+ #queue-pane {--queue-sidebar-width:clamp(280px,25vw,340px);grid-template-columns:var(--queue-sidebar-width) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);column-gap:12px;row-gap:0;}
+ .queue-heading {min-width:0;flex-wrap:nowrap;grid-column:1;grid-row:1;gap:6px;padding-bottom:8px;}.queue-heading .queue-search {width:0;min-width:60px;flex:1;}.queue-heading>.queue-start-agent,.queue-heading>.queue-filter-trigger {flex:none;min-height:34px;padding:7px 8px;font-size:12px;}
+ .queue-chat-tabbar {grid-column:2;grid-row:1;min-width:0;align-self:stretch;}.queue-chat-tabbar .queue-chat-header {height:100%;display:flex;gap:8px;align-items:center;min-width:0;}.queue-chat-tabbar .acp-chat-titles,.queue-chat-tabbar .queue-detail-actions {display:contents;}.queue-chat-tabbar .queue-chat-subtitle,.queue-chat-tabbar .queue-back {display:none;}
+ .queue-chat-tabbar h2 {order:0;align-self:flex-end;min-width:0;max-width:65%;font-size:15px;line-height:22px;font-weight:600;margin:0 0 -1px;padding:8px 14px;border:1px solid var(--cc-border);border-bottom:1px solid var(--cc-surface);border-radius:9px 9px 0 0;background:var(--cc-surface);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;position:relative;z-index:1;}
+ .queue-chat-tabbar .agent-state {order:1;flex:none;}.queue-chat-tabbar .queue-details-button {order:3;margin-left:auto;display:block;}.queue-chat-tabbar .queue-terminal-link {order:4;}.queue-chat-tabbar button {min-height:32px;height:32px;font-size:12px;padding:6px 9px;flex:none;}
+ .queue-body {grid-template-columns:var(--queue-sidebar-width) minmax(0,1fr);}.queue-detail {border-top-left-radius:0;}
+ #queue-pane>.queue-feedback[data-error=true] {grid-column:1/-1;grid-row:2;margin:6px 0;max-width:none;}#queue-pane:has(>.queue-feedback[data-error=true]){grid-template-rows:auto auto minmax(0,1fr);}#queue-pane:has(>.queue-feedback[data-error=true])>.queue-body{grid-row:3;}
+}
+@media(max-width:900px),(pointer:coarse)and(max-width:1100px){.queue-chat-tabbar{display:none;}.queue-heading{gap:8px;flex-direction:row;flex-wrap:wrap;align-items:center;}.queue-heading>div:first-child{flex-basis:100%;}.queue-heading>.queue-search{flex:1;min-width:100px;width:0;}.queue-heading>.queue-start-agent,.queue-heading>.queue-filter-trigger{flex:none;}.queue-filter-dialog{padding:16px;}}
+
+.queue-history-badge {font-size:11px;color:var(--cc-yellow);white-space:nowrap;}
+@media(min-width:901px)and(pointer:fine),(min-width:1101px){.queue-chat-tabbar .queue-history-badge{order:2;flex:none;}}
+@media(max-width:900px),(pointer:coarse)and(max-width:1100px){.queue-history-badge{display:none;}}

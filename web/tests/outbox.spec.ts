@@ -1,3 +1,4 @@
+import {openQueueFilters} from './queue-controls';
 import {test,expect} from '@playwright/test';
 import {mkdtempSync,mkdirSync,copyFileSync,writeFileSync,readFileSync,appendFileSync,rmSync,chmodSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -185,7 +186,7 @@ test('bulk archive includes old receipts across machines beyond the recent page 
 test('mobile bulk controls require confirmation and preserve browser-only receipts',async({page})=>{
  const first=await enqueue('CC_BULK_PHONE_ONE');await enqueue('CC_BULK_PHONE_TWO');await expect.poll(async()=>(await entry(first.id)).note).toContain('verified');
  await page.addInitScript(()=>localStorage.setItem('cc-agent-outbox-pending-v1',JSON.stringify([{id:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',host:'local',session:'$0',window:'@0',pane:'%12345',instance:'0'.repeat(64),text:'BROWSER_ONLY_RECEIPT',status:'uncertain',note:'Fixture browser-only uncertainty',revision:0,created_at:Date.now(),updated_at:Date.now()}])));
- await page.setViewportSize({width:393,height:852});await page.goto(base+'/#/queue');await page.getByRole('button',{name:'All outboxes',exact:true}).click();const dialog=page.getByRole('dialog',{name:'All outboxes',exact:true});
+ await page.setViewportSize({width:393,height:852});await page.goto(base+'/#/queue');await openQueueFilters(page);await page.getByRole('button',{name:'All outboxes',exact:true}).click();const dialog=page.getByRole('dialog',{name:'All outboxes',exact:true});
  let posts=0;page.on('request',r=>{if(r.url().endsWith('/outbox/bulk')&&r.method()==='POST')posts++;});
  page.once('dialog',async d=>{expect(d.message()).toContain('all 2');expect(d.message()).toContain('browser-only');await d.dismiss();});await dialog.getByRole('button',{name:'Cancel all queued',exact:true}).click();await expect(dialog).toContainText('Nothing was changed');expect(posts).toBe(0);
  const before=tmux('capture-pane','-p','-t',pane);page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Cancel all queued',exact:true}).click();await expect(dialog).toContainText('Cancelled 2 messages');
@@ -194,7 +195,7 @@ test('mobile bulk controls require confirmation and preserve browser-only receip
 
 test('bulk archive discloses uncertainty and a lost apply response is never retried',async({page})=>{
  writeFileSync(join(dir,'fail-enter'),'fail');const receipt=await enqueue('CC_BULK_UNCERTAIN');phase('ready');await expect.poll(async()=>(await entry(receipt.id)).status,{timeout:15000}).toBe('uncertain');const preview=await bulkPreview('cancel');expect(preview.count).toBe(0);expect(preview.skipped).toBe(1);
- await page.setViewportSize({width:393,height:852});await page.goto(base+'/#/queue');await page.getByRole('button',{name:'All outboxes',exact:true}).click();const dialog=page.getByRole('dialog',{name:'All outboxes'});
+ await page.setViewportSize({width:393,height:852});await page.goto(base+'/#/queue');await openQueueFilters(page);await page.getByRole('button',{name:'All outboxes',exact:true}).click();const dialog=page.getByRole('dialog',{name:'All outboxes'});
  let posts=0;await page.route('**/outbox/bulk',async route=>{posts++;await route.fetch();await route.abort('connectionfailed');});page.once('dialog',async d=>{expect(d.message()).toContain('1 uncertain');expect(d.message()).toContain('may proceed');await d.accept();});
  const before=tmux('capture-pane','-p','-t',pane);await dialog.getByRole('button',{name:'Archive all receipts',exact:true}).click();await expect(dialog).toContainText('will not be retried automatically');expect(posts).toBe(1);await dialog.getByRole('button',{name:'Refresh outbox',exact:true}).click();await expect(dialog.locator('.agent-outbox-message')).toHaveCount(0);expect(posts).toBe(1);expect(tmux('capture-pane','-p','-t',pane)).toBe(before);
 });

@@ -1,3 +1,4 @@
+import {openQueueFilters} from './queue-controls';
 import {enableFeatures} from './feature-fixture';
 import { makeSlackSource } from './slack-fixture';
 import { test, expect } from '@playwright/test';
@@ -165,7 +166,7 @@ test('ProxyJump supports two-hop discovery, terminal input and files while verif
   expect((await post(`/hosts/${host.id}/agents/message`,{token:details.message_token,text:'PI_DUPLICATE'})).status).toBe(410);
   await expect.poll(async()=>{const q=await(await fetch(base+'/api/v1/queue')).json();return q.hosts.find((h:{id:string})=>h.id===host.id).items.some((i:{pane:string})=>i.pane===piPane);},{timeout:15000}).toBe(true);
   await page.setViewportSize({width:393,height:852});await page.goto(base);await page.locator('#show-queue').click();
-  await page.locator('.queue-filter-panel>summary').click();await page.getByLabel('Queue machine',{exact:true}).selectOption(host.id);await page.getByRole('button',{name:'Done',exact:true}).click();
+  await openQueueFilters(page);await page.getByLabel('Queue machine',{exact:true}).selectOption(host.id);await page.getByRole('button',{name:'Done',exact:true}).click();
   await page.locator('.queue-card').filter({hasText:"pi ' project"}).click();await page.getByRole('button',{name:'Details',exact:true}).click();
   await page.getByLabel('Conversation history',{exact:true}).selectOption(chosen.id);await expect(page.getByLabel('Conversation messages')).toContainText('Pi visible answer');
   await expect(page.getByLabel('Conversation messages')).not.toContainText('PI_ABANDONED');
