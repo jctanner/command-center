@@ -75,7 +75,7 @@ for(const width of [1440,393])test(`runtime occupies existing context row withou
  for(const [seconds,label]of [[null,'—'],[0,'0m'],[2520,'42m'],[11520,'3h12m'],[187200,'2d4h']] as const){
   (f.items[0] as any).runtime_seconds=seconds;await refreshQueue(page);await expect(card.locator('.queue-card-runtime')).toHaveText(label);
   const box=await card.boundingBox();expect(box!.width).toBe(before!.width);expect(box!.height).toBe(before!.height);
-  const meter=await card.locator('.agent-context-bar').boundingBox(),runtime=await card.locator('.queue-card-runtime').boundingBox();expect(Math.abs(meter!.y+meter!.height/2-runtime!.y-runtime!.height/2)).toBeLessThan(2);expect(runtime!.x).toBeGreaterThan(meter!.x+meter!.width);
+  const meter=await card.locator('.agent-context-bar').boundingBox(),runtime=await card.locator('.queue-card-runtime').boundingBox();expect(Math.abs(meter!.y+meter!.height/2-runtime!.y-runtime!.height/2)).toBeLessThan(2);expect(runtime!.x).toBeGreaterThan(meter!.x);expect(runtime!.x+runtime!.width).toBeLessThan(meter!.x+meter!.width);const track=await card.locator('.agent-token-metrics').boundingBox();expect(Math.abs(meter!.width-track!.width)).toBeLessThan(1);
  }
  expect(f.sockets()).toBe(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:`../test-results/agent-card-runtime-${width}.png`});

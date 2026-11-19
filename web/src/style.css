@@ -1260,7 +1260,7 @@ button:disabled { opacity: .5; cursor: default; }
 @media(min-width:901px)and(pointer:fine),(min-width:1101px){.queue-chat-tabbar .queue-history-badge{order:2;flex:none;}}
 @media(max-width:900px),(pointer:coarse)and(max-width:1100px){.queue-history-badge{display:none;}}
 
-/* Runtime uses only its label width; the meter fills the remaining context row. */
-.queue-card>.agent-token-metrics {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px;}
-.queue-card .agent-context-bar {white-space:nowrap;text-overflow:ellipsis;}
-.queue-card-runtime {justify-self:end;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cc-muted);font-variant-numeric:tabular-nums;}
+/* Runtime sits inside the full-width meter; reserve padding to keep labels apart. */
+.queue-card>.agent-token-metrics {display:block;position:relative;}
+.queue-card .agent-context-bar {white-space:nowrap;text-overflow:ellipsis;padding-right:calc(7ch + 12px);}
+.queue-card-runtime {position:absolute;right:7px;top:50%;transform:translateY(-50%);max-width:7ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cc-text);font-variant-numeric:tabular-nums;}

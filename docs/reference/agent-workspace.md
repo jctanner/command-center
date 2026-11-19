@@ -8,6 +8,6 @@ Agent outbox in native chat Details is frozen to the exact selected agent proces
 
 Machine availability in the navbar reports host errors only. Partial agent discovery alone does not raise a connection warning; the API retains its limited metadata for reconciliation without implying the machine is unavailable.
 
-Cards give the context meter all remaining row width, with a content-sized runtime label at the right (minutes, hours/minutes or days/hours), without adding a row. Native runtime starts at the verified CLI process; ACP runtime starts at the broker. Unknown shows an em dash; disconnected values are last-observed, not a running clock. These are process runtimes, not conversation age.
+Cards use a full-width context meter with a right-aligned runtime label inside it and padding separating the labels (minutes, hours/minutes or days/hours), without adding a row. Native runtime starts at the verified CLI process; ACP runtime starts at the broker. Unknown shows an em dash; disconnected values are last-observed, not a running clock. These are process runtimes, not conversation age.
 
 The card metadata row shows machine, harness / reported model, and project. Models come from process-associated provider metrics; unknown models are omitted. The row stays single-line with ellipsis and a full hover tooltip.
