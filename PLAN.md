@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0156: release quiet partial scans](docs/tasks/current/0156-release-quiet-partial-scans.md) — in progress.
+- [Task0156: release quiet partial scans](docs/tasks/done/0156-release-quiet-partial-scans.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
-- [Task0155: quiet partial scans](docs/tasks/done/0155-quiet-partial-agent-scans.md) — complete; build and4 responsive browser cases pass; not deployed.
+- [Task0155: quiet partial scans](docs/tasks/done/0155-quiet-partial-agent-scans.md) — complete; build and4 responsive browser cases pass; deployed in task0156.
 
 - [Task0154: release native status receipts](docs/tasks/done/0154-release-native-status-receipts.md) — committed/pushed/deployed; four access paths healthy, tmux processes unchanged; live /status receipt reconciled.
 
