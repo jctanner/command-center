@@ -4631,6 +4631,14 @@
                 "type": "null"
               }
             ]
+          },
+          "upstream": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/UpstreamTicket"
+            },
+            "description": "External upstream tickets, primarily Jira. Explicit [] clears references; omission on update preserves existing values. No tracker requests are performed."
           }
         },
         "description": "POST creates when revision is omitted/null; updates when revision is present. Updates replace ALL editable fields. Do not send number, timestamps, runs or other response-only fields. UTF-8 byte limits can be stricter than JSON Schema maxLength. Context/checklist omissions are invalid. Unknown fields are rejected.",
@@ -4698,6 +4706,14 @@
           "updated_at": {
             "type": "integer",
             "minimum": 0
+          },
+          "upstream": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/UpstreamTicket"
+            },
+            "description": "External upstream tickets, primarily Jira. Explicit [] clears references; omission on update preserves existing values. No tracker requests are performed."
           }
         },
         "required": [
@@ -4712,7 +4728,8 @@
           "checklist",
           "runs",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "upstream"
         ]
       },
       "TicketSummary": {
@@ -9457,6 +9474,26 @@
         },
         "required": [
           "revision"
+        ]
+      },
+      "UpstreamTicket": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "External ticket key or label, e.g. RHAIRFE-123 or owner/repo#123."
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional absolute HTTP(S) link. Blank or omitted means key-only; credentials, whitespace and unsafe schemes rejected."
+          }
+        },
+        "required": [
+          "label"
         ]
       }
     },

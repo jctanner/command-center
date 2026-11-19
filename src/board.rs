@@ -94,12 +94,47 @@ pub(crate) struct Run {
     pub released: bool,
 }
 #[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UpstreamTicket {
+    label: String,
+    #[serde(default)]
+    url: String,
+}
+fn valid_upstream(entries: &[UpstreamTicket]) -> bool {
+    entries.len() <= 20
+        && entries.iter().all(|e| {
+            !e.label.trim().is_empty()
+                && e.label.len() <= 200
+                && !e.label.chars().any(char::is_control)
+                && (e.url.is_empty()
+                    || (e.url.len() <= 2048
+                        && !e
+                            .url
+                            .chars()
+                            .any(|c| c.is_control() || c.is_whitespace() || c == '\\')
+                        && e.url
+                            .split('#')
+                            .next()
+                            .unwrap_or("")
+                            .parse::<axum::http::Uri>()
+                            .ok()
+                            .is_some_and(|u| {
+                                matches!(u.scheme_str(), Some("https" | "http"))
+                                    && u.authority().is_some_and(|a| {
+                                        !a.host().is_empty() && !a.as_str().contains('@')
+                                    })
+                            })))
+        })
+}
+#[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct Ticket {
     pub id: String,
     pub number: i64,
     pub revision: String,
     pub title: String,
     pub description: String,
+    #[serde(default)]
+    pub upstream: Vec<UpstreamTicket>,
     pub status: String,
     pub priority: String,
     pub context: Context,
@@ -377,6 +412,7 @@ struct Change {
     revision: Option<String>,
     title: String,
     description: String,
+    upstream: Option<Vec<UpstreamTicket>>,
     status: String,
     priority: String,
     context: Context,
@@ -389,6 +425,7 @@ fn valid(b: &Change) -> bool {
         && b.title.len() <= 240
         && !b.title.chars().any(char::is_control)
         && b.description.len() <= 24000
+        && b.upstream.as_deref().is_none_or(valid_upstream)
         && STATUSES.contains(&b.status.as_str())
         && ["low", "normal", "high", "urgent"].contains(&b.priority.as_str())
         && b.checklist.len() <= 100
@@ -503,6 +540,7 @@ async fn save(
                     revision: revision(),
                     title: String::new(),
                     description: String::new(),
+                    upstream: Vec::new(),
                     status: String::new(),
                     priority: String::new(),
                     context: Context::default(),
@@ -521,6 +559,7 @@ async fn save(
             };
             t.title = b.title.trim().into();
             t.description = b.description;
+            if let Some(upstream) = b.upstream { t.upstream = upstream; }
             t.status = b.status;
             t.priority = b.priority;
             t.context = b.context;
@@ -852,6 +891,41 @@ async fn activity(State(s): State<Arc<AppState>>) -> Result<Json<Value>, ApiErro
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn upstream_references_are_bounded_literal_http_links() {
+        let make = |url: &str| UpstreamTicket {
+            label: "RHAIRFE-123".into(),
+            url: url.into(),
+        };
+        for url in [
+            "",
+            "https://issues.example.com/browse/RHAIRFE-123",
+            "https://github.com/org/repo/issues/1#issuecomment-2",
+        ] {
+            assert!(valid_upstream(&[make(url)]));
+        }
+        for url in [
+            "javascript:alert(1)",
+            "file:///tmp/file",
+            "//example.com/path",
+            "https://user:secret@example.com/path",
+            "https://example.com/hello world",
+            "https://example.com/\\evil",
+        ] {
+            assert!(!valid_upstream(&[make(url)]));
+        }
+        assert!(!valid_upstream(&[UpstreamTicket {
+            label: " ".into(),
+            url: String::new()
+        }]));
+        assert!(!valid_upstream(
+            &(0..21).map(|_| make("")).collect::<Vec<_>>()
+        ));
+        assert!(!valid_upstream(&[make(&format!(
+            "https://example.com/{}",
+            "a".repeat(2048)
+        ))]));
+    }
     async fn fixture(b: &Board) -> Ticket {
         b.with(|c| {
             let t = Ticket {
@@ -860,6 +934,7 @@ mod tests {
                 revision: revision(),
                 title: "Task".into(),
                 description: "Markdown".into(),
+                upstream: Vec::new(),
                 status: "ready".into(),
                 priority: "normal".into(),
                 context: Context::default(),

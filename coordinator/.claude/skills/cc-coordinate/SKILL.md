@@ -18,3 +18,5 @@ When the human explicitly requests closure or delegates cleanup of a bounded set
 For a human restart request or maintenance task explicitly including restarts, switch to `cc-restart`. Finish separately authorized package updates before restart preparation; a fresh preparation selects the installed CLI and binds its identity. Ordinary coordination/messaging permission alone does not authorize interruption.
 
 For container Goose profile discovery, host/container path mapping and explicitly requested configuration or launch overrides, use cc-container-profiles and repository-root docs/reference/acp-containers.md. Profile edits are separate configuration actions, never implicit launches or restarts. Existing v2 agents retain saved runtime settings on restart.
+
+When a scoped coordination task involves tickets, include their known `upstream` Jira/GitHub keys and supplied URLs in the handoff context. Preserve these separately from CC ticket IDs. Use cc-tickets for authorized metadata edits; upstream references do not authorize external tracker changes.

@@ -80,3 +80,9 @@ python3 -B -m unittest discover -s coordinator/tests -v
 The schema tests require Python `jsonschema` (install in your development environment if absent). HTTP tests start an isolated backend with an empty host configuration and private temporary database; all ticket data is synthetic. No real agents, tmux sessions or live Board records are changed.
 
 Codex launch preparation accepts optional `approval_policy: "approve-for-me"` for automatic review using the workspace-write sandbox. Omit/null/`default` retains harness defaults. The policy is checked against the target CLI, bound to the grant, and retained in the run receipt. Start accepts no policy override. See [launch policy](coordinator-launches.md#codex-approval-policy).
+
+## Upstream tickets
+
+Tickets expose `upstream`, an array of up to20 external references. Each entry has a required `label` (ticket key/title, up to200 bytes) and an optional `url` (absolute HTTP/HTTPS, up to2048 bytes, no credentials). Example: `[{"label":"RHAIRFE-123","url":"https://issues.example.com/browse/RHAIRFE-123"},{"label":"owner/repo#42","url":"https://github.com/owner/repo/issues/42"}]`. Key-only entries are supported. No tracker integration or network fetch is implied.
+
+Create/update through the existing ticket write endpoint with its revision guard. Omitted `upstream` preserves references on update for older clients; `[]` explicitly clears them. Existing tickets read as an empty list. The ticket editor supports add/edit/remove and safe external links; prepared launch prompts include the references for context.

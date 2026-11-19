@@ -9,6 +9,12 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0167: release upstream tickets](docs/tasks/current/0167-release-upstream-tickets.md) — in progress.
+
+- [Task0166: upstream coordinator skills](docs/tasks/done/0166-upstream-coordinator-skills.md) — complete;3 skills validated; feature still undeployed.
+
+- [Task0165: upstream ticket references](docs/tasks/done/0165-ticket-upstream-references.md) — complete;16 Rust tests and9 browser cases pass; not deployed.
+
 - [Task0164: release runtime inside meter](docs/tasks/done/0164-release-runtime-inside-meter.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
 - [Task0163: runtime inside meter](docs/tasks/done/0163-runtime-inside-context-meter.md) — complete; build and2 responsive browser cases pass; screenshot inspected; deployed in task0164.

@@ -1264,3 +1264,5 @@ button:disabled { opacity: .5; cursor: default; }
 .queue-card>.agent-token-metrics {display:block;position:relative;}
 .queue-card .agent-context-bar {white-space:nowrap;text-overflow:ellipsis;padding-right:calc(7ch + 12px);}
 .queue-card-runtime {position:absolute;right:7px;top:50%;transform:translateY(-50%);max-width:7ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cc-text);font-variant-numeric:tabular-nums;}
+
+.ticket-upstream {min-width:0;}.ticket-upstream h3 {margin:12px 0 8px;font-size:14px;}.ticket-upstream-row {display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;}.ticket-upstream-row input {min-width:0;flex:1 1 180px;box-sizing:border-box;font:inherit;color:var(--cc-text);background:var(--cc-surface);border:1px solid var(--cc-border);border-radius:5px;padding:8px;}.ticket-upstream-row a {color:var(--cc-accent);}.ticket-upstream-row button {flex:none;}

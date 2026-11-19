@@ -78,3 +78,17 @@ for(const width of [1440,393])test(`Review column, editor and list filter at ${w
  await page.reload();await page.getByLabel('Board column',{exact:true}).selectOption('review');await expect(page.locator('.ticket-table tbody')).toContainText(ticket.title);
  expect(sockets).toBe(0);expect((await api('board/tickets/'+ticket.id)).runs).toEqual([]);
 });
+
+for(const width of [1440,393])test(`multiple upstream references round-trip with safe links and legacy updates at ${width}px`,async({page})=>{
+ const ticket=await api('board/tickets',{id:randomUUID(),title:`Upstream fixture ${width}`,description:'External references',status:'backlog',priority:'normal',context:{},checklist:[]});
+ await page.setViewportSize({width,height:852});await page.goto(base+'/#/board');await page.getByRole('button',{name:'List view',exact:true}).click();await page.getByLabel('Filter tickets',{exact:true}).fill(`Upstream fixture ${width}`);await page.locator('.ticket-list-title').click();const dialog=page.getByRole('dialog',{name:'Ticket',exact:true});
+ await dialog.getByRole('button',{name:'Add upstream ticket',exact:true}).click();await dialog.getByLabel('Upstream ticket 1',{exact:true}).fill('RHAIRFE-123');await dialog.getByLabel('Upstream URL 1',{exact:true}).fill('https://issues.example.com/browse/RHAIRFE-123');
+ await dialog.getByRole('button',{name:'Add upstream ticket',exact:true}).click();await dialog.getByLabel('Upstream ticket 2',{exact:true}).fill('org/repo#42');await dialog.getByLabel('Upstream URL 2',{exact:true}).fill('https://github.com/org/repo/issues/42');
+ await dialog.getByRole('button',{name:'Save ticket',exact:true}).click();await expect(dialog).toContainText('Saved');let saved=await api('board/tickets/'+ticket.id);expect(saved.upstream).toHaveLength(2);await expect(dialog.locator('.ticket-upstream a').first()).toHaveAttribute('rel','noopener noreferrer');
+ await dialog.getByRole('button',{name:'Remove upstream ticket 2',exact:true}).click();await dialog.getByLabel('Upstream URL 1',{exact:true}).fill('');await dialog.getByRole('button',{name:'Save ticket',exact:true}).click();await expect(dialog).toContainText('Saved');saved=await api('board/tickets/'+ticket.id);expect(saved.upstream).toEqual([{label:'RHAIRFE-123',url:''}]);
+ const legacy={...saved,host_revision:null};delete legacy.upstream;delete legacy.number;delete legacy.runs;delete legacy.created_at;delete legacy.updated_at;
+ const updated=await api('board/tickets',legacy);expect(updated.upstream).toEqual(saved.upstream);
+ const stale=await fetch(base+'/api/v1/board/tickets',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({...legacy,upstream:[]})});expect(stale.status).toBe(409);
+ for(const upstream of [[{label:'unsafe',url:'javascript:alert(1)'}],Array.from({length:21},()=>({label:'overflow',url:''}))]){const invalid=await fetch(base+'/api/v1/board/tickets',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({...legacy,revision:updated.revision,upstream})});expect(invalid.status).toBe(400);}
+ const cleared=await api('board/tickets',{...legacy,revision:updated.revision,upstream:[]});expect(cleared.upstream).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
