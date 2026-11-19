@@ -1259,3 +1259,8 @@ button:disabled { opacity: .5; cursor: default; }
 .queue-history-badge {font-size:11px;color:var(--cc-yellow);white-space:nowrap;}
 @media(min-width:901px)and(pointer:fine),(min-width:1101px){.queue-chat-tabbar .queue-history-badge{order:2;flex:none;}}
 @media(max-width:900px),(pointer:coarse)and(max-width:1100px){.queue-history-badge{display:none;}}
+
+/* Runtime shares the existing context row: three parts meter, one part duration. */
+.queue-card>.agent-token-metrics {display:grid;grid-template-columns:minmax(0,3fr) minmax(0,1fr);align-items:center;gap:6px;}
+.queue-card .agent-context-bar {white-space:nowrap;text-overflow:ellipsis;}
+.queue-card-runtime {justify-self:end;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cc-muted);font-variant-numeric:tabular-nums;}

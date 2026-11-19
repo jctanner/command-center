@@ -7,3 +7,5 @@ On desktop, the active chat title sits in a full-width themed header with a slig
 Agent outbox in native chat Details is frozen to the exact selected agent process. All outboxes, reached through Filters, includes every process and exposes global bulk actions. These are distinct scopes despite sharing a component. Opening tools or modals does not acknowledge replies behind them, send messages, or authorize a bulk action. Existing explicit confirmation, one-use targeting and uncertain-delivery rules remain unchanged.
 
 Machine availability in the navbar reports host errors only. Partial agent discovery alone does not raise a connection warning; the API retains its limited metadata for reconciliation without implying the machine is unavailable.
+
+Cards reserve the right quarter of the context-meter row for runtime (minutes, hours/minutes or days/hours), without adding a row. Native runtime starts at the verified CLI process; ACP runtime starts at the broker. Unknown shows an em dash; disconnected values are last-observed, not a running clock. These are process runtimes, not conversation age.

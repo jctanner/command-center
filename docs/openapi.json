@@ -5197,6 +5197,14 @@
               "broker",
               "instance"
             ]
+          },
+          "runtime_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Last observed monotonic elapsed seconds since native CLI process start or ACP broker start. Null if unavailable. Retained disconnected observations do not advance; unrelated to conversation age."
           }
         },
         "description": "Read-only observation. context/prompt are terminal evidence, not conversation history. Only process-linked provider state establishes Working/Ready. Retain source, timestamps and unavailable/limited labels. Do not treat inferred attention as permission to act.",
@@ -8471,6 +8479,14 @@
               "null"
             ],
             "description": "Immutable owned container ID, name, labels, reviewed profile/image, persistent state volume and managed scratch workspace; no credentials. Present only for container Goose. Host Goose has null container metadata. Container native conversion and broker host commands disabled."
+          },
+          "runtime_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Observed elapsed seconds since the verified ACP broker process started, computed by remote transport; unknown if unavailable."
           }
         }
       },

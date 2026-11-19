@@ -19,7 +19,7 @@ type AgentState = 'working' | 'ready' | 'approval' | 'awaiting_trust' | 'unknown
 type Activity = { state: AgentState; source: string; reason: string; evidence_at?: number; observed_at: number; transition?: string };
 export type AgentFileTarget={host:string;connection:string;path:string};
 export type QueueTarget = { instance?:string|null;host: string; connection: string; session: string; window: string; pane: string };
-type Item = {acp?:{command_running?:boolean;broker:string;instance:string;endpoint?:string;conversation?:string};token_metrics?:TokenMetrics|null; folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
+type Item = {runtime_seconds?:number|null;acp?:{command_running?:boolean;broker:string;instance:string;endpoint?:string;conversation?:string};token_metrics?:TokenMetrics|null; folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
 type Host = { id: string; name: string; connection_revision: string; error?: string; limited: boolean; items: Item[] };
 type Snapshot = { layout?:AgentLayout|null;checked_at: number; hosts: Host[] };
 type Message = { kind?:'command'|'command_output'; id: string; role: 'user' | 'assistant'; text: string; timestamp: string; order?: number; truncated?: boolean };
@@ -37,6 +37,11 @@ const unread = (state?: ReadState) => !!state && (state.finished || state.new_ap
 const needsAttention = (item: Item) => waiting(item) || unread(item.attention);
 const stateLabel = (state: AgentState, source?: string) => ({ awaiting_trust:'Needs folder trust',working: 'Working', ready: 'Ready', approval: source === 'terminal_question' ? 'Input (detected)' : inputSource(source) ? 'Awaiting input' : source === 'terminal_prompt' ? 'Approval (detected)' : 'Awaiting approval', unknown: 'Unknown', disconnected: 'Disconnected' })[state];
 const rank: Record<AgentState, number> = { awaiting_trust:0,approval: 0, ready: 1, working: 2, unknown: 3, disconnected: 4 };
+function runtimeLabel(seconds:unknown){
+  if(typeof seconds!=='number'||!Number.isSafeInteger(seconds)||seconds<0)return '—';
+  const minutes=Math.floor(seconds/60),hours=Math.floor(minutes/60),days=Math.floor(hours/24);
+  return days?`${days}d${hours%24?`${hours%24}h`:''}`:hours?`${hours}h${minutes%60?`${minutes%60}m`:''}`:`${minutes}m`;
+}
 function stateBadge(activity?: Activity, fallback: AgentState = 'unknown') {
   const badge = node('span', activity?.source==='codex_pending'?'New session':stateLabel(activity?.state || fallback, activity?.source));
   badge.className = 'agent-state'; badge.dataset.state = activity?.state || fallback;
@@ -395,7 +400,7 @@ export class AttentionQueue {
       const background=backgroundLabel(item.background_tasks,stateOf(item)==='disconnected');if(background){for(const parent of [machine,context]){const badge=node('span',background);badge.className='queue-background-count';if(parent===context)parent.prepend(badge,document.createTextNode(' · '));else parent.append(badge);}}
       b.title=`${name.textContent}\n${context.title}\nRight-click or Shift+F10 for agent actions`;
       if(item.folder_trust){const trust=node('small',item.folder_trust.title);trust.className='queue-card-prompt';b.append(trust);}
-      const tokens=new AgentTokenMetrics();this.cardTokens.set(item.id,tokens);tokens.update(item.token_metrics,!!h.error||stateOf(item)==='disconnected');
+      const tokens=new AgentTokenMetrics();this.cardTokens.set(item.id,tokens);tokens.update(item.token_metrics,!!h.error||stateOf(item)==='disconnected');const duration=node('span',runtimeLabel(item.runtime_seconds));duration.className='queue-card-runtime';duration.title=`${h.error||stateOf(item)==='disconnected'?'Last observed runtime':'Runtime'} since ${item.acp?'ACP broker':'agent process'} start${duration.textContent==='—'?' unavailable':`: ${duration.textContent}`}`;duration.setAttribute('aria-label',duration.title);tokens.element.append(duration);
       b.append(machine,stateBadge(item.activity,stateOf(item)),name,folder,context,node('small',`${item.session_name} / ${item.window_name} / ${item.pane}`),tokens.element);
       b.dataset.hasPrompt=String(!!item.card?.name&&waiting(item));
       if(item.card?.notes){const note=node('span',item.card.notes);note.className='agent-card-note-preview queue-card-note';note.title=item.card.notes;b.append(note);}if(item.card?.name&&waiting(item)){const prompt=node('span',item.prompt);prompt.className='agent-card-note-preview queue-card-prompt';prompt.title=item.prompt;b.append(prompt);}

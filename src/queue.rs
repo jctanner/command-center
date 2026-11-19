@@ -116,6 +116,7 @@ struct Item {
     status: String,
     activity: Activity,
     last_seen: u64,
+    runtime_seconds: Option<u64>,
     attention: crate::attention::View,
     card: crate::agent_cards::Card,
     background_tasks: Value,
@@ -264,7 +265,7 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                         acp_panes.insert(pane.id.clone());
                         let activity=Activity::from_value(&observed["activity"],"");
                         let attention=serde_json::from_value(observed["read_state"].clone()).unwrap_or_default();
-                        result.items.push(Item{acp:Some(json!({"command_running":agent["command_running"]==true,"broker":agent["broker"],"instance":agent["instance"],"conversation":agent["session_id"],"endpoint":crate::attention::scope(&machine.config,"","","").0})),id:format!("{}/{}/{}/{}/{}",host.id,host.connection_revision,session.id,window.id,pane.id),session:session.id.clone(),session_name:session.name.clone(),window:window.id.clone(),window_name:window.name.clone(),pane:pane.id.clone(),project:agent["path"].as_str().unwrap_or("").into(),agent:agent["provider"].as_str().unwrap_or("claude").into(),prompt:agent["permission_title"].as_str().unwrap_or("ACP agent").into(),context:String::new(),status:if activity.state==AgentState::Approval{"attention"}else if activity.state==AgentState::Disconnected{"disconnected"}else{"live"}.into(),activity,last_seen:now(),attention,card:Default::default(),background_tasks:Value::Null,folder_trust:Value::Null,token_metrics:observed["token_metrics"].clone()});
+                        result.items.push(Item{acp:Some(json!({"command_running":agent["command_running"]==true,"broker":agent["broker"],"instance":agent["instance"],"conversation":agent["session_id"],"endpoint":crate::attention::scope(&machine.config,"","","").0})),id:format!("{}/{}/{}/{}/{}",host.id,host.connection_revision,session.id,window.id,pane.id),session:session.id.clone(),session_name:session.name.clone(),window:window.id.clone(),window_name:window.name.clone(),pane:pane.id.clone(),project:agent["path"].as_str().unwrap_or("").into(),agent:agent["provider"].as_str().unwrap_or("claude").into(),prompt:agent["permission_title"].as_str().unwrap_or("ACP agent").into(),context:String::new(),status:if activity.state==AgentState::Approval{"attention"}else if activity.state==AgentState::Disconnected{"disconnected"}else{"live"}.into(),activity,last_seen:now(),runtime_seconds:agent["runtime_seconds"].as_u64(),attention,card:Default::default(),background_tasks:Value::Null,folder_trust:Value::Null,token_metrics:observed["token_metrics"].clone()});
                     }} else { result.limited=true; }
                 } else { result.limited=true; }
                 let discovery=machine.transport.agent_request(json!({"action":"discover_agents"})).await;
@@ -292,7 +293,7 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                             let (endpoint,attention_key)=crate::attention::scope(&machine.config,&session.id,&window.id,&pane.id);
                             let (watch,version)=state.attention.observation_args(&attention_key).await;
                             let observation = state.token_metrics.observe(&machine.connection_revision,&machine.transport,json!({"action":"status", "session":session.id,"window":window.id,"pane":pane.id,"conversation":watch,"known_reply_version":version})).await;
-                            let (context, activity, instance, reply, background_tasks, folder_trust, token_metrics) = match observation {
+                            let (context, activity, instance, reply, background_tasks, folder_trust, token_metrics, runtime_seconds) = match observation {
                                 // A dead/replaced foreground process is retained below
                                 // with its original last-seen time, never refreshed as live.
                                 Ok(value) if value["status"] == 409 => continue,
@@ -302,9 +303,9 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                                     let activity = Activity::from_value(&value["activity"], &text);
                                     let instance=value["instance"].as_str().map(str::to_owned);
                                     let reply=serde_json::from_value::<crate::attention::Reply>(value["reply"].clone()).ok();
-                                    (text, activity, instance, reply, value["background_tasks"].clone(),crate::folder_trust::prompt_view(&value["folder_trust"]),value["token_metrics"].clone())
+                                    (text, activity, instance, reply, value["background_tasks"].clone(),crate::folder_trust::prompt_view(&value["folder_trust"]),value["token_metrics"].clone(),value["runtime_seconds"].as_u64())
                                 }
-                                _ => (String::new(), Activity::unknown("Agent observation unavailable; refresh or open terminal"),None,None,Value::Null,Value::Null,Value::Null),
+                                _ => (String::new(), Activity::unknown("Agent observation unavailable; refresh or open terminal"),None,None,Value::Null,Value::Null,Value::Null,None),
                             };
                             let attention=match state.attention.observe((&attention_key,&endpoint),instance.as_deref(),&activity,reply,true,None).await {
                                 Ok(view)=>view,
@@ -317,7 +318,7 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
                                 pane:pane.id, project:pane.cwd, agent:provider,
                                 status:if matches!(activity.state,AgentState::Approval|AgentState::AwaitingTrust) {"attention"} else {"live"}.into(),
                                 prompt:detected.unwrap_or_else(|| if activity.state == AgentState::Approval {if matches!(activity.source.as_str(),"pi_bridge"|"claude_input") {"Agent is waiting for input"} else if activity.source=="terminal_question" {&activity.reason} else {"Agent is awaiting approval"}} else {"Live agent"}.into()),
-                                context:context.chars().take(24000).collect(), activity, last_seen:now(), attention,card:Default::default(),background_tasks,folder_trust,token_metrics,acp:None,
+                                context:context.chars().take(24000).collect(), activity, last_seen:now(), attention,card:Default::default(),background_tasks,folder_trust,token_metrics,runtime_seconds,acp:None,
                             });
                         }
                     }
@@ -370,6 +371,7 @@ mod tests {
             status: "live".into(),
             activity: Activity::unknown("No evidence"),
             last_seen: 100,
+            runtime_seconds: Some(60),
             attention: crate::attention::View::default(),
             card: Default::default(),
             background_tasks: Value::Null,
@@ -411,6 +413,7 @@ mod tests {
             status: "live".into(),
             activity: Activity::unknown("Unavailable"),
             last_seen: 100,
+            runtime_seconds: Some(60),
             attention: Default::default(),
             card: Default::default(),
             background_tasks: Value::Null,

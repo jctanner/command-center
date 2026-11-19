@@ -237,6 +237,15 @@ def close_broker(request, path, action):
             db.execute('update receipts set data=? where id=?',(json.dumps(value),ident));db.commit()
         return value
 
+def process_runtime_seconds(start):
+    """Elapsed monotonic process time; caller verifies process/boot identity."""
+    try:
+        ticks=os.sysconf('SC_CLK_TCK')
+        with open('/proc/uptime') as f: uptime=float(f.read().split()[0])
+        elapsed=uptime-int(start)/ticks
+        return int(elapsed) if ticks>0 and 0<=elapsed<=uptime else None
+    except (OSError,ValueError,IndexError,OverflowError,ZeroDivisionError): return None
+
 def call(request):
     path = target_root(request)
     action = request.get('command', dict(action='snapshot'))
@@ -258,6 +267,7 @@ def call(request):
                 value = json.loads(raw)
                 if isinstance(value.get('ok'), dict):
                     value['ok'] = decorate(value['ok'],request,path)
+                    value['ok']['runtime_seconds']=process_runtime_seconds(live['start'])
                 sys.stdout.buffer.write(json.dumps(value,ensure_ascii=False).encode()+b'\n');sys.stdout.buffer.flush()
             return None
         raw = stream.readline(LIMIT + 1)
@@ -269,6 +279,7 @@ def call(request):
         value = result['ok']
         if action.get('action') == 'snapshot':
             value = decorate(value,request,path)
+            value["runtime_seconds"]=process_runtime_seconds(live["start"])
         return value
     finally:
         connection.close()
@@ -331,6 +342,7 @@ def main(request):
             try:
                 value=call(dict(request,action='call',broker=item['broker'],_timeout=.4))
                 summary={k:value.get(k) for k in ('broker','instance','provider','path','state','session_id','target','reply_cursor','reply_position','approval_cursor','sequence','usage','command_running')}
+                summary['runtime_seconds']=value.get('runtime_seconds')
                 summary['permission_title']=next((p.get('title')for p in value.get('permissions',[])if not p.get('expired')),None)
                 out.append(summary)
             except (OSError,ValueError):

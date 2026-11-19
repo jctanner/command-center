@@ -68,3 +68,15 @@ for(const width of [1440,1280])test(`chat tab survives cross-provider selections
  await select('agent0','Primary development');await native.fill('Native draft stays native');await select('agent1','ACP coordinator fixture');const metrics=page.locator('.acp-integrated-chat .agent-token-detail');await expect(metrics).toBeHidden();await page.getByRole('button',{name:'Details',exact:true}).click();await expect(page.getByRole('dialog',{name:'Agent details',exact:true}).locator('.agent-token-detail')).toBeVisible();await page.getByRole('button',{name:'Close details',exact:true}).click();await expect(metrics).toBeHidden();await acp.fill('ACP draft stays ACP');await select('agent2','Native pi fixture');await native.fill('Pi draft stays Pi');await select('agent1','ACP coordinator fixture');await expect(acp).toHaveValue('ACP draft stays ACP');await select('agent0','Primary development');await expect(native).toHaveValue('Native draft stays native');
  await page.setViewportSize({width:393,height:852});await expect(page.locator('.queue-detail>.queue-chat-header')).toBeVisible();await expect(native).toHaveValue('Native draft stays native');await page.getByRole('button',{name:'← Agents',exact:true}).click();await page.locator('[data-agent-id="agent1"]').click();await expect(page.locator('.acp-integrated-chat>.queue-chat-header')).toBeVisible();await expect(acp).toHaveValue('ACP draft stays ACP');await page.setViewportSize({width,height:900});await expect(page.locator('.queue-chat-tabbar h2')).toHaveText('ACP coordinator fixture');await select('agent2','Native pi fixture');await expect(native).toHaveValue('Pi draft stays Pi');expect(f.sockets()).toBe(0);expect(f.writes).toEqual([]);await page.screenshot({path:`../test-results/chat-tab-cross-provider-${width}.png`});
 });
+
+for(const width of [1440,393])test(`runtime occupies existing context row without changing card dimensions at ${width}px`,async({page})=>{
+ await page.setViewportSize({width,height:852});const f=await fixture(page),card=page.locator('[data-agent-id="agent0"]');
+ const before=await card.boundingBox();
+ for(const [seconds,label]of [[null,'—'],[0,'0m'],[2520,'42m'],[11520,'3h12m'],[187200,'2d4h']] as const){
+  (f.items[0] as any).runtime_seconds=seconds;await refreshQueue(page);await expect(card.locator('.queue-card-runtime')).toHaveText(label);
+  const box=await card.boundingBox();expect(box!.width).toBe(before!.width);expect(box!.height).toBe(before!.height);
+  const meter=await card.locator('.agent-context-bar').boundingBox(),runtime=await card.locator('.queue-card-runtime').boundingBox();expect(Math.abs(meter!.y+meter!.height/2-runtime!.y-runtime!.height/2)).toBeLessThan(2);expect(runtime!.x).toBeGreaterThan(meter!.x+meter!.width);
+ }
+ expect(f.sockets()).toBe(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:`../test-results/agent-card-runtime-${width}.png`});
+});

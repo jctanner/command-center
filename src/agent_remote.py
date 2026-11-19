@@ -139,6 +139,7 @@ def observe(request):
     captured = tmux(request, 'capture-pane', '-p', '-t', target, '-S', '-40')
     text = captured[-48000:]
     identity, agent_base, args, env = None, None, [], {}
+    runtime_seconds=None
     try:
         resolved=foreground_agent(int(info[0]))
         if not resolved: fail(409,'No unique supported agent owns this foreground terminal')
@@ -156,6 +157,7 @@ def observe(request):
         if agent_process['pid']!=foreground: basis+=f":wrapped:{agent_process['pid']}:{leader['start']}"
         identity = hashlib.sha256(basis.encode()).hexdigest()
         cwd = os.path.realpath(agent_base / 'cwd')
+        runtime_seconds=process_runtime_seconds(agent_start)
     except (OSError, ValueError, IndexError):
         if not kind: fail(409,'No process-backed agent association is available')
         cwd = tmux(request, 'display-message', '-p', '-t', target, '#{pane_current_path}').rstrip('\n')
@@ -163,9 +165,18 @@ def observe(request):
     if kind=='goose' and identity:
         try:cursor=[int(v)for v in tmux(request,'display-message','-p','-t',target,'#{cursor_x}\t#{cursor_y}').strip().split('\t')]
         except (ValueError,Failure):pass
-    return dict(cursor=cursor,target=target, socket=request.get("socket"), kind=kind, identity=identity, base=agent_base, args=args,
+    return dict(runtime_seconds=runtime_seconds,cursor=cursor,target=target, socket=request.get("socket"), kind=kind, identity=identity, base=agent_base, args=args,
                 env=env, cwd=cwd, context=text, visible=tmux(request, 'capture-pane', '-p', '-t', target, '-S', '0'), in_mode=info[3] != '0',
                 screen=hashlib.sha256(captured.encode()).hexdigest())
+
+def process_runtime_seconds(start):
+    """Elapsed monotonic process time; caller verifies process/boot identity."""
+    try:
+        ticks=os.sysconf('SC_CLK_TCK')
+        with open('/proc/uptime') as f: uptime=float(f.read().split()[0])
+        elapsed=uptime-int(start)/ticks
+        return int(elapsed) if ticks>0 and 0<=elapsed<=uptime else None
+    except (OSError,ValueError,IndexError,OverflowError,ZeroDivisionError): return None
 
 def folder_trust(observation):
     """Only recognized live native folder disclosures, tied to a CC launch."""
@@ -2148,7 +2159,7 @@ def execute(request):
         linked = [c for c in candidates if c['linked']]
         chosen = linked[0] if len(linked) == 1 else next((c for c in candidates if c['id'] == request.get('conversation')), None)
         if not chosen and len(candidates) == 1 and not observation['env'].get('CC_LAUNCH_ID'): chosen = candidates[0]
-        return dict(instance=observation['identity'], context=observation['context'],
+        return dict(runtime_seconds=observation.get('runtime_seconds'),instance=observation['identity'], context=observation['context'],
                     _token_metrics=observed_token_metrics(request,observation,chosen if chosen and chosen.get('linked') else None,'process'),
                     reply=reply_observation(chosen, observation['kind'], request.get('known_reply_version')),
                     folder_trust=folder_trust(observation),activity=provider_activity(observation, candidates),background_tasks=observed_background_tasks(observation,chosen if len(linked)==1 and chosen is linked[0] else None))
