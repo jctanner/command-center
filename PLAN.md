@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0136: release pinned ordering](docs/tasks/current/0136-release-pinned-agent-order.md) — commit/push/deploy authorized.
+- [Task0136: release pinned ordering](docs/tasks/done/0136-release-pinned-agent-order.md) — committed/pushed/deployed; four paths, manual default and unchanged local/remote pane PIDs verified.
 
 - [Task0135: pinned agent order](docs/tasks/done/0135-pinned-agent-order.md) — implemented;101 Rust,6 contract and29 browser checks pass; release in task0136.
 
