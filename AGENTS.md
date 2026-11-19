@@ -333,3 +333,7 @@ The human retired the initial container-only rule on2026-11-18. Native Goose ins
 ## Binary file downloads
 
 Chat/Files download actions use the originating machine ID, observed connection revision and literal path through the shared transport. Stream bounded raw bytes to browser attachments; do not reuse the1 MiB text editor API, accumulate browser Blobs or SCP/cache copies. Keep regular-file/size/time/capacity guards, per-chunk endpoint checks, final file/transport verification and producer cleanup on disconnect. Force attachment/nosniff/sandbox/no-store, encode UTF-8 filenames safely and preserve drafts/terminal isolation. See docs/reference/file-downloads.md.
+
+## Pinned agent ordering
+
+Pinned cards default to backend-persisted manual order, independent of activity/read state. Reorder metadata uses opaque card keys and optimistic global revisions; preserve hidden order members, reject stale/incomplete writes and never retry automatically. Explicit restarts transfer positions only with verified card metadata handoff. Settings may opt pinned cards into activity sorting without deleting manual positions. Keep unpinned activity ordering, touch scrolling outside the drag grip, keyboard/menu alternatives, and agent input/selection/draft isolation. Layout changes never issue remote/process commands.

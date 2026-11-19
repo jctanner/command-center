@@ -1,3 +1,4 @@
+import {agentLayout,receiveAgentLayout,loadAgentLayout,saveAgentLayout,type AgentLayout} from './agent-layout';
 import {AgentDetails} from './agent-details';
 import {AcpChat,type AcpTarget,type AcpSnapshot} from './acp-chat';
 import {AgentTokenMetrics,type TokenMetrics} from './agent-token-metrics';
@@ -20,7 +21,7 @@ export type AgentFileTarget={host:string;connection:string;path:string};
 export type QueueTarget = { instance?:string|null;host: string; connection: string; session: string; window: string; pane: string };
 type Item = {acp?:{command_running?:boolean;broker:string;instance:string;endpoint?:string;conversation?:string};token_metrics?:TokenMetrics|null; folder_trust?:InputQuestion|null; background_tasks?:BackgroundSnapshot|null;card?:AgentCard;attention?: ReadState; id: string; session: string; session_name: string; window: string; window_name: string; pane: string; project: string; agent: string; prompt: string; context: string; status?: 'attention' | 'live' | 'disconnected'; activity?: Activity; last_seen?: number };
 type Host = { id: string; name: string; connection_revision: string; error?: string; limited: boolean; items: Item[] };
-type Snapshot = { checked_at: number; hosts: Host[] };
+type Snapshot = { layout?:AgentLayout|null;checked_at: number; hosts: Host[] };
 type Message = { kind?:'command'|'command_output'; id: string; role: 'user' | 'assistant'; text: string; timestamp: string; order?: number; truncated?: boolean };
 type Conversation = { id: string; session: string; timestamp: string; linked: boolean };
 type Approval = { id: string; title: string; context: string; choices: { id: string; label: string }[]; token?: string; submitted?: boolean };
@@ -44,6 +45,7 @@ function stateBadge(activity?: Activity, fallback: AgentState = 'unknown') {
   return badge;
 }
 export class AttentionQueue {
+  private orderBusy=false;private dragging?:{key:string;revision:number;x?:number;y?:number;moved?:boolean;target?:string;before?:boolean};
   private acpChat!:AcpChat;private nativeNodes:HTMLElement[]=[];private nativeHidden=new Map<HTMLElement,boolean>();
   private notifications = new AgentNotifications();
   private mute = node('button', 'Mute notifications');
@@ -119,6 +121,7 @@ export class AttentionQueue {
   private filterPanel = node('details');
   private inboxControls = node('div');
   constructor(private open: (target: QueueTarget) => Promise<void>,private openFile:(target:AgentFileTarget)=>Promise<void>,private openProfiles:(host:string)=>boolean) {
+    window.addEventListener('cc-agent-layout',()=>this.render());window.addEventListener('blur',()=>{if(this.dragging){this.clearPinnedDrag();this.render();}});
     this.modeSwitcher=new AgentModeSwitcher(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
     this.agentRestarter=new AgentRestarter(async()=>{await this.refresh();if(this.selected)await this.loadDetail(true);});
     this.switchMode.type='button';this.switchMode.onclick=()=>{const c=this.chosen();if(c)this.openModeSwitch(c.h,c.item);};
@@ -255,7 +258,7 @@ export class AttentionQueue {
       if (Date.now() - this.lastDetailPoll >= (active ? 1800 : 5800)) void this.loadDetail();
     }, 2000);
   }
-  setVisible(value: boolean) { this.visible = value;if(!value)this.detailsPanel.reset(); if(value)void this.outbox.refresh(); this.syncPresentation(); if (value) { this.render(); void this.refresh(); if (this.selected) void this.loadDetail(); } }
+  setVisible(value: boolean) { if(!value)this.clearPinnedDrag();this.visible = value;if(!value)this.detailsPanel.reset(); if(value)void this.outbox.refresh(); this.syncPresentation(); if (value) { this.render(); void this.refresh(); if (this.selected) void this.loadDetail(); } }
   async openTarget(target:QueueTarget){
     await this.refresh();let host=this.snapshot?.hosts.find(h=>h.id===target.host&&h.connection_revision===target.connection);
     let item=host?.items.find(i=>i.session===target.session&&i.window===target.window&&i.pane===target.pane);
@@ -297,7 +300,21 @@ export class AttentionQueue {
   private openAgentClose(host:Host,item:Item){if(item.acp){void this.acpChat.closeTarget(this.acpTarget(host,item));return;}const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected')return;void this.agentCloser.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,label:`${host.name} · ${agentTitle(item)}`});}
   private openCardActions(host:Host,item:Item,x:number,y:number){
     const action=(text:string,run:()=>void)=>{const button=node('button',text);button.type='button';button.setAttribute('role','menuitem');button.onclick=()=>{this.cardMenu.hidden=true;run();};button.disabled=!item.attention?.instance||stateOf(item)==='disconnected';return button;};
-    const edit=action('Edit card',()=>this.openCardEditor(host,item));const pin=action(item.card?.pinned?'Unpin card':'Pin card',()=>{void this.setCardPinned(host,item);});const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';const restart=action(item.acp?'Restart & update broker…':'Restart agent…',()=>this.openAgentRestart(host,item));restart.title=item.acp?'Resume this conversation using the current deployed broker':'';const mode=action('Switch connection mode…',()=>this.openModeSwitch(host,item));mode.disabled ||= !['codex','claude'].includes(item.agent);mode.title=['codex','claude'].includes(item.agent)?'Resume the same '+item.agent+' conversation in '+(item.acp?'native':'ACP')+' mode':'Pi resume handoffs are not verified';this.cardMenu.replaceChildren(edit,pin,restart,mode,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
+    const edit=action('Edit card',()=>this.openCardEditor(host,item));const pin=action(item.card?.pinned?'Unpin card':'Pin card',()=>{void this.setCardPinned(host,item);});const close=action('Close agent…',()=>this.openAgentClose(host,item));close.className='danger';const restart=action(item.acp?'Restart & update broker…':'Restart agent…',()=>this.openAgentRestart(host,item));restart.title=item.acp?'Resume this conversation using the current deployed broker':'';const mode=action('Switch connection mode…',()=>this.openModeSwitch(host,item));mode.disabled ||= !['codex','claude'].includes(item.agent);mode.title=['codex','claude'].includes(item.agent)?'Resume the same '+item.agent+' conversation in '+(item.acp?'native':'ACP')+' mode':'Pi resume handoffs are not verified';const moves:HTMLButtonElement[]=[];if(this.canReorder(item)){for(const [label,step]of [['Move pinned card up',-1],['Move pinned card down',1]]as const){const move=action(label,()=>{void this.stepPinned(item.card!.order_key!,step);});const keys=this.visiblePinnedKeys(),index=keys.indexOf(item.card!.order_key!);move.disabled=index<0||index+step<0||index+step>=keys.length;moves.push(move);}}this.cardMenu.replaceChildren(edit,pin,...moves,restart,mode,close);this.cardMenu.hidden=false;this.cardMenu.style.left=`${Math.max(8,Math.min(x,innerWidth-220))}px`;this.cardMenu.style.top=`${Math.max(8,Math.min(y,innerHeight-this.cardMenu.offsetHeight-8))}px`;edit.focus();
+  }
+  private canReorder(item:Item){return !!item.card?.pinned&&!!item.card.order_key&&agentLayout()?.pinned_sort==='manual'&&!this.orderBusy;}
+  private visiblePinnedKeys(){return [...this.list.querySelectorAll<HTMLElement>('[data-order-key]')].map(card=>card.dataset.orderKey!);}
+  private async stepPinned(key:string,step:number){const keys=this.visiblePinnedKeys(),index=keys.indexOf(key),target=keys[index+step];if(target)await this.movePinned(key,target,step<0,agentLayout()?.revision);}
+  private async movePinned(key:string,target:string,before:boolean,revision?:number){const layout=agentLayout();if(!layout||layout.pinned_sort!=='manual'||this.orderBusy||key===target)return;if(revision!==layout.revision){this.feedback.textContent='Pinned order changed while moving. Check the list and try again.';this.render();return;}const order=layout.order.filter(k=>k!==key),index=order.indexOf(target);if(index<0||!layout.order.includes(key))return;order.splice(index+(before?0:1),0,key);this.orderBusy=true;this.render();try{await saveAgentLayout({revision:layout.revision,order});this.feedback.textContent='Pinned order saved.';}catch(e){this.feedback.dataset.error='true';this.feedback.textContent=String(e)+' Order was not retried.';try{await loadAgentLayout();}catch{/* Keep the last observed order. */}}finally{this.orderBusy=false;this.render();const card=this.list.querySelector<HTMLElement>(`[data-order-key="${key}"]`);card?.focus({preventScroll:true});}}
+  private clearPinnedDrag(){this.dragging=undefined;for(const card of this.list.querySelectorAll('.queue-card'))card.classList.remove('pin-drop-before','pin-drop-after','pin-dragging');}
+  private bindPinnedDrag(card:HTMLButtonElement,handle:HTMLElement,key:string){
+    handle.classList.add('queue-pin-drag');handle.title='Drag to reorder. Alt+↑/↓ or card menu also moves this card.';handle.setAttribute('aria-label','Drag pinned card to reorder');
+    card.draggable=true;card.ondragstart=e=>{if(this.orderBusy||!agentLayout())return e.preventDefault();this.dragging={key,revision:agentLayout()!.revision};e.dataTransfer?.setData('text/plain',key);if(e.dataTransfer)e.dataTransfer.effectAllowed='move';card.classList.add('pin-dragging');};
+    card.ondragover=e=>{if(!this.dragging)return;e.preventDefault();const before=e.clientY<card.getBoundingClientRect().top+card.offsetHeight/2;for(const c of this.list.querySelectorAll('.queue-card'))c.classList.remove('pin-drop-before','pin-drop-after');card.classList.add(before?'pin-drop-before':'pin-drop-after');this.dragging.target=key;this.dragging.before=before;};
+    card.ondrop=e=>{if(!this.dragging)return;e.preventDefault();const drag=this.dragging;this.clearPinnedDrag();void this.movePinned(drag.key,key,!!drag.before,drag.revision);};card.ondragend=()=>{this.clearPinnedDrag();this.render();};
+    handle.onclick=e=>{e.preventDefault();e.stopPropagation();};handle.onpointerdown=e=>{if(e.pointerType==='mouse'||e.button!==0||!agentLayout())return;e.preventDefault();e.stopPropagation();this.dragging={key,revision:agentLayout()!.revision,x:e.clientX,y:e.clientY};handle.setPointerCapture(e.pointerId);};
+    handle.onpointermove=e=>{const drag=this.dragging;if(!drag||drag.x===undefined)return;if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y!)<6&&!drag.moved)return;drag.moved=true;card.classList.add('pin-dragging');const target=document.elementFromPoint(e.clientX,e.clientY)?.closest<HTMLElement>('.queue-card[data-order-key]');if(target&&this.list.contains(target)){drag.target=target.dataset.orderKey;drag.before=e.clientY<target.getBoundingClientRect().top+target.offsetHeight/2;for(const c of this.list.querySelectorAll('.queue-card'))c.classList.remove('pin-drop-before','pin-drop-after');target.classList.add(drag.before?'pin-drop-before':'pin-drop-after');}const box=this.list.getBoundingClientRect();if(e.clientY<box.top+24)this.list.scrollTop-=12;if(e.clientY>box.bottom-24)this.list.scrollTop+=12;};
+    handle.onpointerup=e=>{const drag=this.dragging;if(!drag||drag.x===undefined)return;e.preventDefault();e.stopPropagation();this.clearPinnedDrag();if(drag.moved&&drag.target)void this.movePinned(drag.key,drag.target,!!drag.before,drag.revision);else this.render();};handle.onpointercancel=()=>{this.clearPinnedDrag();this.render();};handle.onlostpointercapture=()=>{if(this.dragging?.x!==undefined){this.clearPinnedDrag();this.render();}};
   }
   private async setCardPinned(host:Host,item:Item){const instance=item.attention?.instance;if(!instance)return;try{await this.cardEditor.setPinned({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,...(item.acp?{acp:item.acp.broker}:{}),label:agentTitle(item)},!item.card?.pinned);}catch(error){this.feedback.dataset.error='true';this.feedback.textContent=`${String(error)} Refresh this card before trying again.`;}}
   private openCardEditor(host:Host,item:Item){const instance=item.attention?.instance;if(!instance||stateOf(item)==='disconnected'){this.feedback.textContent='Refresh this agent before editing its card.';return;}void this.cardEditor.open({host:host.id,connection_revision:host.connection_revision,session:item.session,window:item.window,pane:item.pane,instance,...(item.acp?{acp:item.acp.broker}:{}),label:agentTitle({...item,card:undefined})});}
@@ -344,22 +361,23 @@ export class AttentionQueue {
   }
   private draftKey() { return `${this.selected}/${this.detailData?.instance || 'unverified'}`; }
   private render() {
-    if (!this.visible) return;
+    if (!this.visible||this.dragging) return;
     const hosts = this.snapshot?.hosts || [];
     for(const host of hosts)for(const item of host.items)if(item.card&&item.attention?.instance)this.mergeCard(item,item.attention.instance,item.card);
     this.options(this.hostSelect, 'All machines', hosts.map(h => [h.id, h.name]), this.host);
     const projects = new Map<string, string>();
     for (const h of hosts.filter(h => !this.host || h.id === this.host)) for (const item of h.items) projects.set(JSON.stringify([h.id, item.project]), `${h.name} · ${item.project}`);
     this.options(this.projectSelect, 'All projects', [...projects], this.project);
-    const entries = this.entries().sort((a, b) => Number(!!b.item.card?.pinned)-Number(!!a.item.card?.pinned) || Number(needsAttention(b.item)) - Number(needsAttention(a.item)) || rank[stateOf(a.item)] - rank[stateOf(b.item)] || a.h.name.localeCompare(b.h.name) || a.item.id.localeCompare(b.item.id));
+    const layout=agentLayout(),positions=new Map((layout?.order||[]).map((key,index)=>[key,index]));
+    const entries = this.entries().sort((a,b)=>{const pinned=Number(!!b.item.card?.pinned)-Number(!!a.item.card?.pinned);if(pinned)return pinned;if(a.item.card?.pinned&&b.item.card?.pinned&&layout?.pinned_sort!=='activity')return (positions.get(a.item.card.order_key||'')??Number.MAX_SAFE_INTEGER)-(positions.get(b.item.card.order_key||'')??Number.MAX_SAFE_INTEGER)||a.h.name.localeCompare(b.h.name)||a.item.id.localeCompare(b.item.id);return Number(needsAttention(b.item))-Number(needsAttention(a.item))||rank[stateOf(a.item)]-rank[stateOf(b.item)]||a.h.name.localeCompare(b.h.name)||a.item.id.localeCompare(b.item.id);});
     if (!entries.some(e => e.item.id === this.selected) && !(this.openedForRead === this.selected && this.chosen())&&!(this.search.value.trim()&&this.chosen())) this.selected = entries[0]?.item.id || '';
     const focusedCard=this.list.contains(document.activeElement)?(document.activeElement as HTMLElement).closest<HTMLElement>('.queue-card')?.dataset.agentId:undefined;
     this.searchStatus.textContent=this.search.value.trim()?`${entries.length} matching agent${entries.length===1?'':'s'}`:'';
     const scroll = this.list.scrollTop;
     this.cardTokens.clear();
     this.list.replaceChildren(...entries.map(({ h, item }) => {
-      const b = node('button'); b.className = item.id === this.selected ? 'queue-card selected' : 'queue-card'; b.dataset.agentId=item.id;b.setAttribute('aria-pressed', String(item.id === this.selected)); b.classList.toggle('needs-attention', needsAttention(item));
-      b.oncontextmenu=event=>{event.preventDefault();this.openCardActions(h,item,event.clientX,event.clientY);};b.onkeydown=event=>{if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const cards=[...this.list.querySelectorAll<HTMLButtonElement>('.queue-card')],i=cards.indexOf(b);cards[event.key==='Home'?0:event.key==='End'?cards.length-1:(i+(event.key==='ArrowDown'?1:cards.length-1))%cards.length]?.focus();}else if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();const rect=b.getBoundingClientRect();this.openCardActions(h,item,rect.left,rect.bottom);}};b.title='Right-click or Shift+F10 for agent actions';
+      const b = node('button'); b.className = item.id === this.selected ? 'queue-card selected' : 'queue-card'; b.dataset.agentId=item.id;if(item.card?.pinned&&item.card.order_key)b.dataset.orderKey=item.card.order_key;b.setAttribute('aria-pressed', String(item.id === this.selected)); b.classList.toggle('needs-attention', needsAttention(item));
+      b.oncontextmenu=event=>{event.preventDefault();this.openCardActions(h,item,event.clientX,event.clientY);};b.onkeydown=event=>{if(event.altKey&&['ArrowDown','ArrowUp'].includes(event.key)&&this.canReorder(item)){event.preventDefault();void this.stepPinned(item.card!.order_key!,event.key==='ArrowUp'?-1:1);return;}if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const cards=[...this.list.querySelectorAll<HTMLButtonElement>('.queue-card')],i=cards.indexOf(b);cards[event.key==='Home'?0:event.key==='End'?cards.length-1:(i+(event.key==='ArrowDown'?1:cards.length-1))%cards.length]?.focus();}else if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();const rect=b.getBoundingClientRect();this.openCardActions(h,item,rect.left,rect.bottom);}};b.title='Right-click or Shift+F10 for agent actions';
       const folder = node('span', compactClient() ? projectName(item.project) : item.project); folder.title = item.project; folder.hidden = compactClient() && agentTitle(item) === projectName(item.project);
       b.classList.toggle('pinned',!!item.card?.pinned);
       if(item.card?.color&&/^#[0-9a-f]{6}$/i.test(item.card.color)){b.classList.add('has-custom-color');b.style.setProperty('--agent-card-color',item.card.color);}
@@ -383,7 +401,7 @@ export class AttentionQueue {
       if (item.attention?.new_approval) flags.append(node('span', inputSource(item.activity?.source) ? 'New input request' : 'New approval'));
       if (item.attention?.unread_reply) flags.append(node('span', 'Unread reply'));
       b.append(flags);
-      if(item.card?.pinned){const label=node('span','Pinned');label.className='queue-card-pin-label';b.append(label);}
+      if(item.card?.pinned){const label=node('span',this.canReorder(item)?'⠿':'Pinned');label.className='queue-card-pin-label';b.append(label);if(this.canReorder(item))this.bindPinnedDrag(b,label,item.card!.order_key!);}
       b.onclick = () => {
         const firstOpen = this.openedForRead !== item.id;
         this.selected = item.id; this.openedForRead = item.id; this.body.dataset.detail = 'true'; this.render();
@@ -771,7 +789,7 @@ export class AttentionQueue {
     try {
       const response = await fetch('/api/v1/queue', { signal: AbortSignal.timeout(60000) });
       if (!response.ok) throw new Error(`Queue unavailable (${response.status})`);
-      this.snapshot = await response.json();
+      this.snapshot = await response.json();receiveAgentLayout(this.snapshot?.layout);
       for(const h of this.snapshot!.hosts)for(const item of h.items)if(item.card&&item.attention?.instance)this.mergeCard(item,item.attention.instance,item.card);
       document.getElementById('queue-count')!.textContent = String(this.snapshot!.hosts.reduce((n, h) => n + h.items.filter(needsAttention).length, 0));
       await this.notifications.observe(this.snapshot!.hosts.flatMap(h => h.items.filter(item => item.attention && stateOf(item) !== 'disconnected' && !h.error).map(item => {

@@ -4141,6 +4141,74 @@
           }
         }
       }
+    },
+    "/settings/agents": {
+      "get": {
+        "operationId": "readAgentLayout",
+        "summary": "Read shared agent card ordering",
+        "description": "Shared manual pinned order by default. Metadata only: never launches, sends input, or controls agents. PUT checks revision, rejects duplicate/missing/unknown order members and preserves omitted fields. Reordering filtered views must retain hidden keys. Existing cards migrate in saved row order; new pins append, restart transfers preserve position. Stale writes return409; no automatic retry.",
+        "responses": {
+          "200": {
+            "description": "Saved/current layout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLayout"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision or changed pinned membership"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveAgentLayout",
+        "summary": "Update shared agent card ordering preference or positions",
+        "description": "Shared manual pinned order by default. Metadata only: never launches, sends input, or controls agents. PUT checks revision, rejects duplicate/missing/unknown order members and preserves omitted fields. Reordering filtered views must retain hidden keys. Existing cards migrate in saved row order; new pins append, restart transfers preserve position. Stale writes return409; no automatic retry.",
+        "responses": {
+          "200": {
+            "description": "Saved/current layout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLayout"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision or changed pinned membership"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentLayoutChange"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -5193,6 +5261,17 @@
                 "items"
               ]
             }
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentLayout"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fresh shared presentation metadata, hydrated even for cached inventory. Null if unavailable; disable ordering writes."
           }
         },
         "required": [
@@ -8456,6 +8535,10 @@
           },
           "pinned": {
             "type": "boolean"
+          },
+          "order_key": {
+            "type": "string",
+            "description": "Opaque process-scoped metadata key for shared pinned-card ordering. Not an agent control capability."
           }
         },
         "required": [
@@ -9297,6 +9380,66 @@
           "connection_revision",
           "revision",
           "profiles"
+        ]
+      },
+      "AgentLayout": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pinned_sort": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "activity"
+            ],
+            "default": "manual"
+          },
+          "order": {
+            "type": "array",
+            "maxItems": 4096,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "revision",
+          "pinned_sort",
+          "order"
+        ]
+      },
+      "AgentLayoutChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pinned_sort": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "activity"
+            ],
+            "default": "manual"
+          },
+          "order": {
+            "type": "array",
+            "maxItems": 4096,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "revision"
         ]
       }
     },

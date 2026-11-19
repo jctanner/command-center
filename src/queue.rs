@@ -29,6 +29,7 @@ impl Queue {
 }
 #[derive(Clone, Serialize)]
 pub(crate) struct Snapshot {
+    layout: Option<crate::agent_layout::Layout>,
     checked_at: u64,
     hosts: Vec<HostResult>,
 }
@@ -220,6 +221,11 @@ async fn hydrate(state: &AppState, mut snapshot: Snapshot) -> Snapshot {
             item.card = card;
         }
     }
+    snapshot.layout = state
+        .board
+        .with(|c| crate::agent_layout::read(c))
+        .await
+        .ok();
     snapshot
 }
 pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapshot> {
@@ -338,6 +344,7 @@ pub(crate) async fn snapshot(State(state): State<Arc<AppState>>) -> Json<Snapsho
         }
     })).buffer_unordered(4).collect().await;
     let snapshot = Snapshot {
+        layout: None,
         checked_at: now(),
         hosts: results,
     };

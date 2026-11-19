@@ -1,4 +1,4 @@
-export type AgentCard={revision:number;name:string;notes:string;color?:string;pinned?:boolean};
+export type AgentCard={order_key?:string;revision:number;name:string;notes:string;color?:string;pinned?:boolean};
 export type CardTarget={acp?:string;host:string;connection_revision:string;session:string;window:string;pane:string;instance:string;label:string};
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,text='')=>{const n=document.createElement(tag);n.textContent=text;return n;};
 export class AgentCardEditor {

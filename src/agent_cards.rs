@@ -17,6 +17,7 @@ pub(crate) struct Card {
     pub notes: String,
     pub color: String,
     pub pinned: bool,
+    pub order_key: String,
 }
 fn key(scope: &str, instance: &str) -> String {
     format!("{:x}", Sha256::digest(format!("{scope}/{instance}")))
@@ -33,6 +34,7 @@ fn read(c: &rusqlite::Connection, key: &str) -> Result<Card, ApiError> {
         [key],
         |r| {
             Ok(Card {
+                order_key: key.into(),
                 revision: r.get(0)?,
                 name: r.get(1)?,
                 notes: r.get(2)?,
@@ -43,7 +45,10 @@ fn read(c: &rusqlite::Connection, key: &str) -> Result<Card, ApiError> {
     )
     .optional()
     .map_err(storage)?
-    .unwrap_or_default())
+    .unwrap_or_else(|| Card {
+        order_key: key.into(),
+        ..Card::default()
+    }))
 }
 // Called in the ticket receipt transaction after original-process verification.
 // Existing user edits always take precedence, including an intentionally blank name.
@@ -94,6 +99,7 @@ pub(crate) fn transfer_restart(
         ));
     }
     c.execute("INSERT OR IGNORE INTO agent_cards(scope,revision,name,notes,color,pinned) VALUES(?1,1,?2,?3,?4,?5)",params![key(scope,new),card.name,card.notes,card.color,card.pinned]).map_err(storage)?;
+    crate::agent_layout::transfer(c, &key(scope, old), &key(scope, new))?;
     Ok(())
 }
 
@@ -276,7 +282,8 @@ pub(crate) async fn save(
             let count:i64=tx.query_row("SELECT count(*) FROM agent_cards",[],|r|r.get(0)).map_err(storage)?;
             if count>=4096 {return Err(ApiError(StatusCode::CONFLICT,"Agent card metadata limit reached".into()));}
         }
-        let card=Card{revision:old.revision+1,name:b.name,notes:b.notes,color:b.color.unwrap_or(old.color),pinned:b.pinned.unwrap_or(old.pinned)};
+        let card=Card{order_key:scope.clone(),revision:old.revision+1,name:b.name,notes:b.notes,color:b.color.unwrap_or(old.color),pinned:b.pinned.unwrap_or(old.pinned)};
+        if card.pinned&&!old.pinned{crate::agent_layout::pin(&tx,&scope)?;}
         tx.execute("INSERT INTO agent_cards(scope,revision,name,notes,color,pinned) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(scope) DO UPDATE SET revision=excluded.revision,name=excluded.name,notes=excluded.notes,color=excluded.color,pinned=excluded.pinned",params![scope,card.revision,card.name,card.notes,card.color,card.pinned]).map_err(storage)?;
         tx.commit().map_err(storage)?;
         Ok(card)
@@ -291,6 +298,7 @@ mod restart_tests {
     fn restart_handoff_copies_preferences_once_and_keeps_subsequent_edits() {
         let c = rusqlite::Connection::open_in_memory().unwrap();
         c.execute_batch("CREATE TABLE agent_cards(scope TEXT PRIMARY KEY, revision INTEGER NOT NULL,name TEXT NOT NULL,notes TEXT NOT NULL,color TEXT NOT NULL,pinned INTEGER NOT NULL);").unwrap();
+        crate::agent_layout::init(&c).unwrap();
         c.execute(
             "INSERT INTO agent_cards VALUES(?1,7,'Named','Notes','#46acec',1)",
             [key("scope", "old")],

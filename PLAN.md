@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0136: release pinned ordering](docs/tasks/current/0136-release-pinned-agent-order.md) — commit/push/deploy authorized.
+
+- [Task0135: pinned agent order](docs/tasks/done/0135-pinned-agent-order.md) — implemented;101 Rust,6 contract and29 browser checks pass; release in task0136.
+
 - [Task0134: release table artifact paths](docs/tasks/done/0134-release-table-artifact-paths.md) — committed/pushed/deployed; four paths/assets and unchanged backend/tmux PIDs verified.
 
 - [Task0133: table artifact paths](docs/tasks/done/0133-table-artifact-download-paths.md) — fixed table folder resolution;18 browser cases and9 live artifact paths verified; deployed in task0134.

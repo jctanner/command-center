@@ -207,3 +207,7 @@ Binary files can be downloaded with GET `/hosts/{host}/file/download?path=...&co
 ### Host Goose ACP
 
 POST `/hosts/{host}/acp/prepare` with `connection_revision`, `path` and `provider: "goose"`, omitting `container_profile` and `container_overrides`, prepares host-installed `goose acp` in approve mode. Start uses the same expiring one-use token and optional initial prompt. An explicit profile retains the reviewed-container workflow with no fallback. Host credentials/configuration remain on that host; no install or native conversion occurs. Exact-session Restart & update broker supports host Goose. See [ACP broker](reference/acp-broker.md#host-installed-goose).
+
+## Pinned agent ordering
+
+GET/PUT `/settings/agents` reads/saves shared manual/activity preference and opaque pinned-card positions with optimistic revisions. Default manual order is independent of activity; hidden members must be retained when reordering. No agent input/control occurs. See [ordering behavior and contract](reference/agent-card-ordering.md).

@@ -1,5 +1,6 @@
 mod acp;
 mod agent_cards;
+mod agent_layout;
 mod agent_mode;
 mod agent_restart;
 mod agents;
@@ -212,6 +213,10 @@ pub fn router(state: Arc<AppState>, web_dir: std::path::PathBuf) -> Router {
         .route(
             "/api/v1/hosts/{host}/agents/connection-mode-install",
             post(agent_mode::install),
+        )
+        .route(
+            "/api/v1/settings/agents",
+            get(agent_layout::view).put(agent_layout::save),
         )
         .route("/api/v1/queue", get(queue::snapshot))
         .route("/api/v1/attention/read", post(attention::read))

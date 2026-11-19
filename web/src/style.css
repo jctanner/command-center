@@ -1231,3 +1231,9 @@ button:disabled { opacity: .5; cursor: default; }
 }
 
 .launcher-footer>p {max-height:90px;overflow:auto;}
+
+.queue-pin-drag {cursor:grab;touch-action:none;user-select:none;padding:4px 5px;}.queue-pin-drag:active {cursor:grabbing;}.queue-card.pin-dragging {opacity:.6;}.queue-card.pin-drop-before {border-top:3px solid var(--cc-accent);}.queue-card.pin-drop-after {border-bottom:3px solid var(--cc-accent);}
+#settings-agents>label {display:flex;flex-direction:column;gap:8px;max-width:420px;margin:16px 0;}#settings-agents>button {margin:0 8px 8px 0;}
+
+.queue-card:has(>.queue-pin-drag) {padding-left:32px;}
+.queue-card>.queue-card-pin-label.queue-pin-drag {position:absolute;left:3px;top:50%;transform:translateY(-50%);width:24px;height:40px;clip-path:none;overflow:visible;display:flex;align-items:center;justify-content:center;padding:0;font-size:20px;color:var(--cc-muted);}
