@@ -462,18 +462,18 @@ export class AttentionQueue {
     this.markRead.hidden = !unread(this.detailData?.read_state || chosen?.item.attention);
     }
     this.dockHeader(nextHeader);
-    const issues = hosts.filter(h => h.error || h.limited);
+    const issues = hosts.filter(h => h.error);
     this.feedback.dataset.error = this.orderError?'true':'false';
     this.feedback.textContent = this.orderError || (this.snapshot ? `Checked ${new Date(this.snapshot.checked_at * 1000).toLocaleTimeString()}` : 'Checking machines…');
     this.filterChecked.textContent=this.feedback.textContent;
     this.hostIssueSummary.hidden=issues.length===0;
-    const issueLabel=`${issues.length} machine${issues.length===1?'':'s'} unavailable or limited`;this.hostIssueSummary.textContent=`⚠ ${issues.length}`;this.hostIssueSummary.title=issueLabel;this.hostIssueSummary.setAttribute('aria-label',issueLabel);this.hostIssueChecked.textContent=this.snapshot?`Checked ${new Date(this.snapshot.checked_at*1000).toLocaleTimeString()}`:'Checking machines…';
+    const issueLabel=`${issues.length} machine${issues.length===1?'':'s'} unavailable`;this.hostIssueSummary.textContent=`⚠ ${issues.length}`;this.hostIssueSummary.title=issueLabel;this.hostIssueSummary.setAttribute('aria-label',issueLabel);this.hostIssueChecked.textContent=this.snapshot?`Checked ${new Date(this.snapshot.checked_at*1000).toLocaleTimeString()}`:'Checking machines…';
     const issueSignature=JSON.stringify(issues.map(h=>[h.id,h.name,h.error,h.limited]));
     if(issueSignature!==this.hostIssueSignature){this.hostIssueSignature=issueSignature;this.hostIssueBody.replaceChildren(...issues.map(host=>{
       const section=node('section');const keyChanged=!!host.error&&/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i.test(host.error);
-      section.append(node('strong',`${host.name} · ${keyChanged?'SSH identity not verified':host.error?'Unavailable':'Scan limited'}`));
+      section.append(node('strong',`${host.name} · ${keyChanged?'SSH identity not verified':'Unavailable'}`));
       if(keyChanged)section.append(node('p','A different OS on a dual-boot machine can present a different SSH key. CC will reconnect when the trusted OS returns. Verify any new key independently before updating SSH trust.'));
-      const detail=node('pre',host.error||'Scan limited to 32 agent panes');section.append(detail);return section;
+      const detail=node('pre',host.error||'Machine unavailable');section.append(detail);return section;
     }));if(!issues.length)this.hostIssueBody.append(node('p','All machines available.'));}
   }
   private updateSend() {
