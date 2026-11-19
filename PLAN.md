@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0152: release send banner removal](docs/tasks/current/0152-release-send-banner-removal.md) — in progress.
+- [Task0152: release send banner removal](docs/tasks/done/0152-release-send-banner-removal.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
-- [Task0151: remove send success banner](docs/tasks/done/0151-remove-send-success-banner.md) — complete; frontend build passed; not deployed.
+- [Task0151: remove send success banner](docs/tasks/done/0151-remove-send-success-banner.md) — complete; frontend build passed; deployed in task0152.
 
 - [Task0150: release full-width header](docs/tasks/done/0150-release-full-width-chat-header.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
