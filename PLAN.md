@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0158: release agent runtime](docs/tasks/current/0158-release-agent-card-runtime.md) — in progress.
+- [Task0158: release agent runtime](docs/tasks/done/0158-release-agent-card-runtime.md) — committed/pushed/deployed; four access paths healthy, tmux processes unchanged; native/ACP runtime verified live.
 
-- [Task0157: agent card runtime](docs/tasks/done/0157-agent-card-runtime.md) — complete; Rust/Python/build and2 responsive browser cases pass; not deployed.
+- [Task0157: agent card runtime](docs/tasks/done/0157-agent-card-runtime.md) — complete; Rust/Python/build and2 responsive browser cases pass; deployed in task0158.
 
 - [Task0156: release quiet partial scans](docs/tasks/done/0156-release-quiet-partial-scans.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
