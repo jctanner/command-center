@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0150: release full-width header](docs/tasks/current/0150-release-full-width-chat-header.md) — in progress.
+
+- [Task0149: full-width chat header](docs/tasks/done/0149-full-width-chat-header.md) — complete; build and6 browser cases pass; screenshot inspected; not deployed.
+
 - [Task0148: release chat tab badges](docs/tasks/done/0148-release-chat-tab-badges.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
 - [Task0147: simplify chat tab badges](docs/tasks/done/0147-chat-tab-badges.md) — complete; build and20 browser cases pass; deployed in task0148.
