@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0146: release context in Details](docs/tasks/current/0146-release-context-details.md) — in progress.
+
+- [Task0145: context in Details](docs/tasks/done/0145-context-in-agent-details.md) — implemented; build and20 browser cases plus2 focused ACP cases pass; not deployed.
+
 - [Task0144: release chat tab switching](docs/tasks/done/0144-release-chat-tab-switch.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
 - [Task0143: cross-protocol chat tab](docs/tasks/done/0143-chat-tab-protocol-switch.md) — fixed;26 browser cases pass, including cross-provider/resize drafts; deployed in task0144.

@@ -243,11 +243,11 @@ export class AttentionQueue {
     this.deliveryReview.onclick = () => { this.uncertain.delete(this.draftKey()); this.deliveryReview.hidden = true; this.sendFeedback.textContent = ''; void this.loadDetail(); };
     form.append(this.deliveryReview);
     const chatHeader = node('div'); chatHeader.className = 'queue-chat-header'; chatHeader.append(actions, this.title, this.subtitle);
-    this.cardNotes.className='agent-card-notes';this.metadata.append(agentOutbox(),this.editCard,this.restartAgent,this.switchMode,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
+    this.cardNotes.className='agent-card-notes';this.metadata.append(this.tokenMetrics.element,agentOutbox(),this.editCard,this.restartAgent,this.switchMode,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
     this.history.append(this.older);
     this.approvalCard.className = 'agent-approval'; this.approvalCard.setAttribute('aria-label', 'Tool approval'); this.approvalCard.hidden = true;
     this.liveActivity.className = 'agent-live-activity'; this.liveActivity.setAttribute('role', 'status'); this.liveActivity.setAttribute('aria-live', 'polite');
-    this.nativeNodes=[chatHeader,this.tokenMetrics.element,this.chatNotice,this.metadata,this.backgroundTasks.element,this.history,this.liveActivity,this.approvalCard,form];
+    this.nativeNodes=[chatHeader,this.chatNotice,this.metadata,this.backgroundTasks.element,this.history,this.liveActivity,this.approvalCard,form];
     this.acpChat=new AcpChat({restart:()=>{const c=this.chosen();if(c)this.openAgentRestart(c.h,c.item);},mode:()=>{const c=this.chosen();if(c)this.openModeSwitch(c.h,c.item);},back:()=>{delete this.body.dataset.detail;this.syncPresentation();},edit:()=>{const c=this.chosen();if(c)this.openCardEditor(c.h,c.item);},mute:()=>this.mute.click(),ticket:()=>createTicket.click(),open:()=>openButton.click(),file:async path=>{const c=this.chosen();if(c)await this.openFile({host:c.h.id,connection:c.h.connection_revision,path});},observe:snapshot=>this.observeAcp(snapshot),unavailable:()=>{const c=this.chosen();if(c?.item.acp){c.item.activity={state:'disconnected',source:'acp_stream',reason:'ACP connection unavailable',observed_at:Date.now()/1000};this.render();}},closed:()=>{void this.refresh();}});
     this.detail.append(...this.nativeNodes);
     this.detailsPanel=new AgentDetails(this.detailsButton,this.metadata);
