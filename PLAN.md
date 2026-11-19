@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0138: release navbar machine status](docs/tasks/current/0138-release-navbar-machine-status.md) — commit/push/frontend deployment authorized.
+- [Task0138: release navbar machine status](docs/tasks/done/0138-release-navbar-machine-status.md) — committed/pushed/deployed; four paths/assets and unchanged backend/tmux PIDs verified.
 
-- [Task0137: navbar machine status](docs/tasks/done/0137-navbar-machine-status.md) — implemented;34px desktop height reclaimed,22 browser cases pass; not deployed.
+- [Task0137: navbar machine status](docs/tasks/done/0137-navbar-machine-status.md) — implemented;34px desktop height reclaimed,22 browser cases pass; deployed in task0138.
 
 - [Task0136: release pinned ordering](docs/tasks/done/0136-release-pinned-agent-order.md) — committed/pushed/deployed; four paths, manual default and unchanged local/remote pane PIDs verified.
 
