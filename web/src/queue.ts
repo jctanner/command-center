@@ -392,10 +392,11 @@ export class AttentionQueue {
       folder.className='queue-card-path';
       const machine=node('small',`${h.name} / ${item.agent}`);machine.className='queue-card-machine';
       const name=node('strong',item.card?.name||(waiting(item)?item.prompt:agentTitle(item)));name.className='queue-card-name';name.title=name.textContent||'';
-      const context=node('small');context.className='queue-card-context';if(item.acp){const badge=node('span','ACP');badge.className='agent-protocol';context.append(badge,document.createTextNode(' · '));}context.title=`${h.name} · ${item.agent} · ${item.project} · ${item.session_name} / ${item.window_name} / ${item.pane}`;
+      const metrics=item.token_metrics;const model=metrics?.association==='process'&&metrics.provider===item.agent&&(!metrics.instance||metrics.instance===item.attention?.instance)?metrics.model?.trim():'';const harness=model?`${item.agent} / ${model}`:item.agent;
+      const context=node('small');context.className='queue-card-context';if(item.acp){const badge=node('span','ACP');badge.className='agent-protocol';context.append(badge,document.createTextNode(' · '));}context.title=`${h.name} · ${harness} · ${item.project} · ${item.session_name} / ${item.window_name} / ${item.pane}`;
       const attention=[item.attention?.finished?'Finished':'',item.attention?.new_approval?(inputSource(item.activity?.source)?'New input request':'New approval'):'',item.attention?.unread_reply?'Unread reply':''].filter(Boolean);
       if(attention.length){const dot=node('span');dot.className='queue-card-unread';dot.setAttribute('role','img');dot.setAttribute('aria-label',attention.join(' · '));dot.title=attention.join(' · ');context.append(dot);}
-      context.append(document.createTextNode(`${h.name} · ${item.agent} · ${projectName(item.project)}`));
+      context.append(document.createTextNode(`${h.name} · ${harness} · ${projectName(item.project)}`));
       if(item.acp?.command_running){const command=node('span','Command running');command.className='queue-background-count';context.append(command);}
       const background=backgroundLabel(item.background_tasks,stateOf(item)==='disconnected');if(background){for(const parent of [machine,context]){const badge=node('span',background);badge.className='queue-background-count';if(parent===context)parent.prepend(badge,document.createTextNode(' · '));else parent.append(badge);}}
       b.title=`${name.textContent}\n${context.title}\nRight-click or Shift+F10 for agent actions`;

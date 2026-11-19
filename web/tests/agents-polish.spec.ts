@@ -80,3 +80,11 @@ for(const width of [1440,393])test(`runtime occupies existing context row withou
  expect(f.sockets()).toBe(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.screenshot({path:`../test-results/agent-card-runtime-${width}.png`});
 });
+
+for(const width of [1440,393])test(`reported model shares card metadata without growing the card at ${width}px`,async({page})=>{
+ await page.setViewportSize({width,height:852});const f=await fixture(page),card=page.locator('[data-agent-id="agent0"]'),row=card.locator('.queue-card-context');const before=await card.boundingBox();
+ (f.items[0].token_metrics as any).model='reported-model-with-a-very-long-name';await refreshQueue(page);await expect(row).toContainText('codex / reported-model-with-a-very-long-name');await expect(row).toHaveAttribute('title',/reported-model-with-a-very-long-name/);
+ const after=await card.boundingBox();expect(after!.width).toBe(before!.width);expect(after!.height).toBe(before!.height);
+ (f.items[0].token_metrics as any).association='project';await refreshQueue(page);await expect(row).not.toContainText('reported-model');
+ (f.items[0].token_metrics as any).model=null;await refreshQueue(page);await expect(row).not.toContainText(' / ');expect(f.sockets()).toBe(0);
+});
