@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0140: release themed pins](docs/tasks/current/0140-release-themed-pins.md) — commit/push/frontend deployment authorized.
+
+- [Task0139: themed pin indicators](docs/tasks/done/0139-themed-pin-indicators.md) — complete; themed grip only on draggable cards, monochrome pin otherwise;5 browser cases pass, not deployed.
+
 - [Task0138: release navbar machine status](docs/tasks/done/0138-release-navbar-machine-status.md) — committed/pushed/deployed; four paths/assets and unchanged backend/tmux PIDs verified.
 
 - [Task0137: navbar machine status](docs/tasks/done/0137-navbar-machine-status.md) — implemented;34px desktop height reclaimed,22 browser cases pass; deployed in task0138.

@@ -953,7 +953,7 @@ button:disabled { opacity: .5; cursor: default; }
 
 .queue-card.has-custom-color { background:color-mix(in srgb,var(--agent-card-color) 12%,var(--cc-raised));box-shadow:inset -3px 0 0 var(--agent-card-color); }
 .queue-card.has-custom-color.selected { background:color-mix(in srgb,var(--agent-card-color) 20%,var(--cc-hover)); }
-.queue-card.pinned .queue-card-name::before { content:'📌';font-size:11px;margin-right:5px; }
+.queue-card.pinned:not(:has(>.queue-pin-drag)) .queue-card-name::before {content:'';display:inline-block;width:12px;height:14px;margin-right:5px;background:var(--cc-muted);vertical-align:-1px;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 1h6v2h-1v4l2 3v1H8.5v4L8 16l-.5-1v-4H4v-1l2-3V3H5z'/%3E%3C/svg%3E") center/contain no-repeat;}
 .queue-card>.queue-card-pin-label { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
 .agent-card-color-controls { display:flex;align-items:center;gap:10px;flex-wrap:wrap; }
 .agent-card-editor input[type=color] { width:56px;height:44px;padding:4px;flex:none;cursor:pointer; }
