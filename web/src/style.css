@@ -1046,12 +1046,6 @@ button:disabled { opacity: .5; cursor: default; }
 .agent-message .agent-markdown .chat-file-link:focus-visible { outline:2px solid var(--cc-blue);outline-offset:3px; }
 .chat-file-error { display:block;color:var(--cc-red);font-size:.9em; }
 
-.queue-host-issues { flex:none;margin:0 12px 8px;font-size:12px;color:var(--cc-muted); }
-.queue-host-issues summary { cursor:pointer; }
-.queue-host-issues > div { max-height:180px;overflow:auto;padding:8px;border:1px solid var(--cc-border);border-radius:6px; }
-.queue-host-issues section + section { margin-top:10px; }
-.queue-host-issues p { margin:6px 0; }
-.queue-host-issues pre { white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;margin:6px 0; }
 
 #whiteboard-pane{flex:1;min-height:0;height:100%;width:100%;overflow:hidden}#whiteboard-frame{border:0;display:block;width:100%;height:100%}
 
@@ -1237,3 +1231,11 @@ button:disabled { opacity: .5; cursor: default; }
 
 .queue-card:has(>.queue-pin-drag) {padding-left:32px;}
 .queue-card>.queue-card-pin-label.queue-pin-drag {position:absolute;left:3px;top:50%;transform:translateY(-50%);width:24px;height:40px;clip-path:none;overflow:visible;display:flex;align-items:center;justify-content:center;padding:0;font-size:20px;color:var(--cc-muted);}
+
+#queue-host-status {color:var(--cc-yellow);border-color:color-mix(in srgb,var(--cc-yellow) 40%,var(--cc-border));font-size:12px;white-space:nowrap;padding:5px 8px;flex:none;}
+.header-actions:has(#queue-host-status:not([hidden])) #connection[data-state="online"] {display:none;}
+.queue-host-dialog {width:min(720px,calc(100vw - 24px));max-height:calc(100dvh - 24px);box-sizing:border-box;padding:22px;overflow:hidden;}
+.queue-host-dialog[open] {display:flex;flex-direction:column;gap:12px;}
+.queue-host-dialog h2 {margin:0;font-size:20px;}.queue-host-dialog>p {margin:0;font-size:12px;color:var(--cc-muted);}.queue-host-dialog>button {align-self:flex-end;min-height:40px;flex:none;}
+.queue-host-diagnostics {overflow:auto;min-height:0;overscroll-behavior:contain;}.queue-host-diagnostics section+section {margin-top:16px;}.queue-host-diagnostics p {line-height:1.5;}.queue-host-diagnostics pre {white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.5;background:var(--cc-bg);padding:10px;border-radius:5px;}
+@media(max-width:900px),(pointer:coarse)and(max-width:1100px){#queue-host-status {min-width:36px;height:32px;padding:4px;font-size:11px;}.queue-host-dialog {padding:16px;}}

@@ -64,8 +64,8 @@ export class AttentionQueue {
   private detail = node('section');
   private body = node('div');
   private feedback = node('p');
-  private hostIssues = node('details');
-  private hostIssueSummary = node('summary');
+  private hostIssues = node('dialog');private hostIssueChecked=node('p');private hostIssueSignature='';
+  private hostIssueSummary = node('button');
   private hostIssueBody = node('div');
   private hostSelect = node('select');
   private projectSelect = node('select');
@@ -197,8 +197,8 @@ export class AttentionQueue {
     this.detail.className = 'queue-detail'; this.detail.setAttribute('aria-label', 'Request details');
     this.feedback.setAttribute('role', 'status');
     this.body.className = 'queue-body'; this.body.append(this.list, this.detail);
-    this.hostIssues.className='queue-host-issues';this.hostIssues.hidden=true;this.hostIssues.append(this.hostIssueSummary,this.hostIssueBody);
-    this.root.append(heading, this.inboxControls, this.feedback, this.hostIssues, this.body);
+    this.hostIssues.className='queue-host-dialog';this.hostIssues.id='queue-machine-status';this.hostIssues.setAttribute('aria-labelledby','queue-machine-status-title');const issueTitle=node('h2','Machine availability');issueTitle.id='queue-machine-status-title';const issueClose=node('button','Close');issueClose.type='button';issueClose.setAttribute('aria-label','Close machine status');issueClose.autofocus=true;issueClose.onclick=()=>this.hostIssues.close();this.hostIssueBody.className='queue-host-diagnostics';this.hostIssueSummary.id='queue-host-status';this.hostIssueSummary.type='button';this.hostIssueSummary.hidden=true;this.hostIssueSummary.setAttribute('aria-haspopup','dialog');this.hostIssueSummary.setAttribute('aria-controls',this.hostIssues.id);this.hostIssueSummary.onclick=()=>{this.hostIssues.showModal();issueClose.focus();};this.hostIssues.addEventListener('close',()=>{if(this.visible){if(!this.hostIssueSummary.hidden)this.hostIssueSummary.focus({preventScroll:true});else startAgent.focus({preventScroll:true});}});this.hostIssues.append(issueTitle,this.hostIssueChecked,this.hostIssueBody,issueClose);document.body.append(this.hostIssues);document.querySelector('.header-actions')!.insertBefore(this.hostIssueSummary,document.getElementById('connection'));
+    this.root.append(heading, this.inboxControls, this.feedback, this.body);
     const back = node('button', '← Agents'); back.className = 'queue-back'; back.setAttribute('aria-label', '← Agents'); back.onclick = () => { delete this.body.dataset.detail; this.syncPresentation(); };
     const openButton = node('button', 'Open terminal'); openButton.className = 'primary queue-terminal-link';
     const updateTerminalLink = () => { openButton.hidden = compactClient(); };
@@ -258,7 +258,7 @@ export class AttentionQueue {
       if (Date.now() - this.lastDetailPoll >= (active ? 1800 : 5800)) void this.loadDetail();
     }, 2000);
   }
-  setVisible(value: boolean) { if(!value)this.clearPinnedDrag();this.visible = value;if(!value)this.detailsPanel.reset(); if(value)void this.outbox.refresh(); this.syncPresentation(); if (value) { this.render(); void this.refresh(); if (this.selected) void this.loadDetail(); } }
+  setVisible(value: boolean) { if(!value){this.hostIssueSummary.hidden=true;if(this.hostIssues.open)this.hostIssues.close();}if(!value)this.clearPinnedDrag();this.visible = value;if(!value)this.detailsPanel.reset(); if(value)void this.outbox.refresh(); this.syncPresentation(); if (value) { this.render(); void this.refresh(); if (this.selected) void this.loadDetail(); } }
   async openTarget(target:QueueTarget){
     await this.refresh();let host=this.snapshot?.hosts.find(h=>h.id===target.host&&h.connection_revision===target.connection);
     let item=host?.items.find(i=>i.session===target.session&&i.window===target.window&&i.pane===target.pane);
@@ -458,15 +458,15 @@ export class AttentionQueue {
     const issues = hosts.filter(h => h.error || h.limited);
     this.feedback.dataset.error = 'false';
     this.feedback.textContent = this.snapshot ? `Checked ${new Date(this.snapshot.checked_at * 1000).toLocaleTimeString()}` : 'Checking machines…';
-    this.hostIssues.hidden=issues.length===0;
-    this.hostIssueSummary.textContent=`${issues.length} machine${issues.length===1?'':'s'} unavailable or limited`;
-    this.hostIssueBody.replaceChildren(...issues.map(host=>{
+    this.hostIssueSummary.hidden=issues.length===0;
+    const issueLabel=`${issues.length} machine${issues.length===1?'':'s'} unavailable or limited`;this.hostIssueSummary.textContent=`⚠ ${issues.length}`;this.hostIssueSummary.title=issueLabel;this.hostIssueSummary.setAttribute('aria-label',issueLabel);this.hostIssueChecked.textContent=this.snapshot?`Checked ${new Date(this.snapshot.checked_at*1000).toLocaleTimeString()}`:'Checking machines…';
+    const issueSignature=JSON.stringify(issues.map(h=>[h.id,h.name,h.error,h.limited]));
+    if(issueSignature!==this.hostIssueSignature){this.hostIssueSignature=issueSignature;this.hostIssueBody.replaceChildren(...issues.map(host=>{
       const section=node('section');const keyChanged=!!host.error&&/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i.test(host.error);
       section.append(node('strong',`${host.name} · ${keyChanged?'SSH identity not verified':host.error?'Unavailable':'Scan limited'}`));
       if(keyChanged)section.append(node('p','A different OS on a dual-boot machine can present a different SSH key. CC will reconnect when the trusted OS returns. Verify any new key independently before updating SSH trust.'));
       const detail=node('pre',host.error||'Scan limited to 32 agent panes');section.append(detail);return section;
-    }));
-    if(!issues.length)this.hostIssues.open=false;
+    }));if(!issues.length)this.hostIssueBody.append(node('p','All machines available.'));}
   }
   private updateSend() {
     if(this.chosen()?.item.acp)return;
