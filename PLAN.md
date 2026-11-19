@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0134: release table artifact paths](docs/tasks/current/0134-release-table-artifact-paths.md) — commit/push/frontend deployment authorized.
+- [Task0134: release table artifact paths](docs/tasks/done/0134-release-table-artifact-paths.md) — committed/pushed/deployed; four paths/assets and unchanged backend/tmux PIDs verified.
 
-- [Task0133: table artifact paths](docs/tasks/done/0133-table-artifact-download-paths.md) — fixed table folder resolution;18 browser cases and9 live artifact paths verified, not deployed.
+- [Task0133: table artifact paths](docs/tasks/done/0133-table-artifact-download-paths.md) — fixed table folder resolution;18 browser cases and9 live artifact paths verified; deployed in task0134.
 
 - [Task0132: release profile shortcut](docs/tasks/done/0132-release-launcher-profile-shortcut.md) — committed/pushed/deployed; four paths/assets and unchanged backend/tmux PIDs verified.
 
