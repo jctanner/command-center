@@ -206,7 +206,7 @@ export class AttentionQueue {
     updateTerminalLink(); compactViewport.addEventListener('change', updateTerminalLink);
     openButton.onclick = () => { if (compactClient()) return; const entry = this.chosen(); if (entry) void this.open({ host: entry.h.id, connection: entry.h.connection_revision, session: entry.item.session, window: entry.item.window, pane: entry.item.pane }); };
     const createTicket=node('button','Create ticket');createTicket.onclick=()=>{const c=this.chosen();if(c)document.dispatchEvent(new CustomEvent('cc-create-ticket',{detail:{host:c.h.id,session:c.item.session,session_name:c.item.session_name,window:c.item.window,window_name:c.item.window_name,pane:c.item.pane,path:c.item.project,provider:c.item.agent,conversation:c.item.acp?.conversation||this.detailData?.conversations.find(v=>v.id===this.detailData?.selected)?.session||''}}));};
-    const actions = node('div'); actions.className = 'queue-detail-actions'; this.historyBadge.className='queue-history-badge';this.historyBadge.hidden=true;actions.append(back,this.activityBadge,this.historyBadge,this.detailsButton,openButton);
+    const actions = node('div'); actions.className = 'queue-detail-actions'; this.historyBadge.className='queue-history-badge';this.historyBadge.hidden=true;actions.append(back,this.historyBadge,this.detailsButton,openButton);
     this.detailsButton.className = 'queue-details-button'; this.detailsButton.setAttribute('aria-controls', 'queue-agent-metadata');
     this.metadata.id = 'queue-agent-metadata'; this.metadata.className = 'queue-agent-metadata'; this.metadata.hidden = true;
     this.detailsButton.setAttribute('aria-expanded', String(!this.metadata.hidden));
@@ -243,7 +243,7 @@ export class AttentionQueue {
     this.deliveryReview.onclick = () => { this.uncertain.delete(this.draftKey()); this.deliveryReview.hidden = true; this.sendFeedback.textContent = ''; void this.loadDetail(); };
     form.append(this.deliveryReview);
     const chatHeader = node('div'); chatHeader.className = 'queue-chat-header'; chatHeader.append(actions, this.title, this.subtitle);
-    this.cardNotes.className='agent-card-notes';this.metadata.append(this.tokenMetrics.element,agentOutbox(),this.editCard,this.restartAgent,this.switchMode,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
+    this.cardNotes.className='agent-card-notes';this.metadata.append(this.activityBadge,this.tokenMetrics.element,agentOutbox(),this.editCard,this.restartAgent,this.switchMode,this.closeAgent,this.cardNotes,createTicket, this.location, this.detailFeedback, this.conversationSelect, this.association, this.markRead, this.mute, screen);
     this.history.append(this.older);
     this.approvalCard.className = 'agent-approval'; this.approvalCard.setAttribute('aria-label', 'Tool approval'); this.approvalCard.hidden = true;
     this.liveActivity.className = 'agent-live-activity'; this.liveActivity.setAttribute('role', 'status'); this.liveActivity.setAttribute('aria-live', 'polite');
