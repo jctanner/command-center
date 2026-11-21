@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0170: release email folder order](docs/tasks/current/0170-release-email-folder-order.md) — in progress.
+- [Task0170: release email folder order](docs/tasks/done/0170-release-email-folder-order.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
-- [Task0169: email folder ordering](docs/tasks/done/0169-email-folder-order.md) — complete; build and2 desktop/mobile folder tests pass; not deployed.
+- [Task0169: email folder ordering](docs/tasks/done/0169-email-folder-order.md) — complete; build and2 desktop/mobile folder tests pass; deployed in task0170.
 
 - [Task0168: upstream match context review](docs/tasks/done/0168-upstream-match-context-review.md) — cancelled: request intended for another agent; own report appendix reverted, no messages/ticket writes.
 
