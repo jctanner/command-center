@@ -9,6 +9,10 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
+- [Task0172: release Slack thread controls](docs/tasks/current/0172-release-slack-thread-controls.md) — in progress.
+
+- [Task0171: Slack empty thread controls](docs/tasks/done/0171-slack-empty-thread-controls.md) — complete; build, desktop keyboard and2 compact gesture cases pass; not deployed.
+
 - [Task0170: release email folder order](docs/tasks/done/0170-release-email-folder-order.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
 - [Task0169: email folder ordering](docs/tasks/done/0169-email-folder-order.md) — complete; build and2 desktop/mobile folder tests pass; deployed in task0170.
