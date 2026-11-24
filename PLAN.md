@@ -9,9 +9,9 @@ Read [AGENTS.md](AGENTS.md) and the [work ledger](docs/work-ledger.md) before st
 
 ## Active work
 
-- [Task0174: release inline Slack pagination](docs/tasks/current/0174-release-slack-history-pagination.md) — in progress.
+- [Task0174: release inline Slack pagination](docs/tasks/done/0174-release-slack-history-pagination.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
-- [Task0173: inline Slack history pagination](docs/tasks/done/0173-inline-slack-history-pagination.md) — complete; build and4 desktop/mobile paging cases pass; not deployed.
+- [Task0173: inline Slack history pagination](docs/tasks/done/0173-inline-slack-history-pagination.md) — complete; build and4 desktop/mobile paging cases pass; deployed in task0174.
 
 - [Task0172: release Slack thread controls](docs/tasks/done/0172-release-slack-thread-controls.md) — committed/pushed/deployed; four access paths verified, backend/tmux processes unchanged.
 
