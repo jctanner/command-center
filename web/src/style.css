@@ -1267,3 +1267,6 @@ button:disabled { opacity: .5; cursor: default; }
 .queue-card-runtime {position:absolute;right:7px;top:50%;transform:translateY(-50%);max-width:7ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cc-text);font-variant-numeric:tabular-nums;}
 
 .ticket-upstream {min-width:0;}.ticket-upstream h3 {margin:12px 0 8px;font-size:14px;}.ticket-upstream-row {display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;}.ticket-upstream-row input {min-width:0;flex:1 1 180px;box-sizing:border-box;font:inherit;color:var(--cc-text);background:var(--cc-surface);border:1px solid var(--cc-border);border-radius:5px;padding:8px;}.ticket-upstream-row a {color:var(--cc-accent);}.ticket-upstream-row button {flex:none;}
+
+.slack-history-pagination {display:block;margin:6px auto 10px;padding:4px 10px;min-height:28px;font-size:12px;line-height:20px;background:transparent;border-color:transparent;color:var(--cc-blue);}
+.slack-history-pagination:hover,.slack-history-pagination:focus-visible {background:var(--cc-hover);border-color:var(--cc-border);}
